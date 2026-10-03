@@ -1,7 +1,7 @@
 # RapidRAW 鸿蒙(HarmonyOS / OpenHarmony)移植报告
 
 > 分析日期:2026-10 · 分支:`feature/harmonyos-port`
-> 状态:Phase 1 构建管道进行中 —— fork 补丁接入完成,主仓 OHOS 交叉检查与宿主回归双通过(2026-10-03,见 6.2);下一步 HAP 出包
+> 状态:Phase 1 HAP 打包已打通 —— `cargo tauri ohos build -d -t aarch64` 端到端 EXIT=0,未签名 HAP(52.4MB)落盘(2026-10-03 晚,见 6.3);下一步真机点亮 + Phase 2 平台集成
 
 ## 1. 结论(TL;DR)
 
@@ -151,7 +151,7 @@ cargo check --target aarch64-unknown-linux-ohos
 
 ### 6.3 Phase 1:HAP 出包攻坚(Windows 主机,2026-10-03)
 
-**成果**:Rust 交叉编译全链路(vite 前端 → ohrs Rust 构建 → ohpm install)打通,`librapidraw_lib.so`(dev profile,399MB)落位 `gen/ohos/entry/libs/arm64-v8a/`。当前唯一阻断:hvigor 打包(见文末)。
+**成果**:Rust 交叉编译全链路(vite 前端 → ohrs Rust 构建 → ohpm install)打通,`librapidraw_lib.so`(dev profile,399MB)落位 `gen/ohos/entry/libs/arm64-v8a/`。~~当前唯一阻断:hvigor 打包~~ **hvigor 打包已于 2026-10-03 晚打通,见下。**
 
 **OHOS_HOME 契约**:cargo-mobile2 fork 的 `env.rs` 把 `OHOS_NDK_HOME = OHOS_HOME` 原样下发给子进程;fork 的构建把 Rust 交叉编译委托给 `ohrs build`,而 ohrs 以 `<OHOS_NDK_HOME>/native/llvm` 推导链接器/工具、`<OHOS_NDK_HOME>/native/sysroot` 推导 sysroot。故 **`OHOS_HOME` 必须是 SDK 根(`.../sdk/default/openharmony`),不是 native 目录**(两种指法曾分别导致链接器路径双 `native` 与 aws-lc-sys 找不到 clang)。`ohos-toolchain.cmake` 已改为容错两种 `OHOS_NDK_HOME` 约定(检测 `llvm/` 位置归一到 NDK 根),与 6.1 手工交叉检查共用一份工具链文件;ohrs 检测到 `CMAKE_TOOLCHAIN_FILE`/`CMAKE_GENERATOR` 已设置时会尊重现有值。
 
@@ -161,13 +161,15 @@ cargo check --target aarch64-unknown-linux-ohos
 
 **构建姿势**:`cargo tauri ohos build` 必须在**仓库根**执行(beforeBuildCommand 在 CLI cwd 找 `package.json`,在 src-tauri/ 下会报 Missing script: build);PowerShell 直调 npm 需 `npm.cmd`(执行策略拦截 npm.ps1);debug 构建命令 `cargo tauri ohos build -d -t aarch64`,完整环境配方见 §8。
 
-**hvigor 打包阻断(排查中)**:
+**hvigor 打包阻断(原 3 项,已全部解除;另发现 2 项新坑)**:
 
-1. `env.rs` 强制 `DEVECO_SDK_HOME = parent³(OHOS_HOME)`,按 SDK 根契约算得 junction 伪根(比 hvigor 期望的 `...\sdk` 少一级)→ 00303312 "Cannot find the corresponding SDK version";
-2. `gen/ohos/build-profile.json5` 的 `compatibleSdkVersion: "5.0.0(12)"`(init 写死)与本机 SDK(HarmonyOS 26.0.0 / API 26,见 `sdk/default/sdk-pkg.json`)不匹配,DevEco 自带模板同为旧值,需实测修正;
-3. 附带坑:hvigor 6 失败后遗留 node+java daemon 持有重定向管道句柄,PowerShell `*>` 重定向假死——迭代用 `Start-Process` + 文件重定向,或先杀 daemon。
+1. ~~`env.rs` 强制 `DEVECO_SDK_HOME = parent³(OHOS_HOME)`,按 SDK 根契约算得 junction 伪根 → 00303312~~ **已解决**:在用户空间为伪根补一个 `default` junction(`$env:USERPROFILE\ohos-devstudio\default` → `$dev\sdk\default`),使 parent³ 落点本身成为合法 SDK 根(含 `default\sdk-pkg.json`,hvigor 即通过)。`OHOS_HOME` 保持不变,ohrs/交叉编译侧零影响。注意:不能把 `26` 版本层 junction 直接建进真实 SDK 目录——经 junction 写 `Program Files` 会被拒(Access Denied),补伪根是纯用户空间操作;
+2. `compatibleSdkVersion: "5.0.0(12)"` **实测非阻断**:SDK 路径修复后 CompileArkTS → PackageHap 全程放行(all-in-one SDK 容忍该旧值),暂不改动;
+3. hvigor daemon 假死:**对策固化**——迭代一律用 `cmd /c "... > log 2>&1"` 文件重定向(cmd 只等主进程退出,不随 daemon 句柄挂起;PowerShell `*>`/Tee 才会假死),每轮构建前杀 hvigor daemon(node/java,按 CommandLine 匹配);
+4. **新坑:WS 脐带**。hvigor 的 tauri 集成在 `:entry:default@PreBuild` 后调用内部子命令 `cargo tauri ohos dev-eco-studio-script --target aarch64`,该子命令从 `%TEMP%\<identifier>-server-addr` 读父进程写下的 WebSocket 地址并经 JSON-RPC 拉取构建选项(tauri-cli `crates/tauri-cli/src/mobile/mod.rs:410`)。**独立 `hvigorw assembleHap` 不可行**:没有活着的父 `cargo tauri ohos build` 进程提供 WS 服务器;读到陈旧 addr 文件则 ConnectionRefused panic(00308018)。本文档原"下一步"设想的独立 hvigorw 迭代路线作废;
+5. **新坑:java PATH**。`:entry:default@PackageHap` 调 SDK toolchains 的 Java 打包工具(app_packing_tool),Node spawn 裸命令 `java`——PATH 无 java 时报 `spawn java ENOENT`(00308018)。修复:PATH 加入 DevEco 自带 JBR(`$dev\jbr\bin`)并设 `JAVA_HOME=$dev\jbr`。此前所有尝试都死在更早环节,从未到达需要 java 的打包步骤。
 
-**下一步**:以独立 `hvigorw assembleHap`(正确 `DEVECO_SDK_HOME` + 修正 compatibleSdkVersion)先迭代出 HAP,再定持久方案(gen/ohos 固定 `local.properties` 的 sdk.dir,或 junction 增设版本层使 parent³ 恰落在 sdk 根)。
+**最终打通(2026-10-03 21:45)**:`cargo tauri ohos build -d -t aarch64` 全链路 EXIT=0,33 个 hvigor 任务全过(SignHap 因无 signingConfigs 跳过,符合预期)→ `entry-default-unsigned.hap`(52.4MB;dev .so 378.7MB 经 `DoNativeStrip` 裁剪后打包)落位 `gen/ohos/entry/build/default/outputs/default/`。端到端自动化脚本:`%TEMP%\opencode\build-ohos.ps1`(自包含环境 + fail-fast 预检 + 看门狗超时杀进程树 + 10s 心跳进度 + daemon 清理,成功/失败路径均已实测)。
 
 ## 7. 移植路线图与进度清单
 
@@ -178,7 +180,7 @@ cargo check --target aarch64-unknown-linux-ohos
 - [x] `rustup target add aarch64-unknown-linux-ohos`(目标 std 已就绪)
 - [x] OpenHarmony SDK 就绪(DevEco Studio 自带,API 26):clang 包装脚本(`~/.cargo/bin/aarch64-unknown-linux-ohos-*.cmd`)、本地链接器配置(`src-tauri/.cargo/config.toml`)、CMake 工具链文件(`src-tauri/ohos/ohos-toolchain.cmake`,已提交)全部就位
 - [x] `cargo check --target aarch64-unknown-linux-ohos` 通过(核心依赖探针工程全量通过,详见 6.1;主仓本体被上游 tauri 桌面栈阻断,属预期的 Phase 1 边界)
-- [ ] 用 [richerfu/tauri-demo](https://github.com/richerfu/tauri-demo) 跑通 HAP 出包全流程
+- [x] 用 HAP 出包全流程验证(2026-10-03:已由本仓直接跑通端到端出包,见 6.3;tauri-demo 探路不再需要)
 
 ### Phase 1 — 构建管道(2~3 周)
 - [x] 接入 tauri-cli `feat/open-harmony` 分支:`cargo install tauri-cli --git https://github.com/tauri-apps/tauri --branch feat/open-harmony`(v2.11.4,含 `ohos` 子命令)
@@ -187,7 +189,8 @@ cargo check --target aarch64-unknown-linux-ohos
 - [x] 主仓 `cargo check --target aarch64-unknown-linux-ohos` 全量通过 + 宿主无回归(见 6.2)
 - [x] `cargo tauri ohos init` 生成 `gen/ohos` 工程(2026-10-03;产物 gitignored,未引入跟踪文件变更)
 - [ ] lensfun_db / resources 打包进 HAP
-- [ ] DevEco Studio / hvigor 出包,真机(或模拟器)点亮空白窗口
+- [x] hvigor 出包:未签名 HAP 已产出(2026-10-03,52.4MB,见 6.3;自动化脚本 `%TEMP%\opencode\build-ohos.ps1`)
+- [ ] 真机(或模拟器)点亮空白窗口(本机 `hdc list targets` 为空,无设备;待真机接入)
 
 ### Phase 2 — 平台集成(3~4 周)
 - [ ] `ohos_integration.rs`:FileKit/photoAccessHelper URI 文件桥(参照 `android_integration.rs` 模式,经 `@ohos-rs/ability` NAPI)
@@ -228,26 +231,39 @@ cargo tauri ohos init
 cargo tauri ohos build -t aarch64
 ```
 
-Windows 主机注意:OHOS NDK 的 clang 是 Unix shell 脚本,需手写 `.cmd` 包装(已完成,见 6.1);Rust 交叉编译与 ohrs 构建已在 Windows 主机全量打通(见 6.3),HAP 打包推进至 hvigor 一步。
+Windows 主机注意:OHOS NDK 的 clang 是 Unix shell 脚本,需手写 `.cmd` 包装(已完成,见 6.1);Rust 交叉编译、ohrs 构建与 hvigor HAP 打包均已在 Windows 主机全量打通(见 6.3)。
 
-**Windows 主机 HAP 出包环境**(已验证至 hvigor 打包一步;契约与陷阱详见 6.3;DevEco Studio 自带 ohpm/hvigor,系统 Node 即可):
+**Windows 主机 HAP 出包环境(已验证,2026-10-03;契约与陷阱详见 6.3;DevEco Studio 自带 ohpm/hvigor/jbr,系统 Node 即可)**:
 
 ```powershell
 $dev = 'C:\Program Files\Huawei\DevEco Studio'
-# 一次性:无空格 SDK 别名(ohrs 的 HMS include 注入 + cc-rs 空白切分要求无空格路径)
+$repo = '<仓库路径>'   # 如 D:\workspace\RapidRAW-hmos
+# 一次性:无空格 SDK 别名 + 伪根补 default(让 env.rs 的 parent³ 落点成为合法 SDK 根,见 6.3-1)
 New-Item -ItemType Directory -Path "$env:USERPROFILE\ohos-devstudio" -Force | Out-Null
 if (-not (Test-Path "$env:USERPROFILE\ohos-devstudio\sdk")) { New-Item -ItemType Junction -Path "$env:USERPROFILE\ohos-devstudio\sdk" -Value "$dev\sdk" | Out-Null }
-# 环境变量(OHOS_HOME 必须是 SDK 根,即 openharmony 目录——见 6.3 契约)
+if (-not (Test-Path "$env:USERPROFILE\ohos-devstudio\default")) { New-Item -ItemType Junction -Path "$env:USERPROFILE\ohos-devstudio\default" -Value "$dev\sdk\default" | Out-Null }
+[Environment]::SetEnvironmentVariable('DEVECO_SDK_HOME', "$env:USERPROFILE\ohos-devstudio\sdk", 'User')
+# 环境变量(OHOS_HOME 必须是 openharmony 目录——见 6.3 契约;DEVECO_SDK_HOME 供独立工具/DevEco 用)
 $env:OHOS_HOME = "$env:USERPROFILE\ohos-devstudio\sdk\default\openharmony"
-$repo = 'C:\workspace\RapidRAW'
-$ninja = "${env:ProgramFiles}\Microsoft Visual Studio\2022\Community\Common7\IDE\CommonExtensions\Microsoft\CMake\Ninja"
-$env:Path = "C:\Program Files\CMake\bin;$ninja;$dev\tools\ohpm\bin;$dev\tools\hvigor\bin;$env:USERPROFILE\.cargo\bin;" + $env:Path
+$env:OHOS_NDK_HOME = "$env:USERPROFILE\ohos-devstudio\sdk\default\openharmony\native"
+$env:JAVA_HOME = "$dev\jbr"    # PackageHap 需要 java(hvigor spawn 裸命令,见 6.3-5)
+$vscmake = 'C:\Program Files\Microsoft Visual Studio\2022\Community\Common7\IDE\CommonExtensions\Microsoft\CMake'
+$env:Path = "$vscmake\CMake\bin;$vscmake\Ninja;$dev\tools\ohpm\bin;$dev\tools\hvigor\bin;$dev\jbr\bin;$env:USERPROFILE\.cargo\bin;C:\Program Files\nodejs;" + $env:Path
 $env:CMAKE_TOOLCHAIN_FILE = "$repo\src-tauri\ohos\ohos-toolchain.cmake"
 $env:CMAKE_GENERATOR = 'Ninja'
 $env:ORT_SKIP_DOWNLOAD = '1'; $env:ORT_DYLIB_PATH = 'libonnxruntime.so'
-npm.cmd install "@tauri-apps/api@2.11"    # 对齐 Rust tauri 2.11.5(版本门禁)
+# cc-rs(ring 等)必需——PATH 上的三连名包装脚本不够,须显式 env 变量:
+$env:CC_aarch64_unknown_linux_ohos = "$env:USERPROFILE\.cargo\bin\aarch64-unknown-linux-ohos-clang.cmd"
+$env:CXX_aarch64_unknown_linux_ohos = "$env:USERPROFILE\.cargo\bin\aarch64-unknown-linux-ohos-clang++.cmd"
+$env:AR_aarch64_unknown_linux_ohos = "$env:USERPROFILE\.cargo\bin\aarch64-unknown-linux-ohos-ar.cmd"
+# CN 网络:rustup 直连 static.rust-lang.org 极慢,走 USTC 镜像
+$env:RUSTUP_DIST_SERVER = 'https://mirrors.ustc.edu.cn/rust-static'
+rustup target add aarch64-unknown-linux-ohos armv7-unknown-linux-ohos x86_64-unknown-linux-ohos --toolchain 1.98  # cargo tauri ohos init 会装全套 OHOS 目标,慢网下先手动装
+npm.cmd install                              # @tauri-apps/api 已在 package.json 锁 2.11,无需再手动对齐
 # 在仓库根执行(勿在 src-tauri/ 下;beforeBuildCommand 在 CLI cwd 找 package.json):
-cargo tauri ohos build -d -t aarch64      # .so → src-tauri/gen/ohos/entry/libs/arm64-v8a/
-# hvigor 打包(DEVECO_SDK_HOME / compatibleSdkVersion 打通后):
-#   cd src-tauri\gen\ohos; ohpm install; hvigorw assembleHap   # 产物 entry-default-unsigned.hap
+cargo tauri ohos build -d -t aarch64
+# 端到端直通(独立 hvigorw 不可行,WS 脐带,见 6.3-4);产物:
+#   src-tauri/gen/ohos/entry/build/default/outputs/default/entry-default-unsigned.hap
 ```
+
+**一键构建**:`%TEMP%\opencode\build-ohos.ps1`(自包含上述环境;fail-fast 预检、看门狗超时、心跳进度、daemon 清理)。
