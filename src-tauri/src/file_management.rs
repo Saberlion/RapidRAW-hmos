@@ -2226,7 +2226,11 @@ pub fn rename_folder(path: String, new_name: String, app_handle: AppHandle) -> R
 
 #[tauri::command]
 pub fn delete_folder(path: String, app_handle: AppHandle) -> Result<(), String> {
-    #[cfg(any(target_os = "windows", target_os = "macos", all(target_os = "linux", not(target_env = "ohos"))))]
+    #[cfg(any(
+        target_os = "windows",
+        target_os = "macos",
+        all(target_os = "linux", not(target_env = "ohos"))
+    ))]
     {
         if let Err(trash_error) = trash::delete(&path) {
             log::warn!(
@@ -2237,7 +2241,11 @@ pub fn delete_folder(path: String, app_handle: AppHandle) -> Result<(), String> 
         }
     }
 
-    #[cfg(not(any(target_os = "windows", target_os = "macos", all(target_os = "linux", not(target_env = "ohos")))))]
+    #[cfg(not(any(
+        target_os = "windows",
+        target_os = "macos",
+        all(target_os = "linux", not(target_env = "ohos"))
+    )))]
     {
         fs::remove_dir_all(&path).map_err(|e| e.to_string())?;
     }
@@ -3501,7 +3509,11 @@ pub fn delete_files_from_disk(paths: Vec<String>, app_handle: AppHandle) -> Resu
 
     let final_paths_to_delete: Vec<PathBuf> = files_to_trash.into_iter().collect();
 
-    #[cfg(any(target_os = "windows", target_os = "macos", all(target_os = "linux", not(target_env = "ohos"))))]
+    #[cfg(any(
+        target_os = "windows",
+        target_os = "macos",
+        all(target_os = "linux", not(target_env = "ohos"))
+    ))]
     if let Err(trash_error) = trash::delete_all(&final_paths_to_delete) {
         log::warn!(
             "Failed to move files to trash: {}. Falling back to permanent delete.",
@@ -3520,7 +3532,11 @@ pub fn delete_files_from_disk(paths: Vec<String>, app_handle: AppHandle) -> Resu
         }
     }
 
-    #[cfg(not(any(target_os = "windows", target_os = "macos", all(target_os = "linux", not(target_env = "ohos")))))]
+    #[cfg(not(any(
+        target_os = "windows",
+        target_os = "macos",
+        all(target_os = "linux", not(target_env = "ohos"))
+    )))]
     for path in final_paths_to_delete {
         if path.is_file() {
             if let Err(e) = fs::remove_file(&path) {
@@ -3619,7 +3635,11 @@ pub fn delete_files_with_associated(
 
     let final_paths_to_delete: Vec<PathBuf> = files_to_trash.into_iter().collect();
 
-    #[cfg(any(target_os = "windows", target_os = "macos", all(target_os = "linux", not(target_env = "ohos"))))]
+    #[cfg(any(
+        target_os = "windows",
+        target_os = "macos",
+        all(target_os = "linux", not(target_env = "ohos"))
+    ))]
     if let Err(trash_error) = trash::delete_all(&final_paths_to_delete) {
         log::warn!(
             "Failed to move files to trash: {}. Falling back to permanent delete.",
@@ -3634,7 +3654,11 @@ pub fn delete_files_with_associated(
         }
     }
 
-    #[cfg(not(any(target_os = "windows", target_os = "macos", all(target_os = "linux", not(target_env = "ohos")))))]
+    #[cfg(not(any(
+        target_os = "windows",
+        target_os = "macos",
+        all(target_os = "linux", not(target_env = "ohos"))
+    )))]
     for path in final_paths_to_delete {
         if path.is_file() {
             if let Err(e) = fs::remove_file(&path) {
@@ -3857,7 +3881,11 @@ pub async fn import_files(
                 }
 
                 if settings.delete_after_import {
-                    #[cfg(any(target_os = "windows", target_os = "macos", all(target_os = "linux", not(target_env = "ohos"))))]
+                    #[cfg(any(
+                        target_os = "windows",
+                        target_os = "macos",
+                        all(target_os = "linux", not(target_env = "ohos"))
+                    ))]
                     {
                         if let Err(trash_error) = trash::delete(&source_path) {
                             log::warn!(

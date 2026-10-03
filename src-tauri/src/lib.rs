@@ -1,7 +1,13 @@
-#[cfg(not(any(all(target_os = "windows", target_arch = "aarch64"), target_env = "ohos")))]
+#[cfg(not(any(
+    all(target_os = "windows", target_arch = "aarch64"),
+    target_env = "ohos"
+)))]
 use mimalloc::MiMalloc;
 
-#[cfg(not(any(all(target_os = "windows", target_arch = "aarch64"), target_env = "ohos")))]
+#[cfg(not(any(
+    all(target_os = "windows", target_arch = "aarch64"),
+    target_env = "ohos"
+)))]
 #[global_allocator]
 static GLOBAL: MiMalloc = MiMalloc;
 
