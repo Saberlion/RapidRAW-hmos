@@ -1,7 +1,7 @@
-#[cfg(not(all(target_os = "windows", target_arch = "aarch64")))]
+#[cfg(not(any(all(target_os = "windows", target_arch = "aarch64"), target_env = "ohos")))]
 use mimalloc::MiMalloc;
 
-#[cfg(not(all(target_os = "windows", target_arch = "aarch64")))]
+#[cfg(not(any(all(target_os = "windows", target_arch = "aarch64"), target_env = "ohos")))]
 #[global_allocator]
 static GLOBAL: MiMalloc = MiMalloc;
 
@@ -35,6 +35,7 @@ mod lut_processing;
 mod mask_generation;
 mod multi_exposure;
 mod negative_conversion;
+mod ohos_integration;
 mod panorama_stitching;
 mod panorama_utils;
 mod preset_converter;
@@ -1589,7 +1590,7 @@ fn saved_window_state_is_usable(state: &WindowState, monitors: &[MonitorBounds])
     })
 }
 
-#[cfg(not(target_os = "android"))]
+#[cfg(not(any(target_os = "android", target_env = "ohos")))]
 fn available_monitor_bounds(window: &tauri::WebviewWindow) -> Vec<MonitorBounds> {
     window
         .available_monitors()
@@ -1625,10 +1626,10 @@ fn frontend_ready(
     let is_first_run = !state
         .window_setup_complete
         .swap(true, std::sync::atomic::Ordering::Relaxed);
-    #[cfg(target_os = "android")]
+    #[cfg(any(target_os = "android", target_env = "ohos"))]
     let _ = (is_first_run, &window, &app_handle);
 
-    #[cfg(not(target_os = "android"))]
+    #[cfg(not(any(target_os = "android", target_env = "ohos")))]
     {
         #[cfg(any(windows, target_os = "linux"))]
         let mut should_maximize = false;
@@ -1730,14 +1731,14 @@ pub fn run() {
 
     let mut builder = tauri::Builder::default();
 
-    #[cfg(target_os = "linux")]
+    #[cfg(all(target_os = "linux", not(target_env = "ohos")))]
     {
         if !is_headless {
             builder = builder.plugin(tauri_plugin_wayland_nvidia_quirk::init());
         }
     }
 
-    #[cfg(not(any(target_os = "android", target_os = "ios")))]
+    #[cfg(not(any(target_os = "android", target_os = "ios", target_env = "ohos")))]
     {
         if !is_headless {
             builder = builder.plugin(tauri_plugin_single_instance::init(|app, argv, _cwd| {
@@ -1864,7 +1865,7 @@ pub fn run() {
                         std::env::set_var("WGPU_BACKEND", backend);
                     }
 
-                #[cfg(target_os = "linux")]
+                #[cfg(all(target_os = "linux", not(target_env = "ohos")))]
                 {
                     if settings.linux_gpu_optimization.unwrap_or(false) {
                         std::env::set_var("WEBKIT_DISABLE_DMABUF_RENDERER", "1");
@@ -1875,24 +1876,36 @@ pub fn run() {
 
                 #[cfg(not(target_os = "android"))]
                 {
-                    let resource_path = app_handle
-                        .path()
-                        .resolve("resources", tauri::path::BaseDirectory::Resource)
-                        .expect("failed to resolve resource directory");
+                    #[cfg(target_env = "ohos")]
+                    {
+                        // On OpenHarmony, native libraries live inside the HAP's
+                        // library directory; a bare soname lets dlopen resolve
+                        // `libonnxruntime.so` from there (see build.rs).
+                        std::env::set_var("ORT_DYLIB_PATH", "libonnxruntime.so");
+                        println!("Set ORT_DYLIB_PATH to: libonnxruntime.so");
+                    }
 
-                    let ort_library_name = {
-                        #[cfg(target_os = "windows")]
-                        { "onnxruntime.dll" }
-                        #[cfg(target_os = "linux")]
-                        { "libonnxruntime.so" }
-                        #[cfg(target_os = "macos")]
-                        { "libonnxruntime.dylib" }
-                        #[cfg(not(any(windows, target_os = "linux", target_os = "macos")))]
-                        { "libonnxruntime.so" }
-                    };
-                    let ort_library_path = resource_path.join(ort_library_name);
-                    std::env::set_var("ORT_DYLIB_PATH", &ort_library_path);
-                    println!("Set ORT_DYLIB_PATH to: {}", ort_library_path.display());
+                    #[cfg(not(target_env = "ohos"))]
+                    {
+                        let resource_path = app_handle
+                            .path()
+                            .resolve("resources", tauri::path::BaseDirectory::Resource)
+                            .expect("failed to resolve resource directory");
+
+                        let ort_library_name = {
+                            #[cfg(target_os = "windows")]
+                            { "onnxruntime.dll" }
+                            #[cfg(all(target_os = "linux", not(target_env = "ohos")))]
+                            { "libonnxruntime.so" }
+                            #[cfg(target_os = "macos")]
+                            { "libonnxruntime.dylib" }
+                            #[cfg(not(any(windows, target_os = "linux", target_os = "macos")))]
+                            { "libonnxruntime.so" }
+                        };
+                        let ort_library_path = resource_path.join(ort_library_name);
+                        std::env::set_var("ORT_DYLIB_PATH", &ort_library_path);
+                        println!("Set ORT_DYLIB_PATH to: {}", ort_library_path.display());
+                    }
                 }
             }
 
@@ -1903,7 +1916,7 @@ pub fn run() {
                     log::info!("Applied processing backend setting: {}", backend);
                 }
 
-            #[cfg(target_os = "linux")]
+            #[cfg(all(target_os = "linux", not(target_env = "ohos")))]
             if settings.linux_gpu_optimization.unwrap_or(false) {
                 log::info!("Applied Linux Compatibility Mode (forced software compositing).");
             } else {
@@ -1943,7 +1956,7 @@ pub fn run() {
 
             let window_cfg = app.config().app.windows.first().unwrap().clone();
             let decorations = settings.decorations.unwrap_or(window_cfg.decorations);
-            #[cfg(target_os = "android")]
+            #[cfg(any(target_os = "android", target_env = "ohos"))]
             let _ = decorations;
 
             let main_window_cfg = app
@@ -1959,7 +1972,7 @@ pub fn run() {
                 tauri::WebviewWindowBuilder::from_config(app.handle(), &main_window_cfg)
                     .unwrap();
 
-            #[cfg(not(target_os = "android"))]
+            #[cfg(not(any(target_os = "android", target_env = "ohos")))]
             {
                 window_builder = window_builder.decorations(decorations).visible(false);
             }
@@ -1969,7 +1982,10 @@ pub fn run() {
             #[cfg(target_os = "android")]
             android_integration::initialize_android(&window);
 
-            #[cfg(not(target_os = "android"))]
+            #[cfg(target_env = "ohos")]
+            ohos_integration::initialize_ohos(&window);
+
+            #[cfg(not(any(target_os = "android", target_env = "ohos")))]
             {
                 let app_state = app.state::<AppState>();
                 if let Err(error) = get_or_init_gpu_context(&app_state, app.handle()) {
