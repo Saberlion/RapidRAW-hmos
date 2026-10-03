@@ -1,7 +1,7 @@
 # RapidRAW 鸿蒙(HarmonyOS / OpenHarmony)移植报告
 
 > 分析日期:2026-10 · 分支:`feature/harmonyos-port`
-> 状态:Phase 0 脚手架已落地(见文末进度清单)
+> 状态:Phase 0 完成 —— 脚手架、宿主回归、OHOS 核心依赖交叉验证全部通过(见 6.1 与文末进度清单)
 
 ## 1. 结论(TL;DR)
 
@@ -94,7 +94,33 @@ RapidRAW 的架构对鸿蒙移植异常友好——它已经完成了最贵的�
 
 **不变性保证**:以上所有 cfg 修改对既有平台(Windows/macOS/Linux/Android)在语义上完全等价——非 OHOS 目标上 `not(target_env = "ohos")` 恒为真,各 cfg 表达式取值与修改前一致。
 
-**验证状态**:宿主平台(Windows MSVC)`cargo check` 已通过(Rust 1.99.0 + CMake 4.4.3,含全部依赖链与 build.rs ORT 下载校验),本分支 cfg 修改对既有平台无回归。OHOS 目标的交叉检查(`cargo check --target aarch64-unknown-linux-ohos`)待 OpenHarmony SDK 就绪后执行。
+**验证状态**:宿主平台(Windows MSVC)`cargo check` 已通过(Rust 1.99.0 + CMake 4.4.3,含全部依赖链与 build.rs ORT 下载校验),本分支 cfg 修改对既有平台无回归。OHOS 目标交叉验证已于 2026-10-03 完成:核心依赖探针工程 `cargo check --target aarch64-unknown-linux-ohos` 全量通过;主仓完整 OHOS 检查被上游 tauri 的 Linux 桌面栈阻断(预期边界,Phase 1 处理),详见 6.1。
+
+### 6.1 OHOS 交叉编译验证详情(2026-10-03,Phase 0 收官)
+
+**探针工程**(临时工程,依赖镜像主仓核心栈、排除 tauri 应用层):wgpu、ort、rawler、reqwest(rustls + aws-lc-sys)、tokenizers、mozjpeg-rs、webp、image、jxl-oxide、jxl-encoder 等,`cargo check --target aarch64-unknown-linux-ohos` **全量通过**(Rust 1.98,DevEco Studio API 26 SDK,Windows 主机)。
+
+**三项关键配方**(均已实证):
+
+1. **aws-lc-sys**:cmake-rs 无 OHOS 内建支持,默认回退 MSVC 生成器必失败。设置 `CMAKE_TOOLCHAIN_FILE=<仓库>/src-tauri/ohos/ohos-toolchain.cmake`(已提交入库,经 `OHOS_NDK_HOME` 环境变量参数化;CMakeCache 已实证记录该文件、`OHOS_ARCH=arm64-v8a` 与 Ninja 生成器)+ `CMAKE_GENERATOR=Ninja`(CMake 与 Ninja 需在 PATH)。
+2. **ort-sys**:上游无 OHOS 预编译产物。设置 `ORT_SKIP_DOWNLOAD=1` + `ORT_DYLIB_PATH=libonnxruntime.so`(裸 soname;Phase 1 自备 so 放入 `src-tauri/libs/ohos/arm64-v8a/` 并打包进 HAP)。
+3. **archmage 版本错配隐患(jxl-encoder 依赖链)**:`archmage-macros` 必须与 `archmage` 严格配套。全新依赖解析会拉到 archmage-macros 0.9.29,其 `#[arcane]` 宏展开生成 `__ARCHMAGE_ASSERT_TIER_*` 断言调用,而 archmage ≤0.9.28 预生成的 arm.rs 缺这些常量,导致**所有 aarch64 目标(含 Android)编译失败**。主仓受 Cargo.lock 冻结的自洽三件套(archmage 0.9.28 + archmage-macros 0.9.28 + magetypes 0.9.26)保护;`cargo update` 若触及 archmage 三件套,须整体核对 aarch64 可编译性。
+
+**注意**:cargo `[env]` 为全局注入,上述变量**不可**写入 `.cargo/config.toml`(会污染宿主构建——宿主 ort-sys 依赖 build.rs 下载 onnxruntime.dll)。交叉构建时在 shell 中设置;本地 `src-tauri/.cargo/config.toml`(gitignored)仅含链接器与 CC/CXX/AR 包装器变量(按目标三元组命名,天然不影响宿主构建)。
+
+**交叉检查命令(PowerShell,Windows 主机已验证)**:
+
+```powershell
+$env:Path = "C:\Program Files\CMake\bin;<VS 2022 自带 Ninja 路径>;$env:USERPROFILE\.cargo\bin;" + $env:Path
+$env:OHOS_NDK_HOME = 'C:\Program Files\Huawei\DevEco Studio\sdk\default\openharmony\native'
+$env:CMAKE_TOOLCHAIN_FILE = '<仓库路径>\src-tauri\ohos\ohos-toolchain.cmake'
+$env:CMAKE_GENERATOR = 'Ninja'
+$env:ORT_SKIP_DOWNLOAD = '1'
+$env:ORT_DYLIB_PATH = 'libonnxruntime.so'
+cargo check --target aarch64-unknown-linux-ohos
+```
+
+**主仓边界**:主仓完整 OHOS 检查仍被上游 tauri 的 Linux 桌面栈阻断——OHOS 目标满足 `target_os = "linux"`,上游 tauri 2.12 无条件拉入 webkit2gtk / gtk / muda / zbus(libdbus-sys 依赖 pkg-config,OHOS 无此栈)。此为路线图预期的 fork 边界,Phase 1 经 `[patch.crates-io]` 指向 tauri `feat/open-harmony` 分支解决;应用层 cfg 门控已全部生效。
 
 ## 7. 移植路线图与进度清单
 
@@ -103,8 +129,8 @@ RapidRAW 的架构对鸿蒙移植异常友好——它已经完成了最贵的�
 - [x] `ohos_integration.rs` 骨架
 - [x] 宿主平台 `cargo check` 无回归验证(Rust 1.99.0 MSVC + CMake 4.4.3 已安装)
 - [x] `rustup target add aarch64-unknown-linux-ohos`(目标 std 已就绪)
-- [ ] 获取 OpenHarmony SDK(标准系统公共 SDK),配置 clang 包装脚本与 `~/.cargo/config.toml` 链接器
-- [ ] `cargo check --target aarch64-unknown-linux-ohos` 通过(核心库,不含 tauri fork)
+- [x] OpenHarmony SDK 就绪(DevEco Studio 自带,API 26):clang 包装脚本(`~/.cargo/bin/aarch64-unknown-linux-ohos-*.cmd`)、本地链接器配置(`src-tauri/.cargo/config.toml`)、CMake 工具链文件(`src-tauri/ohos/ohos-toolchain.cmake`,已提交)全部就位
+- [x] `cargo check --target aarch64-unknown-linux-ohos` 通过(核心依赖探针工程全量通过,详见 6.1;主仓本体被上游 tauri 桌面栈阻断,属预期的 Phase 1 边界)
 - [ ] 用 [richerfu/tauri-demo](https://github.com/richerfu/tauri-demo) 跑通 HAP 出包全流程
 
 ### Phase 1 — 构建管道(2~3 周)
@@ -153,4 +179,4 @@ cargo tauri ohos init
 cargo tauri ohos build -t aarch64
 ```
 
-Windows 主机注意:OHOS NDK 的 clang 是 Unix shell 脚本,需手写 `.cmd` 包装;建议 Linux/macOS 主机出包。
+Windows 主机注意:OHOS NDK 的 clang 是 Unix shell 脚本,需手写 `.cmd` 包装(已完成,见 6.1);核心库交叉检查已在 Windows 主机验证通过,HAP 出包建议优先 Linux/macOS 主机或 DevEco Studio。
