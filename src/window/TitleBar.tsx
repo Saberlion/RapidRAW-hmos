@@ -1,6 +1,7 @@
-import { useCallback, useState, useEffect } from 'react';
+import { useCallback, useState, useEffect, type PointerEvent } from 'react';
 import { platform } from '@tauri-apps/plugin-os';
 import { getCurrentWindow } from '@tauri-apps/api/window';
+import { invoke } from '@tauri-apps/api/core';
 import { Minus, Square, X } from 'lucide-react';
 
 const RestoreDownIcon = ({ size = 14, className = '' }) => (
@@ -23,6 +24,7 @@ const RestoreDownIcon = ({ size = 14, className = '' }) => (
 export default function TitleBar() {
   const [osPlatform, setOsPlatform] = useState('');
   const [isMaximized, setIsMaximized] = useState(false);
+  const [isOhos, setIsOhos] = useState(false);
 
   const appWindow = getCurrentWindow();
 
@@ -37,6 +39,11 @@ export default function TitleBar() {
       }
     };
     getPlatform();
+    // plugin-os reports "linux" on OpenHarmony; OHOS window controls need the
+    // Rust→ArkTS bridge instead (tao-ohos stubs the tauri window ops).
+    invoke<boolean>('is_ohos_build')
+      .then(setIsOhos)
+      .catch(() => setIsOhos(false));
   }, []);
 
   useEffect(() => {
@@ -49,24 +56,58 @@ export default function TitleBar() {
       }
     };
 
+    // OHOS: isMaximized() is a tao stub that always returns false and would
+    // stomp the local toggle from handleMaximize; the local state is the
+    // source of truth there.
+    if (isOhos) {
+      return undefined;
+    }
+
     updateMaximizedState();
 
-    let unlisten: () => void;
+    let disposed = false;
+    let unlisten: (() => void) | undefined;
     appWindow
       .onResized(() => {
         updateMaximizedState();
       })
-      .then((u) => (unlisten = u));
+      .then((u) => {
+        if (disposed) {
+          u();
+        } else {
+          unlisten = u;
+        }
+      });
 
     return () => {
-      if (unlisten) unlisten();
+      disposed = true;
+      unlisten?.();
     };
-  }, [appWindow]);
+  }, [appWindow, isOhos]);
 
-  const handleMinimize = () => appWindow.minimize();
+  const handleMinimize = () => {
+    if (isOhos) {
+      invoke('ohos_window_control', { operation: 'minimize' }).catch((error) =>
+        console.error('Failed to minimize:', error)
+      );
+      return;
+    }
+    appWindow.minimize();
+  };
   const handleClose = () => appWindow.close();
 
   const handleMaximize = useCallback(async () => {
+    if (isOhos) {
+      try {
+        await invoke('ohos_window_control', {
+          operation: isMaximized ? 'restore' : 'maximize',
+        });
+        setIsMaximized((prev) => !prev);
+      } catch (error) {
+        console.error('Failed to toggle maximize:', error);
+      }
+      return;
+    }
     try {
       if (osPlatform === 'macos') {
         const isFullscreen = await appWindow.isFullscreen();
@@ -77,7 +118,7 @@ export default function TitleBar() {
     } catch (error) {
       console.error('Failed to toggle maximize:', error);
     }
-  }, [osPlatform, appWindow]);
+  }, [isOhos, isMaximized, osPlatform, appWindow]);
 
   const isMac = osPlatform === 'macos';
   const isLinux = osPlatform === 'linux';
@@ -87,6 +128,19 @@ export default function TitleBar() {
     return null;
   }
   const outerDragProps = isLinux ? {} : { 'data-tauri-drag-region': 'true' };
+  // OHOS: data-tauri-drag-region dead-ends in tao's drag_window stub; start
+  // the window drag through the ArkTS bridge instead (startMoving()).
+  const ohosDragProps = isOhos
+    ? {
+        onPointerDown: (event: PointerEvent) => {
+          if (event.button === 0 || event.pointerType === 'touch') {
+            invoke('ohos_window_control', { operation: 'start_drag' }).catch((error) =>
+              console.error('Failed to start window drag:', error)
+            );
+          }
+        },
+      }
+    : {};
 
   return (
     <div className="relative pt-2 px-2 w-full z-50 bg-transparent" {...outerDragProps}>
@@ -114,13 +168,18 @@ export default function TitleBar() {
               />
             </div>
           )}
-          <div data-tauri-drag-region className={`flex items-center h-full ${isMac ? '' : 'px-4'}`}>
+          <div data-tauri-drag-region {...ohosDragProps} className={`flex items-center h-full ${isMac ? '' : 'px-4'}`}>
             <p className="text-sm font-semibold text-text-secondary pointer-events-none">RapidRAW</p>
           </div>
         </div>
-        <div data-tauri-drag-region className="flex-1 h-full" />
+        <div data-tauri-drag-region {...ohosDragProps} className="flex-1 h-full" />
         <div className="flex items-center h-full z-10">
-          {isLinux && (
+          {/* OHOS: the system decor's invisible input rects misroute titlebar
+              taps to the wrong window op, so the system decor bar provides
+              the buttons natively and we don't render our own (the handlers
+              above stay wired for a future re-enable). See
+              docs/HARMONYOS_PORTING.md §6.4. */}
+          {isLinux && !isOhos && (
             <div className="flex items-center gap-2 pr-2 h-full">
               <button
                 aria-label="Minimize window"
