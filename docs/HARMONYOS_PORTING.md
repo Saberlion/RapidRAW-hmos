@@ -94,14 +94,15 @@ RapidRAW 的架构对鸿蒙移植异常友好——它已经完成了最贵的�
 
 **不变性保证**:以上所有 cfg 修改对既有平台(Windows/macOS/Linux/Android)在语义上完全等价——非 OHOS 目标上 `not(target_env = "ohos")` 恒为真,各 cfg 表达式取值与修改前一致。
 
-**已知限制**:开发机暂无 Rust 工具链,本分支变更未经 `cargo check` 编译验证,待 Phase 1 环境就绪后第一时间补验。
+**验证状态**:宿主平台(Windows MSVC)`cargo check` 已通过(Rust 1.99.0 + CMake 4.4.3,含全部依赖链与 build.rs ORT 下载校验),本分支 cfg 修改对既有平台无回归。OHOS 目标的交叉检查(`cargo check --target aarch64-unknown-linux-ohos`)待 OpenHarmony SDK 就绪后执行。
 
 ## 7. 移植路线图与进度清单
 
 ### Phase 0 — 技术验证(1~2 周)
 - [x] 全量平台门控审计与修正(本分支)
 - [x] `ohos_integration.rs` 骨架
-- [ ] 安装 Rust 工具链 + `rustup target add aarch64-unknown-linux-ohos`
+- [x] 宿主平台 `cargo check` 无回归验证(Rust 1.99.0 MSVC + CMake 4.4.3 已安装)
+- [x] `rustup target add aarch64-unknown-linux-ohos`(目标 std 已就绪)
 - [ ] 获取 OpenHarmony SDK(标准系统公共 SDK),配置 clang 包装脚本与 `~/.cargo/config.toml` 链接器
 - [ ] `cargo check --target aarch64-unknown-linux-ohos` 通过(核心库,不含 tauri fork)
 - [ ] 用 [richerfu/tauri-demo](https://github.com/richerfu/tauri-demo) 跑通 HAP 出包全流程
