@@ -2193,6 +2193,8 @@ pub fn run() {
             cancel_thumbnail_generation,
             update_wgpu_transform,
             android_integration::resolve_android_content_uri_name,
+            ohos_integration::ohos_window_control,
+            ohos_integration::is_ohos_build,
             cache_utils::clear_session_caches,
             cache_utils::clear_image_caches,
             app_settings::load_settings,
