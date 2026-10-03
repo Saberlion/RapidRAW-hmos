@@ -1,0 +1,10 @@
+{
+  "$schema": "../gen/schemas/desktop-schema.json",
+  "identifier": "dialog",
+  "description": "File dialogs via tauri-plugin-dialog (no OpenHarmony backend; OHOS uses native file pickers, porting doc Phase 2)",
+  "windows": ["main"],
+  "platforms": ["windows", "linux", "macOS", "android", "iOS"],
+  "permissions": [
+    "dialog:default"
+  ]
+}

@@ -14,8 +14,7 @@ default = []
 tethering = ["dep:gphoto2"]
 
 [dependencies]
-tauri = { version = "2.12", features = [ "macos-private-api", "rustls-tls", "protocol-asset" ] }
-tauri-plugin-dialog = "2.7.2"
+tauri = { version = "2.11", features = [ "macos-private-api", "rustls-tls", "protocol-asset" ] }
 serde = { version = "1.0", features = ["derive"] }
 serde_json = "1.0"
 image = "0.25.10"
@@ -118,12 +117,20 @@ tauri-plugin-wayland-nvidia-quirk = "0.1.0"
 # OpenHarmony (OHOS): reqwest is required for AI model / LUT downloads,
 # mirroring the Android dependency set. TLS currently uses bundled webpki
 # roots (rustls-platform-verifier has no OHOS backend yet).
+# napi-ohos / napi-derive-ohos: the `tauri::mobile_entry_point` expansion
+# (openharmony-ability `#[ability]` derive) emits bare `::napi_ohos` /
+# `::napi_derive_ohos` paths into the app crate, so they must be declared here.
 [target.'cfg(target_env = "ohos")'.dependencies]
 reqwest = { version = "0.13", default-features = false, features = ["json", "multipart", "rustls"] }
+napi-ohos = { version = "1.2", features = ["napi8"] }
+napi-derive-ohos = "1.2"
 
 # mimalloc is not yet validated on OHOS; it falls back to the system allocator there.
+# tauri-plugin-dialog: rfd's Linux backend links GTK and has no OHOS backend;
+# excluded on OpenHarmony (frontend uses OHOS FileKit, see porting doc Phase 2).
 [target.'cfg(not(target_env = "ohos"))'.dependencies]
 mimalloc = "0.1.52"
+tauri-plugin-dialog = "2.7.2"
 
 [build-dependencies]
 tauri-build = { version = "2.6", features = [] }
@@ -146,3 +153,40 @@ strip = true
 
 [lints.rust]
 unexpected_cfgs = { level = "warn", check-cfg = ['cfg(feature, values("cargo-clippy"))'] }
+
+# ---------------------------------------------------------------------------
+# OpenHarmony support: patched to the tauri-apps `feat/open-harmony` forks.
+#
+# Upstream tauri 2.12 has no OHOS support: its Linux/webview stack assumes
+# GTK/WebKit2GTK, and OHOS (`aarch64-unknown-linux-ohos`) reports
+# target_os = "linux" + target_env = "ohos". The forks gate the desktop stack
+# behind `not(target_env = "ohos")` and add ArkWeb/wry backends instead.
+#
+# - tauri / tauri-build / tauri-runtime / tauri-runtime-wry / tauri-utils /
+#   tauri-macros  -> github.com/tauri-apps/tauri  (branch feat/open-harmony)
+# - wry (0.56)    -> github.com/tauri-apps/wry    (branch feat/open-harmony)
+# - tao (0.36)    -> github.com/tauri-apps/tao    (branch feat/open-harmony)
+#
+# openharmony-ability is vendored at rev 295a276a (crates/ability + crates/derive,
+# version 0.3.0): current upstream master (1.0.0-beta.x) removed the `webview`
+# feature that the wry fork requires. Cargo cannot patch a git source with
+# itself, so the pin is a committed path checkout instead (same rev as
+# richerfu/tauri-demo uses). Cargo's `[patch]` cannot pin same-source-different-rev.
+#
+# When OHOS support ships in an upstream tauri release, delete both patch
+# sections, restore `tauri = "2.12"`+ and refresh Cargo.lock.
+# ---------------------------------------------------------------------------
+
+[patch.crates-io]
+tauri = { git = "https://github.com/tauri-apps/tauri", branch = "feat/open-harmony" }
+tauri-build = { git = "https://github.com/tauri-apps/tauri", branch = "feat/open-harmony" }
+tauri-runtime = { git = "https://github.com/tauri-apps/tauri", branch = "feat/open-harmony" }
+tauri-runtime-wry = { git = "https://github.com/tauri-apps/tauri", branch = "feat/open-harmony" }
+tauri-utils = { git = "https://github.com/tauri-apps/tauri", branch = "feat/open-harmony" }
+tauri-macros = { git = "https://github.com/tauri-apps/tauri", branch = "feat/open-harmony" }
+wry = { git = "https://github.com/tauri-apps/wry", branch = "feat/open-harmony" }
+tao = { git = "https://github.com/tauri-apps/tao", branch = "feat/open-harmony" }
+
+[patch."https://github.com/harmony-contrib/openharmony-ability.git"]
+openharmony-ability = { path = "vendor/openharmony-ability/crates/ability" }
+openharmony-ability-derive = { path = "vendor/openharmony-ability/crates/derive" }

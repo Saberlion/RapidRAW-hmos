@@ -1,7 +1,7 @@
 # RapidRAW 鸿蒙(HarmonyOS / OpenHarmony)移植报告
 
 > 分析日期:2026-10 · 分支:`feature/harmonyos-port`
-> 状态:Phase 0 完成 —— 脚手架、宿主回归、OHOS 核心依赖交叉验证全部通过(见 6.1 与文末进度清单)
+> 状态:Phase 1 构建管道进行中 —— fork 补丁接入完成,主仓 OHOS 交叉检查与宿主回归双通过(2026-10-03,见 6.2);下一步 HAP 出包
 
 ## 1. 结论(TL;DR)
 
@@ -94,7 +94,7 @@ RapidRAW 的架构对鸿蒙移植异常友好——它已经完成了最贵的�
 
 **不变性保证**:以上所有 cfg 修改对既有平台(Windows/macOS/Linux/Android)在语义上完全等价——非 OHOS 目标上 `not(target_env = "ohos")` 恒为真,各 cfg 表达式取值与修改前一致。
 
-**验证状态**:宿主平台(Windows MSVC)`cargo check` 已通过(Rust 1.99.0 + CMake 4.4.3,含全部依赖链与 build.rs ORT 下载校验),本分支 cfg 修改对既有平台无回归。OHOS 目标交叉验证已于 2026-10-03 完成:核心依赖探针工程 `cargo check --target aarch64-unknown-linux-ohos` 全量通过;主仓完整 OHOS 检查被上游 tauri 的 Linux 桌面栈阻断(预期边界,Phase 1 处理),详见 6.1。
+**验证状态**:宿主平台(Windows MSVC)`cargo check` 已通过(Rust 1.99.0 + CMake 4.4.3,含全部依赖链与 build.rs ORT 下载校验),本分支 cfg 修改对既有平台无回归。OHOS 目标交叉验证已于 2026-10-03 完成:核心依赖探针工程 `cargo check --target aarch64-unknown-linux-ohos` 全量通过;主仓完整 OHOS 检查被上游 tauri 的 Linux 桌面栈阻断(预期边界,Phase 1 处理),详见 6.1;该阻断已于 Phase 1 解除,见 6.2。
 
 ### 6.1 OHOS 交叉编译验证详情(2026-10-03,Phase 0 收官)
 
@@ -120,7 +120,34 @@ $env:ORT_DYLIB_PATH = 'libonnxruntime.so'
 cargo check --target aarch64-unknown-linux-ohos
 ```
 
-**主仓边界**:主仓完整 OHOS 检查仍被上游 tauri 的 Linux 桌面栈阻断——OHOS 目标满足 `target_os = "linux"`,上游 tauri 2.12 无条件拉入 webkit2gtk / gtk / muda / zbus(libdbus-sys 依赖 pkg-config,OHOS 无此栈)。此为路线图预期的 fork 边界,Phase 1 经 `[patch.crates-io]` 指向 tauri `feat/open-harmony` 分支解决;应用层 cfg 门控已全部生效。
+**主仓边界**:主仓完整 OHOS 检查仍被上游 tauri 的 Linux 桌面栈阻断——OHOS 目标满足 `target_os = "linux"`,上游 tauri 2.12 无条件拉入 webkit2gtk / gtk / muda / zbus(libdbus-sys 依赖 pkg-config,OHOS 无此栈)。此为路线图预期的 fork 边界,Phase 1 经 `[patch.crates-io]` 指向 tauri `feat/open-harmony` 分支解决;应用层 cfg 门控已全部生效(Phase 1 已落地,见 6.2)。
+
+### 6.2 Phase 1:fork 补丁接入与主仓双目标验证(2026-10-03)
+
+**成果**:主仓 `cargo check --target aarch64-unknown-linux-ohos` **全量通过**(约 800 个依赖 + 应用本体),宿主(Windows MSVC)`cargo check` 无回归。Phase 0 遗留的上游 tauri 桌面栈阻断正式解除。
+
+**变更清单**:
+
+| 文件 | 变更 |
+|---|---|
+| `src-tauri/Cargo.toml` | `tauri = "2.11"`(fork 基线;上游 2.12 无 OHOS 支持);`[patch.crates-io]` 8 条 → tauri-apps/tauri `feat/open-harmony`(e3bf6eb1:tauri 2.11.5、tauri-build、tauri-runtime、tauri-runtime-wry、tauri-utils、tauri-macros)、wry(6aaf4b84,v0.56.0)、tao(813572fb,v0.36.0);`[patch."https://github.com/harmony-contrib/openharmony-ability.git"]` 指向本地 vendor;tauri-plugin-dialog 移入 `not(target_env = "ohos")` 段;ohos 段新增 napi-ohos 1.2(`napi8`)+ napi-derive-ohos 1.2 |
+| `src-tauri/vendor/openharmony-ability/` | **入库 vendored 固定版**(rev 295a276a,v0.3.0,`webview` feature 完好)。原因有二:① 上游 master 已迭代到 1.0.0-beta.2 并把 webview 拆入独立插件 crate,wry fork 仍依赖 0.3 的 `features = ["webview"]`;② cargo 不允许 patch 指回同一 git 源("patches must point to different sources"),无法仅以 rev 区分 |
+| `src-tauri/src/lib.rs` | dialog 插件注册移入 `#[cfg(not(target_env = "ohos"))]` 块 |
+| `src-tauri/capabilities/default.json` | 移除 `dialog:default` |
+| `src-tauri/capabilities/dialog.json` | 新建,平台作用域 `["windows", "linux", "macOS", "android", "iOS"]`(fork Target 的 serde 命名为 camelCase,`openHarmony` 亦然) |
+
+**代价说明**:补丁直接提交进主清单(而非 CI 专用清单),意味着**全平台统一骑在 fork 上**——桌面 tauri 由 2.12.1 降至 fork 2.11.5,并连带 muda 0.19.3、tray-icon 0.24.2、webview2-com 0.38.2、window-vibrancy 0.6.0、dirs 6、keyboard-types 0.7.0、brotli 8 等降级(宿主 cargo check 已验证无碍)。fork 合入上游后摘除 `[patch]` 段即可回到官方版本。
+
+**两个非显然的坑**:
+
+1. **rfd→gtk 泄漏链**:tauri-plugin-dialog → rfd 0.16 → gtk-sys(rfd 仅以 `target_os = "linux"` 门控 GTK,不排除 ohos)。OHOS 必须三处一致关闭 dialog:依赖段、lib.rs、capability。
+2. **napi 裸路径**:`#[cfg_attr(mobile, tauri::mobile_entry_point)]` 在 OHOS 经 openharmony-ability `#[ability]` 派生展开,向应用 crate 发射 `::napi_ohos` / `#[napi_derive_ohos::napi]` 裸路径;`tauri::ohos` 不再导出 napi 系 crate,应用须自行声明上述两个依赖。
+
+**Cargo.lock 风险登记(6.1 archmage 条目之外新增)**:
+
+- **gpu-allocator→windows 边**:wgpu-hal 29.0.4 严格要求 `windows = "0.62"`(→0.62.2);gpu-allocator 0.28.0 要求 `">=0.53, <=0.62"`,cargo 把 `<=0.62` 补零为 `<=0.62.0`,**0.62.2 落在范围外**——任何重解析都只会选到 0.61.3,导致宿主 wgpu-hal D3D12 类型失配(E0308/E0277)。本仓锁已手工锚定 `windows 0.62.2`(历史可编译态,cargo 校验容忍)。**禁止无差别 `cargo update`**;定向更新用包名列表(如 `cargo update tauri tauri-build tauri-runtime tauri-runtime-wry tauri-utils tauri-macros wry tao`),更新后核对:① archmage 三件套(6.1)② gpu-allocator 的 windows 边仍为 0.62.2。
+
+**验证记录**(Rust 1.98.1,Windows 主机):OHOS 全量检查 EXIT=0(增量复验 12~21s,仅 9 条 OHOS 门控死代码警告);宿主检查 EXIT=0(23.26s);OHOS 依赖树零 gtk/rfd 泄漏;archmage 三件套 0.9.28/0.9.28/0.9.26 未漂移。工具:cargo-tauri v2.11.4(fork 版,含 `ohos` 子命令)、ohrs v1.5.0;`rust-toolchain.toml` 位于 `src-tauri/`(非仓库根)。
 
 ## 7. 移植路线图与进度清单
 
@@ -134,10 +161,12 @@ cargo check --target aarch64-unknown-linux-ohos
 - [ ] 用 [richerfu/tauri-demo](https://github.com/richerfu/tauri-demo) 跑通 HAP 出包全流程
 
 ### Phase 1 — 构建管道(2~3 周)
-- [ ] 接入 tauri-cli `feat/open-harmony` 分支:`cargo install tauri-cli --git https://github.com/tauri-apps/tauri --branch feat/open-harmony`
-- [ ] `cargo tauri ohos init` 生成 `gen/ohos` 工程;`[patch.crates-io]` 指向 wry/tao/tauri 的 ohos 分支(注意:patch 是全局的,建议独立构建工作区或 CI 专用清单,勿提交进主 Cargo.toml)
+- [x] 接入 tauri-cli `feat/open-harmony` 分支:`cargo install tauri-cli --git https://github.com/tauri-apps/tauri --branch feat/open-harmony`(v2.11.4,含 `ohos` 子命令)
+- [x] `[patch.crates-io]` 指向 wry/tao/tauri 的 ohos 分支(实际方案:补丁直接提交进主 `src-tauri/Cargo.toml` + vendored openharmony-ability 入库——本仓即 OHOS 构建工作区,独立清单反而割裂;风险由 Cargo.lock 冻结与 6.2 风险登记控制)
+- [x] 自备 OHOS 版 `libonnxruntime.so` 放入 `src-tauri/libs/ohos/arm64-v8a/`(v1.26.0;目录 gitignored,各构建机自备)
+- [x] 主仓 `cargo check --target aarch64-unknown-linux-ohos` 全量通过 + 宿主无回归(见 6.2)
+- [ ] `cargo tauri ohos init` 生成 `gen/ohos` 工程
 - [ ] lensfun_db / resources 打包进 HAP
-- [ ] 自备 OHOS 版 `libonnxruntime.so` 放入 `src-tauri/libs/ohos/arm64-v8a/`(来源:sherpa-onnx OHOS 构建或 [csukuangfj/onnxruntime-libs](https://github.com/csukuangfj/onnxruntime-libs))
 - [ ] DevEco Studio / hvigor 出包,真机(或模拟器)点亮空白窗口
 
 ### Phase 2 — 平台集成(3~4 周)
@@ -180,3 +209,15 @@ cargo tauri ohos build -t aarch64
 ```
 
 Windows 主机注意:OHOS NDK 的 clang 是 Unix shell 脚本,需手写 `.cmd` 包装(已完成,见 6.1);核心库交叉检查已在 Windows 主机验证通过,HAP 出包建议优先 Linux/macOS 主机或 DevEco Studio。
+
+**Windows 主机 HAP 出包环境**(Phase 1 后续;DevEco Studio 自带 ohpm/hvigor/node):
+
+```powershell
+$dev = 'C:\Program Files\Huawei\DevEco Studio'
+$env:OHOS_HOME = "$dev\sdk\default\openharmony"
+$env:Path = "$dev\tools\ohpm;$dev\tools\hvigor\bin;$dev\tools\node;$env:USERPROFILE\.cargo\bin;" + $env:Path
+# 在 src-tauri/ 下执行:
+cargo tauri ohos init            # 生成 gen/ohos 工程
+cargo tauri ohos build -t aarch64
+# 回退:cd gen\ohos; ohpm install; hvigorw assembleHap --no-daemon(产物 entry-default-unsigned.hap)
+```

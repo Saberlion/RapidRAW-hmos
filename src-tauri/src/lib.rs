@@ -1761,10 +1761,17 @@ pub fn run() {
         }
     }
 
+    // tauri-plugin-dialog has no OpenHarmony support (its rfd backend links GTK
+    // on Linux targets); the frontend uses OHOS-native file pickers instead
+    // (porting doc, Phase 2).
+    #[cfg(not(target_env = "ohos"))]
+    {
+        builder = builder.plugin(tauri_plugin_dialog::init());
+    }
+
     builder
         .plugin(tauri_plugin_os::init())
         .plugin(tauri_plugin_fs::init())
-        .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_process::init())
         .plugin(tauri_plugin_shell::init())
         .plugin(PinchZoomDisablePlugin)
