@@ -50,7 +50,6 @@ hex = "0.4"
 rand = "0.10"
 tauri-plugin-shell = "2.3.5"
 tempfile = "3.27.0"
-mimalloc = "0.1.52"
 image_hasher = "3.1.1"
 regex = "1.13.1"
 memmap2 = "0.9.11"
@@ -69,12 +68,16 @@ rgb = "0.8.53"
 imgref = "1.12.2"
 sysinfo = "0.39.6"
 
-[target.'cfg(any(target_os = "windows", target_os = "macos", target_os = "linux"))'.dependencies]
+# Desktop platforms only. OpenHarmony (`*-unknown-linux-ohos`) reports
+# `target_os = "linux"` + `target_env = "ohos"` and must be excluded here:
+# trash (freedesktop) and tauri-plugin-single-instance are desktop-only.
+[target.'cfg(any(target_os = "windows", target_os = "macos", all(target_os = "linux", not(target_env = "ohos"))))'.dependencies]
 trash = "5.2.6"
 tauri-plugin-single-instance = "2.4.3"
 reqwest = { version = "0.13", default-features = false, features = ["json", "multipart", "rustls"] }
 
-[target.'cfg(any(target_os = "macos", target_os = "linux"))'.dependencies]
+# gphoto2 (tethering) is POSIX desktop-only; excluded on OpenHarmony.
+[target.'cfg(any(target_os = "macos", all(target_os = "linux", not(target_env = "ohos"))))'.dependencies]
 gphoto2 = { git = "https://github.com/CyberTimon/libgphoto2-rs", optional = true }
 
 [target.'cfg(target_os = "macos")'.dependencies]
@@ -105,10 +108,22 @@ rustls-platform-verifier = "0.7"
 reqwest = { version = "0.13", default-features = false, features = ["json", "multipart", "rustls"] }
 include_dir = "0.7.4"
 
-[target.'cfg(target_os = "linux")'.dependencies]
+# GTK/WebKit2GTK are desktop Linux only; OpenHarmony uses ArkWeb via the
+# tauri `feat/open-harmony` fork instead.
+[target.'cfg(all(target_os = "linux", not(target_env = "ohos")))'.dependencies]
 gtk = "0.18.2"
 webkit2gtk = "=2.0.2"
 tauri-plugin-wayland-nvidia-quirk = "0.1.0"
+
+# OpenHarmony (OHOS): reqwest is required for AI model / LUT downloads,
+# mirroring the Android dependency set. TLS currently uses bundled webpki
+# roots (rustls-platform-verifier has no OHOS backend yet).
+[target.'cfg(target_env = "ohos")'.dependencies]
+reqwest = { version = "0.13", default-features = false, features = ["json", "multipart", "rustls"] }
+
+# mimalloc is not yet validated on OHOS; it falls back to the system allocator there.
+[target.'cfg(not(target_env = "ohos"))'.dependencies]
+mimalloc = "0.1.52"
 
 [build-dependencies]
 tauri-build = { version = "2.6", features = [] }
