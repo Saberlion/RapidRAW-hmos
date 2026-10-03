@@ -1,6 +1,10 @@
-# OpenHarmony (aarch64-linux-ohos) CMake cross toolchain for native C/C++
-# dependencies (aws-lc-sys & friends) when cross-compiling RapidRAW with
-# cargo's aarch64-unknown-linux-ohos target.
+# OpenHarmony CMake cross toolchain for native C/C++ dependencies
+# (aws-lc-sys & friends) when cross-compiling RapidRAW with cargo's
+# *-unknown-linux-ohos targets.
+#
+# Architecture is selected via the OHOS_ARCH env var: aarch64 (default,
+# physical devices) or x86_64 (DevEco emulator). Unset = aarch64, so every
+# previously documented recipe keeps working unchanged.
 #
 # Set OHOS_NDK_HOME to either the OpenHarmony native SDK directory (the one
 # that contains llvm/ and sysroot/ directly) or the SDK root that contains
@@ -21,8 +25,22 @@ if(NOT EXISTS "${OHOS_TOOLCHAIN}/llvm")
   set(OHOS_TOOLCHAIN "${OHOS_TOOLCHAIN}/native")
 endif()
 
+set(OHOS_ARCH "$ENV{OHOS_ARCH}")
+if(NOT OHOS_ARCH)
+  set(OHOS_ARCH aarch64)
+endif()
+if(OHOS_ARCH STREQUAL "aarch64")
+  set(OHOS_LLVM_TRIPLE "aarch64-linux-ohos")
+elseif(OHOS_ARCH STREQUAL "x86_64")
+  set(OHOS_LLVM_TRIPLE "x86_64-linux-ohos")
+elseif(OHOS_ARCH STREQUAL "armv7")
+  set(OHOS_LLVM_TRIPLE "arm-linux-ohos")
+else()
+  message(FATAL_ERROR "ohos-toolchain.cmake: unsupported OHOS_ARCH '${OHOS_ARCH}' (expected aarch64|x86_64|armv7)")
+endif()
+
 set(CMAKE_SYSTEM_NAME Linux)
-set(CMAKE_SYSTEM_PROCESSOR aarch64)
+set(CMAKE_SYSTEM_PROCESSOR ${OHOS_ARCH})
 
 if(CMAKE_HOST_WIN32)
   set(_exe ".exe")
@@ -37,13 +55,13 @@ set(CMAKE_AR           "${OHOS_TOOLCHAIN}/llvm/bin/llvm-ar${_exe}")
 set(CMAKE_RANLIB       "${OHOS_TOOLCHAIN}/llvm/bin/llvm-ranlib${_exe}")
 
 # Let CMake drive the OHOS target explicitly for its internal probes.
-set(CMAKE_C_COMPILER_TARGET   aarch64-linux-ohos)
-set(CMAKE_CXX_COMPILER_TARGET aarch64-linux-ohos)
-set(CMAKE_ASM_COMPILER_TARGET aarch64-linux-ohos)
+set(CMAKE_C_COMPILER_TARGET   ${OHOS_LLVM_TRIPLE})
+set(CMAKE_CXX_COMPILER_TARGET ${OHOS_LLVM_TRIPLE})
+set(CMAKE_ASM_COMPILER_TARGET ${OHOS_LLVM_TRIPLE})
 
-set(CMAKE_C_FLAGS_INIT   "--target=aarch64-linux-ohos --sysroot=${OHOS_TOOLCHAIN}/sysroot -D__MUSL__")
-set(CMAKE_CXX_FLAGS_INIT "--target=aarch64-linux-ohos --sysroot=${OHOS_TOOLCHAIN}/sysroot -D__MUSL__")
-set(CMAKE_ASM_FLAGS_INIT "--target=aarch64-linux-ohos --sysroot=${OHOS_TOOLCHAIN}/sysroot")
+set(CMAKE_C_FLAGS_INIT   "--target=${OHOS_LLVM_TRIPLE} --sysroot=${OHOS_TOOLCHAIN}/sysroot -D__MUSL__")
+set(CMAKE_CXX_FLAGS_INIT "--target=${OHOS_LLVM_TRIPLE} --sysroot=${OHOS_TOOLCHAIN}/sysroot -D__MUSL__")
+set(CMAKE_ASM_FLAGS_INIT "--target=${OHOS_LLVM_TRIPLE} --sysroot=${OHOS_TOOLCHAIN}/sysroot")
 
 # Cross builds cannot link+run host executables: probe with static libs instead.
 set(CMAKE_TRY_COMPILE_TARGET_TYPE STATIC_LIBRARY)
