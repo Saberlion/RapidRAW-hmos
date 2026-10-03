@@ -1,13 +1,13 @@
 use crate::AppState;
 use fuzzy_matcher::FuzzyMatcher;
-#[cfg(target_os = "android")]
+#[cfg(any(target_os = "android", target_env = "ohos"))]
 use include_dir::{Dir, include_dir};
 use serde::{Deserialize, Serialize};
 use std::cmp::Ordering;
 use std::fs;
 use tauri::{Manager, State};
 use walkdir::WalkDir;
-#[cfg(target_os = "android")]
+#[cfg(any(target_os = "android", target_env = "ohos"))]
 static LENS_DB_DIR: Dir<'_> = include_dir!("$CARGO_MANIFEST_DIR/lensfun_db");
 
 #[derive(Debug, Deserialize, Clone, PartialEq)]
@@ -556,9 +556,9 @@ pub fn load_lensfun_db(app_handle: &tauri::AppHandle) -> LensDatabase {
         lenses: Vec::new(),
     };
 
-    #[cfg(target_os = "android")]
+    #[cfg(any(target_os = "android", target_env = "ohos"))]
     {
-        log::info!("Loading Lensfun DB from embedded assets (Android path)");
+        log::info!("Loading Lensfun DB from embedded assets (Android/OHOS path)");
 
         for file in LENS_DB_DIR.files() {
             let is_xml = file
@@ -583,7 +583,7 @@ pub fn load_lensfun_db(app_handle: &tauri::AppHandle) -> LensDatabase {
             }
         }
     }
-    #[cfg(not(target_os = "android"))]
+    #[cfg(not(any(target_os = "android", target_env = "ohos")))]
     {
         let resource_path = app_handle
             .path()

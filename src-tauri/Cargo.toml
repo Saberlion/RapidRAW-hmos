@@ -124,6 +124,10 @@ tauri-plugin-wayland-nvidia-quirk = "0.1.0"
 reqwest = { version = "0.13", default-features = false, features = ["json", "multipart", "rustls"] }
 napi-ohos = { version = "1.2", features = ["napi8"] }
 napi-derive-ohos = "1.2"
+# include_dir: embed lensfun_db into the .so (mirrors the Android path; see
+# lens_correction.rs). Bundle-resource resolution into the HAP is unverified
+# on OHOS, embedding is the proven mobile route and lands in the HAP via the lib.
+include_dir = "0.7.4"
 
 # mimalloc is not yet validated on OHOS; it falls back to the system allocator there.
 # tauri-plugin-dialog: rfd's Linux backend links GTK and has no OHOS backend;
