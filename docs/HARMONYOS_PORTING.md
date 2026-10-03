@@ -1,7 +1,7 @@
 # RapidRAW 鸿蒙(HarmonyOS / OpenHarmony)移植报告
 
 > 分析日期:2026-10 · 分支:`feature/harmonyos-port`
-> 状态:Phase 1 HAP 打包已打通 —— `cargo tauri ohos build -d -t aarch64` 端到端 EXIT=0,未签名 HAP(52.4MB)落盘(2026-10-03 晚,见 6.3);下一步真机点亮 + Phase 2 平台集成
+> 状态:Phase 1 收官 —— 模拟器已点亮(2026-10-03 23:25,x86_64 模拟器完整渲染欢迎页 UI,无崩溃,见 6.4);aarch64/x86_64 双架构出包端到端 EXIT=0(57.4MB / 120.5MB,见 6.3/6.4);Phase 2 窗口控制完成(2026-10-04:系统装饰栏提供三键 + Rust↔ArkTS startMoving 拖动桥,见 6.5);下一步 Phase 2 其余平台集成 + 真机验证
 
 ## 1. 结论(TL;DR)
 
@@ -171,6 +171,86 @@ cargo check --target aarch64-unknown-linux-ohos
 
 **最终打通(2026-10-03 21:45)**:`cargo tauri ohos build -d -t aarch64` 全链路 EXIT=0,33 个 hvigor 任务全过(SignHap 因无 signingConfigs 跳过,符合预期)→ `entry-default-unsigned.hap`(52.4MB;dev .so 378.7MB 经 `DoNativeStrip` 裁剪后打包)落位 `gen/ohos/entry/build/default/outputs/default/`。端到端自动化脚本:`%TEMP%\opencode\build-ohos.ps1`(自包含环境 + fail-fast 预检 + 看门狗超时杀进程树 + 10s 心跳进度 + daemon 清理,成功/失败路径均已实测)。
 
+### 6.4 Phase 1 收官:模拟器首亮(2026-10-03 23:25)
+
+**成果**:DevEco x86_64 模拟器(`hdc list targets` → `127.0.0.1:5555`,`uname -m` = x86_64)上完整点亮 RapidRAW——**非空白窗口**:欢迎页全套 UI 渲染(标题/示例摄影图/Open Folder 按钮/设置图标/版本号 1.6.4),Canvas 图片正常,ArkWeb 渲染进程存活,`tauri`/`asset` 自定义协议已注册(hilog 实证 `--ohos-scheme-handler-custom-scheme={"asset":…,"tauri":…}`),无崩溃、无报错弹窗(仅有 OHOS 首次运行"添加到桌面"常规提示)。
+
+**x86_64 交叉链路(增量改造,全部复用既有配方)**:
+
+| 项 | 变更 |
+|---|---|
+| `src-tauri/ohos/ohos-toolchain.cmake`(入库) | 架构参数化:`OHOS_ARCH` env(`aarch64` 默认 \| `x86_64` \| `armv7`);未设时与旧版行为等价,既有配方零影响 |
+| `~/.cargo/bin`(机器本地) | 新增 `x86_64-unknown-linux-ohos-{clang,clang++,ar}.cmd`(junction 无空格路径,同 6.1 模式,已冒烟验证) |
+| `src-tauri/.cargo/config.toml`(机器本地,gitignored) | 新增 `[target.x86_64-unknown-linux-ohos]` 链接器段 |
+| `%TEMP%\opencode\build-ohos.ps1` | 参数化 `-Target aarch64(默认) \| x86_64 \| armv7`,短名→完整三元组映射驱动 CC/CXX/AR env 与 `-t` 参数 |
+
+**装机/启动/取证命令(已验证)**:
+
+```powershell
+hdc install -r <hap>                    # 未签名 HAP 模拟器直接可装
+hdc shell aa start -a EntryAbility -b io.github.CyberTimon.RapidRAW
+hdc shell snapshot_display -f /data/local/tmp/x.jpeg; hdc file recv /data/local/tmp/x.jpeg <本地>
+hdc shell "hilog -x | grep -iE 'CppCrash|rapidraw.*(fatal|crash)'"   # 崩溃扫描(结果:无)
+```
+
+**已知瑕疵(Phase 2 候选项)**:
+
+1. ~~应用显示名为 "label"~~ **已解决(2026-10-03 23:49)**:根因是 entry 模块 `resources/base/element/string.json` 的 `EntryAbility_label` 为字面量 "label"(`module.json5` 的 ability label 引用它;AppScope 的 `app_name` 本就是 "RapidRAW")。修改三处:① entry 字符串资源 `EntryAbility_label`/`EntryAbility_desc`/`module_desc` → "RapidRAW";② 分层图标:`AppScope` 与 entry 两处 `layered_image` 的前景层换为 `src-tauri/icons/full_res_original.png`(960→1024 高质量缩放;源图四角透明,由同色背景层补足、无缝),背景层换为实色 `#1D1D1D`(源图标边缘采样值),`startIcon.png`(144×144)同源缩放;③ **坑:桌面快捷方式缓存首次安装时的 label**——`hdc install -r` 只刷新图标不刷新文字,需 `hdc uninstall` 全卸重装、首启时在"添加至桌面"弹窗确认后重新生成。截屏验证:桌面/Dock 图标为深色底白色光圈 R,文字 "RapidRAW",系统弹窗文案亦正确引用 "RapidRAW";
+2. ~~frameless 未生效:双标题栏~~ **已解决(2026-10-03 23:39)→ 方案反转(2026-10-04,见 6.5)**:曾用 `setWindowDecorVisible(false)` 隐藏系统装饰、自绘标题栏独占;后发现该 API 只隐藏视觉层,系统窗口按钮的**输入矩形原位残留**并继续拦截触摸(点自绘"最大化"图标实际触发系统"最小化",数据丢失风险)→ 2026-10-04 起改为**保留系统装饰栏 + OHOS 隐藏自绘三按钮 + 拖动走桥**(完整方案与验证见 6.5)。仍然有效的教训:
+   - `super.onWindowStageCreate` 必须保持 fire-and-forget——一旦加 `await`,ability 启动后 ~200ms 即被终止(Kill Reason:ClearSession,exit 0),系生命周期时序敏感;
+   - `setWindowDecorVisible` 若再用:必须延迟到 `loadContentByName` 之后(更早调用抛 1300002 "window state abnormal"),且模拟器冷启动显著慢于热启动,固定延迟会偶发失败(须重试循环);
+   - tao-ohos 的窗口操作仍是 stub(`set_minimized`/`set_maximized`/`set_fullscreen` 空操作、`drag_window` 返回 NotSupported)——tauri JS API 路径(`appWindow.minimize()` 等)在 OHOS 无效;应用层已用 Rust↔ArkTS 桥绕过(见 6.5),tao 级修复属 fork 工作;
+   - `setWindowDecorVisible` 只隐藏标题栏视觉、保留窗口边框(仍可拖边调整大小),**且系统按钮输入矩形残留**——这正是方案反转的根因;
+   - EntryAbility post-init 补丁现为**仅窗口控制回调注册**(不含任何 decor 代码),仍位于 gitignored 的 `gen/ohos/entry/src/main/ets/entryability/EntryAbility.ets`——**`cargo tauri ohos init` 重跑后需按 6.5 重打**;
+3. 双架构 .so 同包:`entry/libs` 同时存在 `arm64-v8a`(383.7MB)与 `x86_64`(389.9MB)dev .so → strip 后 HAP 120.5MB;模拟器取 x86_64 可正常运行,出真机包前应清 `entry/libs` 或配 abiFilters 瘦身。
+
+### 6.5 Phase 2:窗口控制桥与系统装饰输入矩形(2026-10-04)
+
+**成果**:窗口控制在 OHOS 上可用——系统装饰栏原生提供 最小化/最大化/关闭(所见即所点),窗口拖动走 Rust↔ArkTS 桥(`startMoving()`,实测 swipe +400px 窗口精确移动 +400px)。
+
+**1. Rust↔ArkTS 窗口控制桥(已入库)**
+
+- `src-tauri/src/ohos_integration.rs` `window_controller` 模块:`#[napi] register_ohos_window_controller` 经 napi-ohos `ThreadsafeFunction` 把分发回调注册进 ArkTS;tauri 命令 `ohos_window_control(operation)`(minimize/maximize/restore/start_drag;非 OHOS 返回 Err)与 `is_ohos_build()`(`tauri-plugin-os` 在 OHOS 返回 "linux",前端以此区分);`lib.rs` generate_handler 已注册
+- `src/window/TitleBar.tsx`:`isOhos` 探测(`is_ohos_build`);拖动区 `onPointerDown` → `start_drag`(`data-tauri-drag-region` 在 tao-ohos 是 stub 死路);min/max handler 的 OHOS 分支与桥命令**休眠保留**(见 4)
+- `gen/ohos/…/EntryAbility.ets`(机器本地):`registerRapidrawWindowController` 动态 import `librapidraw_lib.so`(**必须变量名**,字面量触发 ArkTS 模块解析失败)注册回调,分发到 `win.minimize()/maximize()/restore()/startMoving()`
+
+**2. 坑:napi-ohos TSF 的 CalleeHandled 约定**
+
+默认 `ThreadsafeFunction<…, true>`(CalleeHandled)是 error-first 约定——Rust `call(value)` 时 JS 回调收到 `(null, value)`,ArkTS 读第一个参数拿到 `null`(曾表现为 `'unknown window op null'`)。必须用 `ThreadsafeFunction<String, Unknown<'static>, String, Status, false>`,且此时 `call()` 直接收值、不收 `Result`。
+
+**3. 关键发现:系统装饰输入矩形残留(方案反转的根因)**
+
+`setWindowDecorVisible(false)` 只隐藏视觉层;系统窗口按钮的输入矩形**原位残留**并继续拦截标题栏区触摸,且系统按钮顺序与自绘不同。x86_64 模拟器实测(freeform 窗 x520-2600、系统条 y285-355、按钮中心 y≈317):系统 **最大化@x2370-2418 / 最小化@x2450-2500 / 关闭@x2525-2565**(距窗右缘约 206/125/55 物理px),自绘按钮 最小化@2413 / 最大化@2480 / 关闭@2550——交错重叠:**点自绘"最大化"命中系统"最小化"(窗口消失)、点自绘"最小化"命中系统"最大化"**,自绘"关闭"恰与系统"关闭"重合(动作碰巧正确)。触摸只有错过全部系统矩形才会精准到达 webview(内容区不受影响)。d.ts 全量核查:无 API 可移除该输入矩形(setWindowDecorVisible 仅视觉、DecorButtonStyle 仅样式、setWindowDecorHeight 下限 37vp)。
+
+**4. 最终方案:系统装饰栏 + 自绘三按钮隐藏**
+
+- EntryAbility **不再调用** `setWindowDecorVisible(false)`(连同 maximize 后的 `setTitleAndDockHoverShown` 抑制链一并移除——那是 decor 隐藏方案的伴生补丁)
+- 前端 OHOS 隐藏自绘三按钮:`{isLinux && !isOhos && (…)}`(TitleBar.tsx);自绘标题栏其余部分(标题文字、拖动区)保留
+- 拖动走 `start_drag` 桥;min/max/restore 桥命令与 handler 休眠保留——若未来 OHOS 修复"隐藏 decor 后输入矩形残留",删掉 `!isOhos` 即可恢复自绘按钮(届时须重验矩形行为)
+
+**5. 验证证据(2026-10-04,x86_64 模拟器;tap 坐标为本会话窗口位置样例)**
+
+| 项 | 操作 | 结果 |
+|---|---|---|
+| 系统最大化 | tap (2394,317) | 全屏 ✓ |
+| 系统最小化 | tap 输入矩形区(2450-2500) | 最小化到 dock,`aa start` 恢复 ✓ |
+| 系统关闭 | tap 输入矩形区(2525-2565) | 应用退出,`aa start` 重启 ✓ |
+| 系统还原 | 最大化态输入矩形 tap | 还原自由窗 ✓(可见态还原钮未逐像素定位,原生开关与最大化同钮) |
+| 拖动桥 | swipe 自绘栏 (1200,405)→(1600,405) | 窗口左缘 515→915,+400px 精确 ✓(WMS 日志实证) |
+| 内容区交互 | tap 齿轮按钮 | 设置面板打开 ✓ |
+
+**6. 模拟器测试方法论补充**
+
+- 触摸注入:`hdc shell uinput -T -m x y x y 120`(tap;带位移即 swipe);截屏 `snapshot_display -f …` + `hdc file recv`;状态判别用截屏字节数(无窗 ~200KB / 自由窗 ~296KB / 全屏 ~303KB)+ 定点像素亮度——注意全屏态应用左半是黑白照片(含大片亮区),判窗口态须用窗外缘点(如 (2900,800):自由窗=亮壁纸,全屏=暗面板)
+- uinput 触摸注入会**会话级死亡**(键盘注入仍活;判别:tap Dock 图标无反应);`hdc shell reboot` 重启设备即恢复
+- 冷启动显著慢于热启动(曾致 500ms 固定延迟的 decor 隐藏偶发失败)——"加载后调用"逻辑必须重试循环而非固定延迟
+
+**7. 已知限制/外观**
+
+- 系统条颜色跟随系统主题:浅色主题下"浅系统条+深色应用"有视觉断层(真机深色主题则协调)
+- 系统条左侧显示应用名 "RapidRAW",与自绘栏标题文字重复
+- EntryAbility post-init 补丁(重跑 `cargo tauri ohos init` 后需重打):**仅窗口控制回调注册块**,不含任何 decor 代码
+
 ## 7. 移植路线图与进度清单
 
 ### Phase 0 — 技术验证(1~2 周)
@@ -188,16 +268,18 @@ cargo check --target aarch64-unknown-linux-ohos
 - [x] 自备 OHOS 版 `libonnxruntime.so` 放入 `src-tauri/libs/ohos/arm64-v8a/`(v1.26.0;目录 gitignored,各构建机自备)
 - [x] 主仓 `cargo check --target aarch64-unknown-linux-ohos` 全量通过 + 宿主无回归(见 6.2)
 - [x] `cargo tauri ohos init` 生成 `gen/ohos` 工程(2026-10-03;产物 gitignored,未引入跟踪文件变更)
-- [ ] lensfun_db / resources 打包进 HAP
+- [x] lensfun_db / resources 打包进 HAP(2026-10-03:include_dir 嵌入 .so 随 HAP 打包,镜像 Android 路径,commit `0b11a54a`;宿主+OHOS 双目标 cargo check 通过;HAP 体积已复验(2026-10-03 22:53 全链路重建 EXIT=0):52.4→57.4MB,+5.0MB 与 lensfun_db 4.99MB 载荷吻合,`<lensdatabase` 标记已在 .so 二进制内确证。`src-tauri/resources/` 仅含 gitignored 的 ORT 二进制,无需打包;OHOS 版 `libonnxruntime.so` 走 `libs/ohos/` 各机自备)
 - [x] hvigor 出包:未签名 HAP 已产出(2026-10-03,52.4MB,见 6.3;自动化脚本 `%TEMP%\opencode\build-ohos.ps1`)
-- [ ] 真机(或模拟器)点亮空白窗口(本机 `hdc list targets` 为空,无设备;待真机接入)
+- [x] 模拟器点亮应用窗口(2026-10-03 23:25,DevEco x86_64 模拟器:完整欢迎页 UI 渲染、Canvas 图片正常、`tauri` 自定义协议注册、无崩溃,超预期完成,见 6.4;真机仍待接入)
 
 ### Phase 2 — 平台集成(3~4 周)
 - [ ] `ohos_integration.rs`:FileKit/photoAccessHelper URI 文件桥(参照 `android_integration.rs` 模式,经 `@ohos-rs/ability` NAPI)
 - [ ] 相册导出 `save_image_bytes_to_ohos_gallery`(替代 Android MediaStore 路径)
-- [ ] TLS 根证书策略确认(reqwest rustls 目前用捆绑 webpki 根;rustls-platform-verifier 无 OHOS 后端)
+- [x] TLS 根证书策略已确认(2026-10-03):维持 reqwest rustls 捆绑 webpki 根——rustls-platform-verifier 无 OHOS 后端,捆绑根对 HF/ohpm 端点足够;真机 TLS 握手验证顺延至 Phase 3/4 有设备时
 - [ ] tauri-plugin-dialog / fs 的 OHOS 实现或前端替代
 - [ ] 深色模式/安全区/返回手势等系统 UI 适配
+- [x] 窗口控制可用(2026-10-04,见 6.5):系统装饰栏原生提供 最小化/最大化/关闭;自绘标题栏保留(标题/拖动),拖动经 Rust↔ArkTS `startMoving` 桥(实测 +400px 精确);OHOS 隐藏自绘三按钮——系统装饰输入矩形残留发现,原"隐藏 decor 独占"方案(2026-10-03)已反转(历史与教训见 6.4)
+- [x] 应用图标与 label 对齐其他平台:entry 字符串资源 + layered_image 双层图标 + startIcon,均取自 `src-tauri/icons/full_res_original.png`(2026-10-03,见 6.4)。**注:以上 EntryAbility/字符串/图标三处改动均位于 gitignored 的 `gen/ohos/`,`cargo tauri ohos init` 重跑后需按 6.4 重打**
 
 ### Phase 3 — 渲染验证(1~2 周)
 - [ ] compute-only + IPC 回读路径点亮编辑器(Android 同款,零新增风险)
