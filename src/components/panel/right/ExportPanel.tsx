@@ -30,6 +30,7 @@ import { useOsPlatform } from '../../../hooks/useOsPlatform';
 import Text from '../../ui/Text';
 import { TextColors, TextVariants, TextWeights } from '../../../types/typography';
 import { useEditorStore } from '../../../store/useEditorStore';
+import { useSettingsStore } from '../../../store/useSettingsStore';
 import { useUIStore } from '../../../store/useUIStore';
 
 interface ExportPanelProps {
@@ -455,7 +456,10 @@ export default function ExportPanel({
   const [imageAspectRatio, setImageAspectRatio] = useState(16 / 9);
   const filenameInputRef = useRef<HTMLInputElement>(null);
   const osPlatform = useOsPlatform();
-  const isAndroid = osPlatform === 'android';
+  const isOhos = useSettingsStore((s) => s.isOhos);
+  // OHOS mirrors the Android export flow: no destination dialogs — the Rust
+  // side writes to the gallery through the ArkTS bridge (ohos_integration.rs).
+  const isMobile = osPlatform === 'android' || isOhos;
   const activePanels = useUIStore((state) => state.activePanels);
   const isPanelReallyActive = Object.values(activePanels).includes(Panel.Export);
 
@@ -695,7 +699,7 @@ export default function ExportPanel({
         const suggestedName = (filenameTemplate || '').replace('{original_filename}', stem);
         const outputFileName = `${suggestedName}.${selectedFormat.extensions[0]}`;
 
-        outputFolderOrFile = isAndroid
+        outputFolderOrFile = isMobile
           ? outputFileName
           : ((await save({
               title: t('export.dialog.saveEditedImageTitle'),
@@ -709,7 +713,7 @@ export default function ExportPanel({
               ],
             })) as string);
       } else {
-        outputFolderOrFile = isAndroid
+        outputFolderOrFile = isMobile
           ? ''
           : ((await open({
               title: t('export.dialog.selectFolderTitle', { count: numImages }),
@@ -718,8 +722,8 @@ export default function ExportPanel({
             })) as string);
       }
 
-      if (isAndroid || outputFolderOrFile) {
-        if (!isAndroid) {
+      if (isMobile || outputFolderOrFile) {
+        if (!isMobile) {
           if (isOriginalFolder) {
             saveLastUsedPreset(lastExportPath || '');
           } else {
