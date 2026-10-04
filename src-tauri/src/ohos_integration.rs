@@ -59,13 +59,11 @@ mod window_controller {
         Ok(())
     }
 
-    /// Forward a window operation to the ArkTS side.
-    pub fn dispatch(op: &str) -> std::result::Result<(), String> {
+    fn dispatch_raw(payload: String) -> std::result::Result<(), String> {
         let guard = CONTROLLER.lock().unwrap();
         match guard.as_ref() {
             Some(controller) => {
-                let status =
-                    controller.call(op.to_string(), ThreadsafeFunctionCallMode::NonBlocking);
+                let status = controller.call(payload, ThreadsafeFunctionCallMode::NonBlocking);
                 if matches!(status, Status::Ok) {
                     Ok(())
                 } else {
@@ -76,6 +74,18 @@ mod window_controller {
                 "OHOS window controller not registered (EntryAbility patch missing?)".to_string(),
             ),
         }
+    }
+
+    /// Forward a window operation (plain op string) to the ArkTS side.
+    pub fn dispatch(op: &str) -> std::result::Result<(), String> {
+        dispatch_raw(op.to_string())
+    }
+
+    /// Forward a JSON bridge request to the ArkTS side. The payload must be a
+    /// JSON object carrying at least `op` and `requestId`; the EntryAbility
+    /// callback routes it to the matching handler.
+    pub fn dispatch_event(payload: &str) -> std::result::Result<(), String> {
+        dispatch_raw(payload.to_string())
     }
 }
 
@@ -88,53 +98,194 @@ pub fn is_ohos_build() -> bool {
 }
 
 // ---------------------------------------------------------------------------
-// File bridge: OHOS folder picker (tauri-plugin-dialog replacement)
+// File bridge: FileKit pickers & save dialogs (tauri-plugin-dialog replacement)
 // ---------------------------------------------------------------------------
 //
 // tauri-plugin-dialog is excluded from OHOS builds (its rfd backend has no
-// OpenHarmony support — see Cargo.toml), so folder selection goes through the
-// FileKit DocumentViewPicker on the ArkTS side. `pick_ohos_folder` parks a
-// oneshot sender, forwards a `pick_folder` op through the window-controller
-// ThreadsafeFunction, and waits; the EntryAbility callback runs the picker,
-// resolves the picked URI to a path (`fileUri.FileUri(...).path`), and calls
-// the `resolve_ohos_pick_folder` NAPI export to complete the channel.
+// OpenHarmony support — see Cargo.toml), so folder/file selection and save
+// dialogs go through FileKit / photoAccessHelper on the ArkTS side. A request
+// parks a oneshot sender in a request-id registry, forwards a JSON payload
+// through the window-controller ThreadsafeFunction, and waits; the
+// EntryAbility callback runs the picker and completes the channel by calling
+// the matching `resolve_ohos_*` NAPI export with the request id. Requests
+// are keyed by id (not a single slot) because export worker threads may run
+// several saves concurrently.
 
 #[cfg(target_env = "ohos")]
 mod file_bridge {
+    use std::collections::HashMap;
     use std::sync::Mutex;
+    use std::sync::atomic::{AtomicU32, Ordering};
 
     use napi_ohos::bindgen_prelude::Result;
     use tokio::sync::oneshot;
 
-    static PICK_TX: Mutex<Option<oneshot::Sender<Option<String>>>> = Mutex::new(None);
+    // `HashMap::new` is not const, so the map is lazily created inside the
+    // Option on first use.
+    static REQUESTS: Mutex<Option<HashMap<u32, oneshot::Sender<String>>>> = Mutex::new(None);
+    static NEXT_REQUEST_ID: AtomicU32 = AtomicU32::new(1);
 
-    /// NAPI export (ArkTS name: `resolveOhosPickFolder`). Called by the
-    /// EntryAbility picker callback with the resolved folder path, or `None`
-    /// when the user cancelled / picking failed.
-    #[napi_derive_ohos::napi]
-    pub fn resolve_ohos_pick_folder(path: Option<String>) -> Result<()> {
-        if let Some(tx) = PICK_TX.lock().unwrap().take() {
-            let _ = tx.send(path);
+    fn remove_sender(id: u32) -> Option<oneshot::Sender<String>> {
+        REQUESTS
+            .lock()
+            .unwrap()
+            .as_mut()
+            .and_then(|requests| requests.remove(&id))
+    }
+
+    fn park_sender() -> (u32, oneshot::Receiver<String>) {
+        let (tx, rx) = oneshot::channel();
+        let id = NEXT_REQUEST_ID.fetch_add(1, Ordering::Relaxed);
+        REQUESTS
+            .lock()
+            .unwrap()
+            .get_or_insert_with(HashMap::new)
+            .insert(id, tx);
+        (id, rx)
+    }
+
+    fn complete_request(id: u32, result: serde_json::Value) {
+        if let Some(tx) = remove_sender(id) {
+            let _ = tx.send(result.to_string());
         }
+    }
+
+    #[napi_derive_ohos::napi]
+    pub fn resolve_ohos_pick_folder(request_id: u32, path: Option<String>) -> Result<()> {
+        complete_request(request_id, serde_json::json!({ "path": path }));
         Ok(())
+    }
+
+    #[napi_derive_ohos::napi]
+    pub fn resolve_ohos_pick_files(request_id: u32, paths: Vec<String>) -> Result<()> {
+        complete_request(request_id, serde_json::json!({ "paths": paths }));
+        Ok(())
+    }
+
+    #[napi_derive_ohos::napi]
+    pub fn resolve_ohos_save_to_gallery(
+        request_id: u32,
+        ok: bool,
+        error: Option<String>,
+    ) -> Result<()> {
+        complete_request(request_id, serde_json::json!({ "ok": ok, "error": error }));
+        Ok(())
+    }
+
+    #[napi_derive_ohos::napi]
+    pub fn resolve_ohos_save_file_as(
+        request_id: u32,
+        path: Option<String>,
+        error: Option<String>,
+    ) -> Result<()> {
+        complete_request(
+            request_id,
+            serde_json::json!({ "path": path, "error": error }),
+        );
+        Ok(())
+    }
+
+    fn parse_result(raw: String) -> std::result::Result<serde_json::Value, String> {
+        serde_json::from_str(&raw).map_err(|e| format!("Malformed OHOS bridge result ({e}): {raw}"))
+    }
+
+    fn request_payload(
+        mut payload: serde_json::Value,
+    ) -> std::result::Result<(u32, oneshot::Receiver<String>), String> {
+        let (id, rx) = park_sender();
+        payload["requestId"] = serde_json::json!(id);
+        if let Err(e) = super::window_controller::dispatch_event(&payload.to_string()) {
+            remove_sender(id);
+            return Err(e);
+        }
+        Ok((id, rx))
+    }
+
+    /// Async request for tauri command contexts.
+    async fn request(payload: serde_json::Value) -> std::result::Result<serde_json::Value, String> {
+        let (_id, rx) = request_payload(payload)?;
+        let raw = rx
+            .await
+            .map_err(|_| "OHOS bridge channel closed without a result".to_string())?;
+        parse_result(raw)
+    }
+
+    /// Blocking request for `spawn_blocking` export worker threads.
+    pub fn save_request_blocking(
+        payload: serde_json::Value,
+    ) -> std::result::Result<serde_json::Value, String> {
+        let (_id, rx) = request_payload(payload)?;
+        let raw = rx
+            .blocking_recv()
+            .map_err(|_| "OHOS bridge channel closed without a result".to_string())?;
+        parse_result(raw)
     }
 
     /// Ask the ArkTS side to open the folder picker and wait for the result.
     pub async fn pick_folder() -> std::result::Result<Option<String>, String> {
-        let (tx, rx) = oneshot::channel();
-        {
-            let mut slot = PICK_TX.lock().unwrap();
-            if slot.is_some() {
-                return Err("an OHOS folder pick is already in progress".to_string());
+        let result = request(serde_json::json!({ "op": "pick_folder" })).await?;
+        Ok(result["path"].as_str().map(str::to_string))
+    }
+
+    /// FileKit caps `DocumentSelectOptions.fileSuffixFilters` at ~100
+    /// characters for the whole input; longer filter lists make the picker
+    /// dismiss itself. Deduplicate the extensions, group them into a single
+    /// `.a,.b` element, and drop filtering entirely when the set does not
+    /// fit (callers validate picked extensions client-side, matching the
+    /// Android import flow).
+    fn collapse_suffix_filters(extensions: &[String]) -> Vec<String> {
+        let mut unique: Vec<String> = Vec::new();
+        for extension in extensions {
+            let normalized = extension.to_lowercase();
+            let normalized = if normalized.starts_with('.') {
+                normalized
+            } else {
+                format!(".{normalized}")
+            };
+            if !unique.contains(&normalized) {
+                unique.push(normalized);
             }
-            *slot = Some(tx);
         }
-        if let Err(e) = super::window_controller::dispatch("pick_folder") {
-            PICK_TX.lock().unwrap().take();
-            return Err(e);
+        let grouped = unique.join(",");
+        if grouped.is_empty() || grouped.len() > 96 {
+            Vec::new()
+        } else {
+            vec![grouped]
         }
-        rx.await
-            .map_err(|_| "OHOS folder picker channel closed without a result".to_string())
+    }
+
+    /// Ask the ArkTS side to open the multi-file picker and wait for the
+    /// selected paths (empty when the user cancelled).
+    pub async fn pick_files(
+        extensions: &[String],
+        max_select: u32,
+    ) -> std::result::Result<Vec<String>, String> {
+        let result = request(serde_json::json!({
+            "op": "pick_files",
+            "extensions": collapse_suffix_filters(extensions),
+            "maxSelect": max_select,
+        }))
+        .await?;
+        Ok(result["paths"]
+            .as_array()
+            .map(|paths| {
+                paths
+                    .iter()
+                    .filter_map(|p| p.as_str().map(str::to_string))
+                    .collect()
+            })
+            .unwrap_or_default())
+    }
+
+    /// Ask the ArkTS side to open the system save picker; the picker creates
+    /// the file and the caller writes to the returned path afterwards.
+    pub async fn pick_save_file(file_name: &str) -> std::result::Result<Option<String>, String> {
+        let result = request(serde_json::json!({
+            "op": "save_file_as",
+            "fileName": file_name,
+        }))
+        .await?;
+        Ok(result["path"].as_str().map(str::to_string))
     }
 }
 
@@ -149,6 +300,136 @@ pub async fn pick_ohos_folder() -> Result<Option<String>, String> {
     #[cfg(not(target_env = "ohos"))]
     {
         Err("pick_ohos_folder is only available on OpenHarmony builds".to_string())
+    }
+}
+
+/// Open the OHOS system file picker (FileKit `DocumentViewPicker`, FILE
+/// mode) and return the selected files' paths. Extension filtering happens
+/// picker-side; an empty result means the user cancelled.
+#[tauri::command]
+pub async fn pick_ohos_files(
+    supported_extensions: Vec<String>,
+    max_select: u32,
+) -> Result<Vec<String>, String> {
+    #[cfg(target_env = "ohos")]
+    {
+        file_bridge::pick_files(&supported_extensions, max_select).await
+    }
+    #[cfg(not(target_env = "ohos"))]
+    {
+        let _ = (supported_extensions, max_select);
+        Err("pick_ohos_files is only available on OpenHarmony builds".to_string())
+    }
+}
+
+/// Open the OHOS system save picker (FileKit `DocumentSaveOptions`); the
+/// picker creates the file and returns its path, or `None` when cancelled.
+#[tauri::command]
+pub async fn pick_ohos_save_file(file_name: String) -> Result<Option<String>, String> {
+    #[cfg(target_env = "ohos")]
+    {
+        file_bridge::pick_save_file(&file_name).await
+    }
+    #[cfg(not(target_env = "ohos"))]
+    {
+        let _ = file_name;
+        Err("pick_ohos_save_file is only available on OpenHarmony builds".to_string())
+    }
+}
+
+// ---------------------------------------------------------------------------
+// Export write bridge: gallery / save-picker (Android MediaStore equivalent)
+// ---------------------------------------------------------------------------
+//
+// `photoAccessHelper` and the FileKit save picker are ArkTS-only APIs, and
+// exported images can be tens of megabytes — too large to push through the
+// window-controller ThreadsafeFunction. Instead the bytes are parked in a
+// temp file inside the app cache dir (readable from ArkTS — same process)
+// and only the path crosses the bridge.
+
+#[cfg(target_env = "ohos")]
+static OHOS_EXPORT_TEMP_COUNTER: std::sync::atomic::AtomicU64 =
+    std::sync::atomic::AtomicU64::new(0);
+
+/// Write `bytes` to a uniquely named temp file for the ArkTS export bridge.
+#[cfg(target_env = "ohos")]
+fn ohos_export_temp_file(
+    app_handle: &tauri::AppHandle,
+    file_name: &str,
+    bytes: &[u8],
+) -> std::result::Result<std::path::PathBuf, String> {
+    use tauri::Manager;
+
+    let base = app_handle
+        .path()
+        .app_cache_dir()
+        .map_err(|e| format!("Failed to resolve OHOS app cache dir: {e}"))?;
+    let dir = base.join("export_bridge");
+    std::fs::create_dir_all(&dir).map_err(|e| {
+        format!(
+            "Failed to create OHOS export bridge dir '{}': {e}",
+            dir.display()
+        )
+    })?;
+    let unique = OHOS_EXPORT_TEMP_COUNTER.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+    let path = dir.join(format!("{unique}_{file_name}"));
+    std::fs::write(&path, bytes)
+        .map_err(|e| format!("Failed to write export temp file '{}': {e}", path.display()))?;
+    Ok(path)
+}
+
+/// Save an exported image into the OHOS media library (gallery) — the
+/// equivalent of `save_image_bytes_to_android_gallery`. Called from export
+/// worker threads (`spawn_blocking`), hence the blocking bridge request.
+#[cfg(target_env = "ohos")]
+pub fn save_image_bytes_to_ohos_gallery(
+    app_handle: &tauri::AppHandle,
+    file_name: &str,
+    mime_type: &str,
+    bytes: &[u8],
+) -> Result<(), String> {
+    let temp_path = ohos_export_temp_file(app_handle, file_name, bytes)?;
+    let result = file_bridge::save_request_blocking(serde_json::json!({
+        "op": "save_to_gallery",
+        "tempPath": temp_path.to_string_lossy(),
+        "fileName": file_name,
+        "mimeType": mime_type,
+    }));
+    // Best-effort cleanup in case the ArkTS side did not consume the file.
+    let _ = std::fs::remove_file(&temp_path);
+    let result = result?;
+    if result["ok"].as_bool().unwrap_or(false) {
+        Ok(())
+    } else {
+        Err(result["error"]
+            .as_str()
+            .map(str::to_string)
+            .unwrap_or_else(|| format!("OHOS gallery save failed for '{file_name}'")))
+    }
+}
+
+/// Save exported bytes (e.g. a `.cube` LUT) to a user-chosen location via
+/// the FileKit save picker — the equivalent of
+/// `save_file_bytes_to_android_downloads`.
+#[cfg(target_env = "ohos")]
+pub fn save_file_bytes_to_ohos_picker(
+    app_handle: &tauri::AppHandle,
+    file_name: &str,
+    mime_type: &str,
+    bytes: &[u8],
+) -> Result<(), String> {
+    let temp_path = ohos_export_temp_file(app_handle, file_name, bytes)?;
+    let result = file_bridge::save_request_blocking(serde_json::json!({
+        "op": "save_file_as",
+        "tempPath": temp_path.to_string_lossy(),
+        "fileName": file_name,
+        "mimeType": mime_type,
+    }));
+    let _ = std::fs::remove_file(&temp_path);
+    match result?["path"].as_str() {
+        Some(path) if !path.is_empty() => Ok(()),
+        // A missing path means the user cancelled the save dialog.
+        _ => Err(format!("OHOS save picker cancelled for '{file_name}'")),
     }
 }
 
