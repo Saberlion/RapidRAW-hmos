@@ -77,13 +77,20 @@ fn main() {
     // OpenHarmony (`target_os = "linux"` + `target_env = "ohos"`): there is no
     // official onnxruntime build for OHOS, so nothing is downloaded here.
     // AI features require a community-built library (e.g. from sherpa-onnx or
-    // csukuangfj/onnxruntime-libs) placed at `libs/ohos/arm64-v8a/libonnxruntime.so`.
+    // csukuangfj/onnxruntime-libs) placed at `libs/ohos/<abi>/libonnxruntime.so`
+    // (abi = arm64-v8a | armeabi-v7a | x86_64) AND copied into
+    // `gen/ohos/entry/libs/<abi>/` so it is packaged into the HAP.
     let target_env = env::var("CARGO_CFG_TARGET_ENV").unwrap_or_default();
     if target_os == "linux" && target_env == "ohos" {
+        let abi = match target_arch.as_str() {
+            "aarch64" => "arm64-v8a",
+            "arm" => "armeabi-v7a",
+            arch => arch,
+        };
         let ohos_lib = manifest_dir
             .join("libs")
             .join("ohos")
-            .join("arm64-v8a")
+            .join(abi)
             .join("libonnxruntime.so");
         if ohos_lib.exists() {
             println!(
