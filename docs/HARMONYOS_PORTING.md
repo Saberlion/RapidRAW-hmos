@@ -1,7 +1,7 @@
 # RapidRAW 鸿蒙(HarmonyOS / OpenHarmony)移植报告
 
 > 分析日期:2026-10 · 分支:`feature/harmonyos-port`
-> 状态:Phase 1 收官 —— 模拟器已点亮(2026-10-03 23:25,x86_64 模拟器完整渲染欢迎页 UI,无崩溃,见 6.4);aarch64/x86_64 双架构出包端到端 EXIT=0(57.4MB / 120.5MB,见 6.3/6.4);Phase 2 窗口控制完成(2026-10-04:系统装饰栏提供三键 + Rust↔ArkTS startMoving 拖动桥,见 6.5);下一步 Phase 2 其余平台集成 + 真机验证
+> 状态:Phase 1 收官 —— 模拟器已点亮(2026-10-03 23:25,x86_64 模拟器完整渲染欢迎页 UI,无崩溃,见 6.4);aarch64/x86_64 双架构出包端到端 EXIT=0(57.4MB / 120.5MB,见 6.3/6.4);Phase 2 窗口控制完成(2026-10-04:系统装饰栏提供三键 + Rust↔ArkTS startMoving 拖动桥,见 6.5);"打开文件夹"完成(2026-10-04:FileKit DocumentViewPicker 桥端到端验证,见 6.6);下一步 Phase 2 其余平台集成 + 真机验证
 
 ## 1. 结论(TL;DR)
 
@@ -201,7 +201,7 @@ hdc shell "hilog -x | grep -iE 'CppCrash|rapidraw.*(fatal|crash)'"   # 崩溃扫
    - `setWindowDecorVisible` 若再用:必须延迟到 `loadContentByName` 之后(更早调用抛 1300002 "window state abnormal"),且模拟器冷启动显著慢于热启动,固定延迟会偶发失败(须重试循环);
    - tao-ohos 的窗口操作仍是 stub(`set_minimized`/`set_maximized`/`set_fullscreen` 空操作、`drag_window` 返回 NotSupported)——tauri JS API 路径(`appWindow.minimize()` 等)在 OHOS 无效;应用层已用 Rust↔ArkTS 桥绕过(见 6.5),tao 级修复属 fork 工作;
    - `setWindowDecorVisible` 只隐藏标题栏视觉、保留窗口边框(仍可拖边调整大小),**且系统按钮输入矩形残留**——这正是方案反转的根因;
-   - EntryAbility post-init 补丁现为**仅窗口控制回调注册**(不含任何 decor 代码),仍位于 gitignored 的 `gen/ohos/entry/src/main/ets/entryability/EntryAbility.ets`——**`cargo tauri ohos init` 重跑后需按 6.5 重打**;
+    - EntryAbility post-init 补丁现为**窗口控制回调注册 + pick_folder 桥**(不含任何 decor 代码),仍位于 gitignored 的 `gen/ohos/entry/src/main/ets/entryability/EntryAbility.ets`——**`cargo tauri ohos init` 重跑后需按 6.5/6.6 重打**;
 3. 双架构 .so 同包:`entry/libs` 同时存在 `arm64-v8a`(383.7MB)与 `x86_64`(389.9MB)dev .so → strip 后 HAP 120.5MB;模拟器取 x86_64 可正常运行,出真机包前应清 `entry/libs` 或配 abiFilters 瘦身。
 
 ### 6.5 Phase 2:窗口控制桥与系统装饰输入矩形(2026-10-04)
@@ -249,7 +249,49 @@ hdc shell "hilog -x | grep -iE 'CppCrash|rapidraw.*(fatal|crash)'"   # 崩溃扫
 
 - 系统条颜色跟随系统主题:浅色主题下"浅系统条+深色应用"有视觉断层(真机深色主题则协调)
 - 系统条左侧显示应用名 "RapidRAW",与自绘栏标题文字重复
-- EntryAbility post-init 补丁(重跑 `cargo tauri ohos init` 后需重打):**仅窗口控制回调注册块**,不含任何 decor 代码
+- EntryAbility post-init 补丁(重跑 `cargo tauri ohos init` 后需重打):**窗口控制回调注册块 + pick_folder 桥**(见 6.6),不含任何 decor 代码
+
+### 6.6 Phase 2:FileKit 文件夹选择桥——"打开文件夹"(2026-10-04)
+
+**成果**:"打开文件夹"在 OHOS 端到端可用——欢迎页/图库"添加文件夹"按钮 → 系统"选择路径"对话框(DocumentViewPicker)→ 选定文件夹成为图库根(树渲染、跨重启持久化、扫描链无错)。
+
+**1. 背景:tauri-plugin-dialog 在 OHOS 被排除**
+
+其 `rfd` 后端无 OHOS 支持(Cargo.toml 已 gated `not(ohos)`),桌面流的 `open({ directory: true })` 在 OHOS 是死路。方案:FileKit `DocumentViewPicker` 经 Rust↔ArkTS 桥——镜像 6.5 窗口控制桥模式(TSF 分发 + napi 回传)。
+
+**2. 桥架构(已入库)**
+
+- `src-tauri/src/ohos_integration.rs` `file_bridge` 模块:`static PICK_TX: Mutex<Option<oneshot::Sender<Option<String>>>>` + 防重入守卫;`#[napi] resolve_ohos_pick_folder(path)`(ArkTS 回传,null=取消);`pick_folder()`(oneshot + `dispatch("pick_folder")` + rx.await);tauri 命令 `pick_ohos_folder`(非 OHOS 返回 Err),`lib.rs` generate_handler 已注册
+- 前端:`AppProperties.tsx` Invokes 枚举(`IsOhosBuild`/`PickOhosFolder`);`useSettingsStore.ts` `isOhos` 状态(`initPlatform` 探测 `is_ohos_build`——`tauri-plugin-os` 在 OHOS 返回 "linux" 不可用);`useAppNavigation.ts` `handleOpenFolder` OHOS 分支(`invoke(PickOhosFolder) ?? ''`),选中后走桌面同款扫描链(GetFolderTree/ListImagesInDir 零改动)
+- `gen/ohos/…/EntryAbility.ets`(机器本地)`pick_folder` case:`DocumentSelectMode.FOLDER` + `maxSelectNumber: 1` → `DocumentViewPicker(this.context).select()` → `.then` 内 `new fileUri.FileUri(uri).path` + `fs.statSync` 校验(同进程可读 ⇒ Rust `std::fs` 可读)→ `resolvePickFolder(path)`;`.catch`/取消回传 null
+
+**3. 关键验证事实(x86_64 模拟器,2026-10-04)**
+
+- **URI 形态**:返回 `file://docs/storage/Users/currentUser/Images`(侧栏"图片"的物理目录名是 `Images`)→ `FileUri.path` 直出应用沙箱路径 `/storage/Users/currentUser/Images`,无需手工解析
+- **Rust 可读性**:`fs.statSync` 成功(isDirectory=true)——ArkTS fs 与 Rust std::fs 同进程同挂载命名空间,stat 通过即原生可读;GetFolderTree/ListImagesInDir 实测无错
+- **跨重启可读**:选定目录在 force-stop + 重装 + 重启后,会话恢复的 GetFolderTree 仍成功
+- **picker 记忆上次位置**:再次打开直接停在上次所在目录
+- hilog 证据(09:49:44,最终构建):
+
+```
+[RapidRAW] pick_folder raw uri: file://docs/storage/Users/currentUser/Images
+[RapidRAW] pick_folder path: /storage/Users/currentUser/Images
+[RapidRAW] pick_folder stat ok: isDirectory=true
+```
+
+**4. UI 观察与排障教训(非桥缺陷)**
+
+- 图库头部路径显示在窄中列被 truncate 成 "/"+微弱省略号——**显示假象**:Sources 树行高亮(`isSelected = node.path === currentFolderPath`)证明 currentFolderPath 是完整正确路径。OHOS 自由窗(2080px 宽)中列窄,标题"图库"亦竖排;桌面宽窗口无此现象。判状态勿信路径显示、要信树行高亮
+- 欢迎页有"首次/回来"两变体(回来变体为"继续会话"+深色"添加文件夹");**会话自动恢复是异步慢流程**(模拟器 90~120s,GetFolderTree 走沙箱 FUSE 慢),启动初期取证须考虑该延迟
+- 左面板底部图标行(info/folder/export)是**面板模式切换器**;"添加文件夹"的真实入口:欢迎页按钮、FolderOptionsMenu 下拉项、空树 Plus 行。look_at 曾把 export 切换钮误判为 folder-plus(两次点错、面板被切走)——**图标语义必须回源码 grep onClick 接线交叉验证**
+- hilog 缓冲在 chromium vsync 刷屏下快速轮转——**事件后 2~4s 内立即抓取**;grep 模式用 `RapidRAW\]`(带右括号)避开 WMS bundle 名与 qos_ctrl "Failed to open" 噪声
+- 截屏字节数判别补充:欢迎页 ≈297KB / 图库 ≈219KB / picker ≥237KB
+
+**5. 已知限制/顺延项**
+
+- 网格实际图片显示未在本会话直接验证(用户存储无图片可扫;shell 受 SELinux 限制写不进用户存储,root/su 不可用)——但读取链已由 stat/GetFolderTree/ListImagesInDir(空结果无错)证实,图片渲染链已由 6.4 编辑器照片测试覆盖,残余风险低
+- FileKit 单文件选择(导入流)与保存对话框(LUT/预设/导出面板等其余 plugin-dialog 消费点)仍待接桥——同模式复制即可
+- 相册导出 `save_image_bytes_to_ohos_gallery`(photoAccessHelper)顺延
 
 ## 7. 移植路线图与进度清单
 
@@ -273,10 +315,10 @@ hdc shell "hilog -x | grep -iE 'CppCrash|rapidraw.*(fatal|crash)'"   # 崩溃扫
 - [x] 模拟器点亮应用窗口(2026-10-03 23:25,DevEco x86_64 模拟器:完整欢迎页 UI 渲染、Canvas 图片正常、`tauri` 自定义协议注册、无崩溃,超预期完成,见 6.4;真机仍待接入)
 
 ### Phase 2 — 平台集成(3~4 周)
-- [ ] `ohos_integration.rs`:FileKit/photoAccessHelper URI 文件桥(参照 `android_integration.rs` 模式,经 `@ohos-rs/ability` NAPI)
+- [x] FileKit 文件夹选择桥(2026-10-04,见 6.6):"打开文件夹"端到端可用——DocumentViewPicker 桥(oneshot+napi 回传)+ `isOhos` 探测 + `handleOpenFolder` OHOS 分支;`FileUri.path` 直出沙箱路径、Rust 可读(stat 实证)、跨重启持久;photoAccessHelper 相册 URI 桥(单文件/相册)仍待接
 - [ ] 相册导出 `save_image_bytes_to_ohos_gallery`(替代 Android MediaStore 路径)
 - [x] TLS 根证书策略已确认(2026-10-03):维持 reqwest rustls 捆绑 webpki 根——rustls-platform-verifier 无 OHOS 后端,捆绑根对 HF/ohpm 端点足够;真机 TLS 握手验证顺延至 Phase 3/4 有设备时
-- [ ] tauri-plugin-dialog / fs 的 OHOS 实现或前端替代
+- [ ] tauri-plugin-dialog 其余消费点(LUT 导入/预设导入/图像选择器/导出保存对话框)接桥或前端替代——文件夹选择已由 6.6 桥替代;plugin-fs 无前端使用,无替代需求
 - [ ] 深色模式/安全区/返回手势等系统 UI 适配
 - [x] 窗口控制可用(2026-10-04,见 6.5):系统装饰栏原生提供 最小化/最大化/关闭;自绘标题栏保留(标题/拖动),拖动经 Rust↔ArkTS `startMoving` 桥(实测 +400px 精确);OHOS 隐藏自绘三按钮——系统装饰输入矩形残留发现,原"隐藏 decor 独占"方案(2026-10-03)已反转(历史与教训见 6.4)
 - [x] 应用图标与 label 对齐其他平台:entry 字符串资源 + layered_image 双层图标 + startIcon,均取自 `src-tauri/icons/full_res_original.png`(2026-10-03,见 6.4)。**注:以上 EntryAbility/字符串/图标三处改动均位于 gitignored 的 `gen/ohos/`,`cargo tauri ohos init` 重跑后需按 6.4 重打**
