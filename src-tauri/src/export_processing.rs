@@ -1046,6 +1046,7 @@ fn save_image_with_metadata(
     output_path: &std::path::Path,
     source_path_str: &str,
     export_settings: &ExportSettings,
+    _app_handle: &tauri::AppHandle,
 ) -> Result<(), String> {
     let extension = output_path
         .extension()
@@ -1068,27 +1069,39 @@ fn save_image_with_metadata(
         export_settings.strip_gps,
     )?;
 
-    #[cfg(target_os = "android")]
+    #[cfg(any(target_os = "android", target_env = "ohos"))]
     {
         let file_name = output_path
             .file_name()
             .and_then(|name| name.to_str())
-            .ok_or_else(|| "Missing Android export file name".to_string())?;
-        crate::android_integration::save_image_bytes_to_android_gallery(
-            file_name,
-            mime_type_for_extension(&extension),
-            &image_bytes,
-        )?;
+            .ok_or_else(|| "Missing mobile export file name".to_string())?;
+        #[cfg(target_os = "android")]
+        {
+            crate::android_integration::save_image_bytes_to_android_gallery(
+                file_name,
+                mime_type_for_extension(&extension),
+                &image_bytes,
+            )?;
+        }
+        #[cfg(target_env = "ohos")]
+        {
+            crate::ohos_integration::save_image_bytes_to_ohos_gallery(
+                _app_handle,
+                file_name,
+                mime_type_for_extension(&extension),
+                &image_bytes,
+            )?;
+        }
     }
 
-    #[cfg(not(target_os = "android"))]
+    #[cfg(not(any(target_os = "android", target_env = "ohos")))]
     fs::write(output_path, image_bytes)
         .map_err(|e| format!("Failed to write file to '{}': {}", output_path.display(), e))?;
 
     Ok(())
 }
 
-#[cfg(target_os = "android")]
+#[cfg(any(target_os = "android", target_env = "ohos"))]
 pub fn mime_type_for_extension(extension: &str) -> &'static str {
     match extension {
         "jpg" | "jpeg" => "image/jpeg",
@@ -1346,6 +1359,7 @@ fn export_masks_for_image(
                 &mask_image_path,
                 source_path_str,
                 export_settings,
+                app_handle,
             )?;
             ensure_export_not_cancelled(cancellation_token)?;
 
@@ -1355,20 +1369,32 @@ fn export_masks_for_image(
 
             let alpha_bytes = encode_grayscale_to_png(&alpha_resized)?;
             ensure_export_not_cancelled(cancellation_token)?;
-            #[cfg(target_os = "android")]
+            #[cfg(any(target_os = "android", target_env = "ohos"))]
             {
                 let file_name = mask_alpha_path
                     .file_name()
                     .and_then(|name| name.to_str())
-                    .ok_or_else(|| "Missing Android mask export file name".to_string())?;
-                crate::android_integration::save_image_bytes_to_android_gallery(
-                    file_name,
-                    "image/png",
-                    &alpha_bytes,
-                )?;
+                    .ok_or_else(|| "Missing mobile mask export file name".to_string())?;
+                #[cfg(target_os = "android")]
+                {
+                    crate::android_integration::save_image_bytes_to_android_gallery(
+                        file_name,
+                        "image/png",
+                        &alpha_bytes,
+                    )?;
+                }
+                #[cfg(target_env = "ohos")]
+                {
+                    crate::ohos_integration::save_image_bytes_to_ohos_gallery(
+                        app_handle,
+                        file_name,
+                        "image/png",
+                        &alpha_bytes,
+                    )?;
+                }
             }
 
-            #[cfg(not(target_os = "android"))]
+            #[cfg(not(any(target_os = "android", target_env = "ohos")))]
             fs::write(&mask_alpha_path, alpha_bytes).map_err(|e| e.to_string())?;
             ensure_export_not_cancelled(cancellation_token)?;
         }
@@ -1630,12 +1656,19 @@ pub(crate) async fn export_images_impl(
                             }
                         }
 
-                        if let Err(e) = std::fs::create_dir_all(&dir) {
-                            return Err(format!(
-                                "Failed to create export subdirectory '{}': {}",
-                                dir.display(),
-                                e
-                            ));
+                        // OHOS exports go to the gallery / save picker and
+                        // output_folder_or_file is only a sentinel — creating
+                        // directories (possibly relative to the process CWD)
+                        // must be skipped there.
+                        #[cfg(not(target_env = "ohos"))]
+                        {
+                            if let Err(e) = std::fs::create_dir_all(&dir) {
+                                return Err(format!(
+                                    "Failed to create export subdirectory '{}': {}",
+                                    dir.display(),
+                                    e
+                                ));
+                            }
                         }
 
                         dir.join(&new_filename)
@@ -1647,12 +1680,15 @@ pub(crate) async fn export_images_impl(
                             &base_origin_folders,
                         ) {
                             let full_dir = output_folder_path.join(rel_dir);
-                            if let Err(e) = std::fs::create_dir_all(&full_dir) {
-                                return Err(format!(
-                                    "Failed to create export subdirectory '{}': {}",
-                                    full_dir.display(),
-                                    e
-                                ));
+                            #[cfg(not(target_env = "ohos"))]
+                            {
+                                if let Err(e) = std::fs::create_dir_all(&full_dir) {
+                                    return Err(format!(
+                                        "Failed to create export subdirectory '{}': {}",
+                                        full_dir.display(),
+                                        e
+                                    ));
+                                }
                             }
                             full_dir.join(&new_filename)
                         } else {
@@ -1692,19 +1728,31 @@ pub(crate) async fn export_images_impl(
                             &cancellation_token_clone,
                         )?;
                         ensure_export_not_cancelled(&cancellation_token_clone)?;
-                        #[cfg(target_os = "android")]
+                        #[cfg(any(target_os = "android", target_env = "ohos"))]
                         {
                             let file_name = output_path
                                 .file_name()
                                 .and_then(|name| name.to_str())
-                                .ok_or_else(|| "Missing Android LUT file name".to_string())?;
-                            crate::android_integration::save_file_bytes_to_android_downloads(
-                                file_name,
-                                "application/octet-stream",
-                                &cube_bytes,
-                            )?;
+                                .ok_or_else(|| "Missing mobile LUT file name".to_string())?;
+                            #[cfg(target_os = "android")]
+                            {
+                                crate::android_integration::save_file_bytes_to_android_downloads(
+                                    file_name,
+                                    "application/octet-stream",
+                                    &cube_bytes,
+                                )?;
+                            }
+                            #[cfg(target_env = "ohos")]
+                            {
+                                crate::ohos_integration::save_file_bytes_to_ohos_picker(
+                                    &app_handle_clone,
+                                    file_name,
+                                    "application/octet-stream",
+                                    &cube_bytes,
+                                )?;
+                            }
                         }
-                        #[cfg(not(target_os = "android"))]
+                        #[cfg(not(any(target_os = "android", target_env = "ohos")))]
                         fs::write(&output_path, cube_bytes).map_err(|e| e.to_string())?;
                         ensure_export_not_cancelled(&cancellation_token_clone)?;
                         return Ok(());
@@ -1787,6 +1835,7 @@ pub(crate) async fn export_images_impl(
                         &output_path,
                         &source_path_str,
                         &export_settings,
+                        &app_handle_clone,
                     )?;
                     ensure_export_not_cancelled(&cancellation_token_clone)?;
 
