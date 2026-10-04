@@ -350,6 +350,123 @@ ArkTS(EntryAbility.saveToGallery),每坑皆有实锤:
 - `save_file_as`(.cube LUT / 预设另存为)路径已实现,设备端验证顺延
 - Tauri `app_cache_dir()` 在 OHOS 指向用户公共存储区的偏差由 ArkTS 沙箱中转兜底;长期可考虑让 Rust 直写沙箱缓存目录
 
+### 6.8 Phase 2:系统 UI 适配(深色模式/安全区/返回手势)与 Phase 3-1 编辑器 GPU 管线点亮(2026-10-04)
+
+**成果**:Phase 2 系统 UI 三件套全部实证——深色模式跟随系统(双向实时翻转)、返回手势(三分支优先级正确)、安全区日志;Phase 3-1 提前完成——编辑器 compute+回读路径全链路点亮(Mali-G77 GLES 后端,曝光交互 ~29 FPS)。
+
+**1. 实现链路**
+
+Rust 侧(`ohos_integration.rs` 新增 `system_bridge` 模块):
+
+- napi 导出 `notify_ohos_back_pressed()` / `notify_ohos_color_mode(dark: bool)`;`OnceLock<AppHandle>` 存 handle;`AtomicU8` 缓存色彩模式;事件 `ohos-back-pressed` / `ohos-color-mode`(payload `{dark}`);日志 `OHOS system color mode changed: dark={}`
+- 命令 `get_ohos_color_mode`(lib.rs 注册,启动时前端查询当前系统色);`initialize_ohos` 存 AppHandle
+- `gpu_processing.rs` 附加 adapter 日志:`Using GPU adapter: {} (backend: {:?}, type: {:?})`
+
+前端:
+
+- `Theme.System = 'system'`(themes.ts)+ `resolveThemeId(theme, isSystemDark)` 解析;splash 主题解析(MainLibrary)
+- `isSystemDark` state(useSettingsStore)+ 初始化 `GetOhosColorMode` invoke(useAppInitialization)+ `'ohos-color-mode'` 事件监听 + `prefers-color-scheme` 兜底
+- SettingsPanel 主题下拉新增"系统"选项;i18n 全部 14 locale 增加 `system` 键
+- `useAndroidBackHandler` 扩展 `isOhos`:`'ohos-back-pressed'` 事件 → 复用 Android 的合成 Escape 链(模态关闭 > 编辑器退库 > 库退主页 优先级不变),保留 `window.__handleAndroidBack` 兼容
+
+ArkTS 侧(gen/ohos 机器本地,模板已固化 `src-tauri/ohos/EntryAbility.template.ets` + `Index-page.template.ets`,防 `cargo tauri ohos init` 重跑丢失,重打步骤同 6.4):
+
+- `EntryAbility.ets`:`onConfigurationUpdate` → super 调用后 `pushColorMode(ConfigurationConstant.ColorMode.COLOR_MODE_DARK/LIGHT)`;avoid area 日志;局部变量 window→win(修遮蔽);`await windowStage.loadContent('pages/Index')`
+- `pages/Index.ets` 重写为自定义 @Entry 页面:`DefaultXComponent()` 托管 webview + **页面级** `onBackPress()` → `notifyOhosBackPressed()` → `return true`
+
+**2. 关键坑(@ohos-rs/ability 0.4.0-beta.0 与 vendored 0.3.0 的差异)**
+
+- 实装 0.4.0-beta.0(ohpm 源,`gen/ohos/oh_modules/.ohpm/`)与 vendored 0.3.0 API 不兼容:无 MainPage `onBackPressIntercept` 机制;`onConfigurationUpdate` 存在且**必须先 super 调用**;`DefaultXComponent()` 无参(从 AppStorage 取 moduleName)
+- `UIAbility.onBackPressed()` 语义:**true=转后台 / false=销毁**,没有"保持前台并消费"的语义 → 系统返回手势必须在**页面级** `onBackPress` 返回 true 拦截,Ability 级 API 不可用
+- ArkTS `console.*` 不进 hilog(JSAPP 通道关闭)——取证用 Rust fern 日志(app.log)+ 截图像素采样
+- 返回注入:`hdc shell "uitest uiInput keyEvent Back"` 有效;`uinput -K 158`(KEY_BACK)无效;键盘 Escape 走 webview 键盘链,不触发系统返回
+
+**3. 验证证据(x86_64 模拟器,逐步快照校准坐标)**
+
+- 深色模式:设置→主题下拉出现"系统"(i18n 生效)→ 选中持久化(`settings.json theme: "system"`)→ 系统浅色下应用立即翻浅色;控制中心(托盘 sliders 图标)切深色 → app.log `OHOS system color mode changed: dark=true` + UI 全域翻转(标题栏/设置卡片/面板);切回 → `dark=false` + 翻回浅色——**双向实时实证**
+- 返回手势三分支(`uitest uiInput keyEvent Back`):编辑器→图库;复制粘贴设置模态→关闭(优先级正确,不退出图库);图库→主页(Escape 链 `handleGoHome` 分支)
+- Phase 3-1 铁证(app.log,小图 rr_test.ARW):
+```
+Using GPU adapter: Mali-G77 (backend: Gl, type: IntegratedGpu)
+Creating new GPU Processor for dimensions up to 1280x1024
+[apply_adjustments] 1280x853 processed (ROI: 1280x853) on GPU in 320.501419ms (3.12 FPS)
+[apply_adjustments] ... (ROI: 512x341) ... on GPU in ...ms (28.71 FPS)   ← 曝光滑条拖动交互
+[estimate_export_size] 1280x853 processed (ROI: 1280x853) on GPU in 127.132444ms (7.87 FPS)
+[generate_thumbnail_data] ... on GPU in ...
+```
+- 编辑视觉生效:曝光拖至 4.25 → 月亮过曝泛白(编辑参数 → GPU compute → 回读 → IPC → Canvas 全链路)
+- `[ERROR] Fake map`:wgpu-hal GL 后端回读路径的良性产物(渲染正常),已知现象非缺陷
+
+**4. 门禁**:cargo fmt / clippy `-D warnings` / host + aarch64-ohos `cargo check` / tsc(70 项既有基线,零新增)/ prettier / eslint 零新增。
+
+### 6.9 Phase 3-2:wgpu GLES surface 直渲可行性评估(2026-10-04)
+
+**结论:GO(有条件)**——技术链路全部就绪,估算 1~2 周 / 300~600 LOC;建议排在真机性能基线(6.10)之后立项,以真机数据决策优先级。
+
+**1. 现状与动机**
+
+OHOS 复用 Android 的 compute-only + 回读路径:GPU compute → 回读(map)→ 编码 → IPC bitmap → 前端 Canvas 2D 绘制。每帧成本 = 回读 stall(`Fake map` 即此路径产物)+ IPC 序列化 + Canvas 纹理上传。模拟器实测:编辑器全预览首帧 244~320ms、交互 ROI 上限 ~29 FPS(6.8/6.10)——回读+IPC 是主要 suspected 瓶颈,直渲可整体消除该段。
+
+**2. 可行性事实(2026-10 核验)**
+
+- **wgpu 上游已支持 OHOS GLES surface**:gfx-rs/wgpu PR #7085(feat(gles): support gles backend on openharmony,2025-02-13 合并,v25.0.0 起);本仓现依赖 **wgpu 29.0.4**(Cargo.toml `wgpu = "29.0"`,注释:为修 Apple P3 色偏自更高版本降级)——**无需 fork wgpu**
+- **raw-window-handle 0.6.2**(现依赖)提供 `OhosNdkWindowHandle { native_window: NonNull<c_void> }`(rwh PR #164 引入,`RawWindowHandle::OhosNdk` 变体,`target_env = "ohos"` 启用)——句柄类型已在依赖树内
+- **tao fork**(patch 表,feat/open-harmony)已实现 OHOS 窗口 → raw-window-handle 链——窗口侧就绪
+- **`tauri::ohos::APP`** 全局 `Mutex<Option<OpenHarmonyApp>>`(tauri fork 提供)可从 Rust 侧访问 OHOS 应用/窗口状态
+- 集成形态:ArkTS 侧独立 XComponent 提供第二 native surface(与 webview 宿主的 DefaultXComponent 分层),Rust 侧经 `OhosNdkWindowHandle` 构建 `wgpu::Surface`,编辑器 canvas 直渲;参照 jinleili/wgpu-in-app PR #17(wgpu OHOS XComponent 示例)
+
+**3. 风险与开放问题**
+
+- **gfx-rs/wgpu #9158(GLES srgb issues (mainly on openharmony),OPEN,area:correctness)**:OHOS GLES 的 FRAMEBUFFER_SRGB 依赖 EXT_sRGB_write_control,扩展缺失时 set 即报错——sRGB surface 配置需 PoC 验证(规避:linear 中间纹理 + blit,或协商非 sRGB surface 格式)
+- **层级合成**:webview 覆盖整窗,GPU surface 需 XComponent 分层/透明打孔;ArkUI 支持独立 surface 层,但与 webview 的输入事件穿透、resize 同步需实测(Android 正因该问题走回读路径)
+- **双路径共存**:须保留回读路径作 fallback(Android 共用代码),feature flag 或运行时探测切换;注意 Cargo.lock 冻结纪律(§6.2)
+- 模拟器 GLES 透传(Mali-G77 报告)≠ 真机驱动行为,PoC 须真机复核
+
+**4. 工作量估算**:PoC(XComponent surface 创建 + wgpu Surface + 单帧 present)2~3 天;编辑器管线接入(替换回读输出 → surface present)3~5 天;输入/resize/生命周期 + 回退开关 2~4 天;合计 1~2 周,300~600 LOC(不含上游 issue 修复等待)。
+
+**5. 建议路线**:真机到位先跑 6.10 基线量化回读+IPC 占比 → 若真机交互 FPS 不达目标(60 FPS)则立项 PoC,否则直渲降级 backlog;PoC 顺序 = surface 创建 → 单帧 present → 编辑器 canvas 替换 → 输入/生命周期 → fallback 开关。
+
+### 6.10 Phase 3-3:高像素 RAW(≥60MP)性能与内存基线——模拟器(2026-10-04)
+
+**成果**:4GB x86_64 模拟器上的 60MP 级基线落定:61MP 编辑器加载被系统 LowMemoryKill、45MP 编辑器全通(交互 14~29 FPS)、45MP 全分辨率导出进程死亡;**真机基线受阻(无硬件)**,资产与方法学已固化,设备到位即可复测。
+
+**1. 测试资产**
+
+- **DSC00395.ARW**(Sony ILCE-7RM4,61MP:有效 9504×6336 / 含边 9600×6376,123,111,424 B):raw.pixls.us 公共领域样张。CN 网络直连仅 ~19KB/s(15 分钟 16.8MB),改 12 路并行 Range 分块下载(curl -r,服务器支持 Range;~9 分钟全量)+ .NET 流按字节序拼接,首 8 字节 `49 49 2A 00` 校验通过
+- **synth45.dng**(合成 45.4MP:8256×5504,86.7MB):Node 脚本生成最小有效 DNG(TIFF LE + RGGB CFA 16-bit 未压缩 + DNGVersion 1.4 + ColorMatrix1/AsShotNeutral/WhiteLevel/CalibrationIlluminant1)——用于隔离"内存天花板"与"管线缺陷":61MP 真机文件死亡后,需证明管线本身在次高 MP 下完好
+- 合成素材注意:生成器 SRATIONAL 分子被 `Math.round` 取整(ColorMatrix1 实际写入 [[2,0,0],[0,2,0],[1,0,2]])+ 管线色调映射 → 默认曝光下渲染极暗(近黑),拖曝光 +EV 后色带正常显现(已实证管线完好)——不影响性能/内存结论;正式素材应写真有理数
+
+**2. 测量通道**
+
+- app.log(fern):`Raw enhancing`(全尺寸解码+去马赛克+校准)/ `downscale_f32_image` / `Creating new GPU Processor for dimensions up to WxH` / `[apply_adjustments]`(GPU 处理 + ms + FPS)/ `[process_preview_job]` / `[estimate_export_size]` / `[generate_thumbnail_data]` / `Batch Export: N cores, X GB free RAM -> M threads`
+- `hdc shell "hidumper --mem <pid>"`(PSS 分解:native heap / mmap)
+- `hdc shell "hilog -x | grep -E 'LowMemoryKill|onAbilityDied'"`(死亡归因;hilog 环形缓冲轮转快,事件后数秒内抓)
+- `snapshot_display` + 宿主 System.Drawing 像素采样(画布渲染地面真相,替代目测)
+
+**3. 结果(4GB x86_64 模拟器,Mali-G77 透传)**
+
+| 场景 | 结果 | 证据 |
+|---|---|---|
+| 61MP ARW 库扫描/缩略图 | ✓ | ARW 走内嵌预览提取路径(无去马赛克日志行),downscale 20.25/9.43ms |
+| 61MP ARW 编辑器打开 | ✗ LowMemoryKill | 去马赛克+校准后 crop 阶段被杀(日志止于 `crop: Rect{32:20, 9504x6336}`);hilog `errorReason: LowMemoryKill, removeSession true` |
+| 45MP DNG 库缩略图 | ✓ | 无内嵌预览 → 全管线(去马赛克+校准+downscale)正常 |
+| 45MP DNG 编辑器 | ✓ 全通 | `Raw enhancing took 983.48ms`;downscale 41.26ms;GPU Processor 按预览尺寸创建(1280×1024);全预览首帧 apply_adjustments 1280×853 244.47ms(4.09 FPS);estimate_export_size 238.38ms;PSS 1.76 GiB(1,846,777 kB,native heap 1.65GB / mmap 1.6GB) |
+| 45MP 曝光拖动交互 | ✓ | interactive ROI 512×341 六样本 14.2~29.2 FPS(全样本中位 21.26;小图参照 ~29 FPS 上限) |
+| 45MP 全分辨率导出 | ✗ 进程死亡 | `Batch Export: 4 cores, 1.0 GB free RAM -> 1 threads`(资源感知自适应单线程)+ `Creating new GPU Processor for dimensions up to 8448x5632` 后 hilog `errReason: onAbilityDied` |
+
+**4. 结论**
+
+- **交互编辑性能与源 MP 数无关**:GPU Processor 按**预览/ROI 分辨率**创建(1280×1024 / 512×341),45MP 与小图交互 FPS 同级(~29 上限,受回读+IPC 主导——6.9 直渲动机的直接依据)
+- 源 MP 数影响三处:加载时间(45MP 全尺寸 CPU 增强 983ms)、内存峰值(f32 RGB ≈ 12 B/px:45MP ≈ 545MB、61MP ≈ 734MB;PSS 实测 45MP 编辑器驻留 1.76 GiB 含金字塔+缓冲)、全分辨率导出
+- **4GB 模拟器天花板**:编辑器路径 45MP 通 / 61MP 亡(去马赛克 f32 中间链 ~2GB+ 触发系统查杀);全分辨率导出 45MP 即亡(编辑器驻留 1.76GB + 8448×5632 全尺寸 GPU 缓冲超出剩余预算)
+- 61MP 缩略图走 ARW 内嵌预览提取,零去马赛克成本——大文件**浏览**不受编辑器天花板影响
+- **真机预期**:8~16GB RAM + 独立 GPU 内存预算下,按上述内存模型推算 61MP 编辑器与全分辨率导出可行,待真机按本节方法学复测确认
+
+**5. 阻塞与顺延**
+
+- 真机基线:无硬件(项目级阻塞);复测清单 = DSC00395.ARW + synth45.dng + 本节测量通道命令序列
+- 模拟器 GPU 为宿主透传,绝对数值不可外推;仅结构性结论(路径连通性/天花板存在性/资源感知行为)可迁移
+
 ## 7. 移植路线图与进度清单
 
 ### Phase 0 — 技术验证(1~2 周)
@@ -377,14 +494,14 @@ ArkTS(EntryAbility.saveToGallery),每坑皆有实锤:
 - [x] FileKit 文件选择桥 + 导入流(2026-10-04,见 6.7):`pick_ohos_files`(`collapse_suffix_filters` 规避 100 字符上限)+ 导入 FAB/图像选择器/LUT/预设消费点全接;Rust `std::fs` 直读媒体库路径实证
 - [x] TLS 根证书策略已确认(2026-10-03):维持 reqwest rustls 捆绑 webpki 根——rustls-platform-verifier 无 OHOS 后端,捆绑根对 HF/ohpm 端点足够;真机 TLS 握手验证顺延至 Phase 3/4 有设备时
 - [x] tauri-plugin-dialog 其余消费点接桥(2026-10-04,见 6.7):文件选择(LUT 导入/预设导入/图像选择器)走 `pick_ohos_files`,另存为走 `pick_ohos_save_file`(`save_file_as` 设备端验证顺延)——文件夹选择已由 6.6 桥替代;plugin-fs 无前端使用,无替代需求
-- [ ] 深色模式/安全区/返回手势等系统 UI 适配
+- [x] 深色模式/安全区/返回手势等系统 UI 适配(2026-10-04,见 6.8):主题"系统"选项(14 locale)+ `resolveThemeId`/`isSystemDark` + `onConfigurationUpdate`→napi→事件链(深浅双向实时翻转实证);返回手势页面级 `onBackPress` 桥(编辑器退库/模态关闭优先/库退主页三分支实证,注入用 `uitest uiInput keyEvent Back`);avoid area 日志;EntryAbility/Index 模板固化入 `src-tauri/ohos/`
 - [x] 窗口控制可用(2026-10-04,见 6.5):系统装饰栏原生提供 最小化/最大化/关闭;自绘标题栏保留(标题/拖动),拖动经 Rust↔ArkTS `startMoving` 桥(实测 +400px 精确);OHOS 隐藏自绘三按钮——系统装饰输入矩形残留发现,原"隐藏 decor 独占"方案(2026-10-03)已反转(历史与教训见 6.4)
 - [x] 应用图标与 label 对齐其他平台:entry 字符串资源 + layered_image 双层图标 + startIcon,均取自 `src-tauri/icons/full_res_original.png`(2026-10-03,见 6.4)。**注:以上 EntryAbility/字符串/图标三处改动均位于 gitignored 的 `gen/ohos/`,`cargo tauri ohos init` 重跑后需按 6.4 重打**
 
 ### Phase 3 — 渲染验证(1~2 周)
-- [ ] compute-only + IPC 回读路径点亮编辑器(Android 同款,零新增风险)
-- [ ] 评估 wgpu GLES surface 直渲(XComponent + `OhosNdkWindowHandle`)提性能
-- [ ] 高像素 RAW(≥60MP)真机性能与内存基线
+- [x] compute-only + IPC 回读路径点亮编辑器(Android 同款,零新增风险)(2026-10-04,见 6.8):Mali-G77 GLES 后端实测点亮——GPU Processor/apply_adjustments/estimate_export_size/generate_thumbnail_data 全链路日志铁证,交互 ROI ~29 FPS,曝光编辑视觉生效;`Fake map` 为回读路径良性产物
+- [x] 评估 wgpu GLES surface 直渲(XComponent + `OhosNdkWindowHandle`)提性能(2026-10-04,见 6.9):结论 **GO(有条件)**——上游 wgpu ≥25 原生支持 OHOS GLES(本仓 29.0.4 无需 fork),rwh 0.6.2 `OhosNdkWindowHandle`/tao fork/`tauri::ohos::APP` 链路就绪;风险 gfx-rs/wgpu #9158(GLES sRGB,OPEN)+ webview 层级合成;估算 1~2 周 / 300~600 LOC;建议真机基线后按数据决策立项
+- [ ] 高像素 RAW(≥60MP)真机性能与内存基线(**模拟器基线已完成** 2026-10-04,见 6.10:61MP 编辑器 LowMemoryKill / 45MP 编辑器全通·交互 14~29 FPS·PSS 1.76GiB / 45MP 全分辨率导出进程死亡;交互 FPS 与源 MP 无关、GPU Processor 按预览尺寸创建为结构性结论;真机复测待硬件,资产与方法学已固化)
 
 ### Phase 4 — AI 与发布(2~3 周)
 - [ ] ORT 动态加载真机验证;AI 蒙版/降噪功能分级测试
