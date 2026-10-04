@@ -290,8 +290,65 @@ hdc shell "hilog -x | grep -iE 'CppCrash|rapidraw.*(fatal|crash)'"   # 崩溃扫
 **5. 已知限制/顺延项**
 
 - 网格实际图片显示未在本会话直接验证(用户存储无图片可扫;shell 受 SELinux 限制写不进用户存储,root/su 不可用)——但读取链已由 stat/GetFolderTree/ListImagesInDir(空结果无错)证实,图片渲染链已由 6.4 编辑器照片测试覆盖,残余风险低
-- FileKit 单文件选择(导入流)与保存对话框(LUT/预设/导出面板等其余 plugin-dialog 消费点)仍待接桥——同模式复制即可
-- 相册导出 `save_image_bytes_to_ohos_gallery`(photoAccessHelper)顺延
+- FileKit 单文件选择(导入流)与保存对话框(LUT/预设/导出面板等其余 plugin-dialog 消费点)仍待接桥——同模式复制即可(→ 已由 6.7 落地)
+- 相册导出 `save_image_bytes_to_ohos_gallery`(photoAccessHelper)顺延(→ 已由 6.7 落地)
+
+### 6.7 Phase 2:文件选择与相册导出桥——导入/导出全链路(2026-10-04)
+
+**成果**:OHOS 端到端打通两条链——①文件选择+导入(FileKit picker → 图库缩略图渲染);②相册导出(编辑后 RAW → JPEG 编码 → 系统保存对话框 → 媒体库落库)。铁证:
+
+```
+[RapidRAW] save_to_gallery ok: file://media/Photo/4/IMG_1791093991_003/DSC09105_edited.jpg
+```
+
+图库 picker 侧栏「来自应用 → RapidRAW」可见导出产物(两次成功的对话框导出均落库,系统侧归属正确)。
+
+**1. 桥架构升级(6.6 单请求 oneshot → requestId 注册表,支持并发多请求)**
+
+- `ohos_integration.rs` `file_bridge`:`static REQUESTS: Mutex<Option<HashMap<u32, oneshot::Sender<String>>>> = Mutex::new(None)`——**`HashMap::new` 非 const fn,`Mutex::new(HashMap::new())` 触发 E0015**,必须 Option 包裹 + `get_or_insert_with` 惰性初始化;配 `park_sender`/`remove_sender`/`complete_request`/`NEXT_REQUEST_ID: AtomicU32`
+- 4 个类型化 napi 导出:`resolve_ohos_pick_folder` / `resolve_ohos_pick_files` / `resolve_ohos_save_to_gallery` / `resolve_ohos_save_file_as`;回传统一为 Rust 侧构造的 JSON 字符串(避开 ArkTS 对象字面量严格检查)
+- `dispatch_event(payload)`(JSON 请求)与 `dispatch(op)`(纯窗口控制)双格式;`request()`(async 命令上下文)+ `save_request_blocking()`(`blocking_recv`,供 `spawn_blocking` 导出线程)
+- `EntryAbility.ets`(机器本地):回调内 `JSON.parse(op) as Record<string, Object>` 路由到 4 个 handler,try/catch 回退 6.5 的纯 op 窗口控制
+
+**2. 导入链(pick_files)**
+
+- 命令 `pick_ohos_files(supported_extensions, max_select)`;`collapse_suffix_filters`:**FileKit `DocumentSelectOptions.fileSuffixFilters` 全输入 ≤100 字符,超限 picker 打开 0.6s 后静默自灭**(d.ts 实证);格式 `'描述|.ext1,.ext2'` 或 `'.ext'`;实现为去重 + 归并单元素,>96 字符整组放弃(前端 validFiles 客户端校验兜底,与 Android 行为一致)
+- `DocumentViewPicker` 多选 → `new fileUri.FileUri(uri).path` → **Rust `std::fs` 可直读媒体库路径**(`/storage/media/...`,此前最大未知点,导入链实证)
+- 前端消费点:MainLibrary 导入 FAB 门控(`props.isAndroid || useSettingsStore.getState().isOhos`)、ImagePicker、useFileOperations、LUTControl、PresetsPanel(`pickPresetExportPath` helper)
+
+**3. 导出链(save_to_gallery)——全部四个坑**
+
+Rust:`save_image_with_metadata` 增 `_app_handle` 尾参;OHOS 分支 `save_image_bytes_to_ohos_gallery` → `ohos_export_temp_file`(`{app_cache_dir}/export_bridge/{counter}_{name}`,AtomicU64 单调防并发撞名)→ `save_request_blocking` 派发;mask alpha(PNG)与 cube LUT 走 `save_file_bytes_to_ohos_picker`;两处 `create_dir_all` 加 OHOS 守卫(移动端哨兵路径不落盘建目录)。
+
+ArkTS(EntryAbility.saveToGallery),每坑皆有实锤:
+
+- **Tauri 路径解析**:OHOS 满足 `not(target_os="android")` → path 模块用 **desktop.rs 解析器**(`dirs` crate),`app_cache_dir()` 返回 **`/storage/Users/currentUser/.cache/io.github.CyberTimon.RapidRAW/`——用户公共存储区,非应用沙箱**(hilog 实证 tempPath)。跨进程系统服务无法授权该路径
+- **14000011**:`showAssetsCreationDialog` 的 `srcFileUris` 必须是 `fileUri.getUriFromPath()` 产出的规范沙箱 URI;传真实路径 → CommonSaveAbility 判 `uris or photoTypeArray parameter is invalid` → 应用侧只见 14000011 "Internal system error"(modal 创建 ~4s 后自灭)。修复:ArkTS 先把字节中转到 `this.context.cacheDir/export_bridge/`(文件名复用 Rust 计数器前缀保证唯一)再转 URI
+- **13900015**:**OHOS `fs.mkdirSync(path, true)` 不幂等**——目录已存在照抛 "File exists"(与 POSIX `mkdir -p` 语义相反);修复:`fs.accessSync` 探测,不存在才 mkdir
+- **arkts-limited-throw**:ArkTS 的 throw 只接受 Error 类型,不能 rethrow catch 变量(嵌套 try + `(e as BusinessError).code` 判断的方案也因 rethrow 编译失败)
+- **createAsset 权限墙(201)**:`WRITE_IMAGEVIDEO` 为受限权限,常规签名不可得;`showAssetsCreationDialog`(API 12)弹窗授权替代——**用户同意后系统创建媒体资产并返回带永久写权限的 URI 列表,应用必须自行 fd-to-fd 拷贝字节**(`fs.openSync(沙箱源)` + `fs.openSync(URI, READ_WRITE|CREATE)` + `fs.copyFileSync(fd, fd)`,官方 demo 模式);返回空数组=用户拒绝;数组中非 URI 项=批量错误码(-3006 无效字符 / -2004 类型与扩展名不匹配 / -203 无效文件操作);`PhotoCreationConfig` 勿传 `subtype`(传了配置不生效);module.json5 abilities 的 label+icon 必配(对话框显示应用名)
+
+**4. 验证证据(x86_64 模拟器)**
+
+- 导入:picker 导航(图库 → 相册)→ 选中截图 → `pick_files -> 1 file(s)` → 图库缩略图 +「导入完成!」
+- 导出:DSC09105.ARW(25.6MP Sony RAW + 实际编辑:AgX/曝光 0.63/对比度 16/阴影 22/曲线)→ JPEG q90 导出 → 系统对话框「允许"RapidRAW"保存 1 张图片?」(带预览)→ 允许 → `save_to_gallery ok`(见成果);导出后应用状态健康(选中保留、面板数据完整、无错误)
+- 媒体库:图库 picker「来自应用 → RapidRAW (2 项)」——两次成功的对话框导出均落库
+- 静态门禁:cargo fmt / clippy `-D warnings` / host+aarch64 `cargo check` / tsc / eslint 全绿(修改文件零新增)
+
+**5. 运维与排障教训**
+
+- **hvigor daemon OOM**:连续多次构建后 node 守护进程堆耗尽;修复 = 杀 hvigor node 进程 + `$env:NODE_OPTIONS='--max-old-space-size=8192'`(每个新 shell 须重设;build-ohos.ps1 启动时自清 stale daemon)
+- **UI 测试坐标随面板状态漂移**:库视图布局取决于源面板展开/折叠与文件夹视图(同一缩略图在 (1354,882) 与 (820,528) 两种布局间切换);自动化必须逐步快照校准,历史坐标不可信
+- **hilog 环形缓冲轮转极快**(chromium vsync 刷屏 + 对话框加载洪流):事件后 2~4s 内抓取;错过后系统侧真相(CommonSaveAbility 日志)不可复现,只能重放操作
+- **系统侧日志才是根因现场**:14000011 的真实原因在 CommonSaveAbility(独立 PID)的 `uris or photoTypeArray parameter is invalid`,应用侧只看到 "Internal system error"——排障要抓系统进程日志,别只 grep 应用 tag
+
+**6. 已知限制/顺延项**
+
+- 批量导出每张图各弹一次系统对话框(`save_request_blocking` 串行等待;API 单次调用上限 100 张但对话框粒度为单次)——follow-up:评估 `MediaAssetChangeRequest` 批量授权或收集式 UX
+- 库视图导出成功无 toast(静默完成;编辑器视图未复测)
+- 调整面板直方图 canvas 无选中时渲染噪点/空白帧——待查(疑似 GPU readback 或未初始化缓冲,非本链路引入)
+- `save_file_as`(.cube LUT / 预设另存为)路径已实现,设备端验证顺延
+- Tauri `app_cache_dir()` 在 OHOS 指向用户公共存储区的偏差由 ArkTS 沙箱中转兜底;长期可考虑让 Rust 直写沙箱缓存目录
 
 ## 7. 移植路线图与进度清单
 
@@ -316,9 +373,10 @@ hdc shell "hilog -x | grep -iE 'CppCrash|rapidraw.*(fatal|crash)'"   # 崩溃扫
 
 ### Phase 2 — 平台集成(3~4 周)
 - [x] FileKit 文件夹选择桥(2026-10-04,见 6.6):"打开文件夹"端到端可用——DocumentViewPicker 桥(oneshot+napi 回传)+ `isOhos` 探测 + `handleOpenFolder` OHOS 分支;`FileUri.path` 直出沙箱路径、Rust 可读(stat 实证)、跨重启持久;photoAccessHelper 相册 URI 桥(单文件/相册)仍待接
-- [ ] 相册导出 `save_image_bytes_to_ohos_gallery`(替代 Android MediaStore 路径)
+- [x] 相册导出 `save_image_bytes_to_ohos_gallery`(2026-10-04,见 6.7):showAssetsCreationDialog 弹窗授权 + 沙箱中转 + fd 拷贝端到端实证(`save_to_gallery ok: file://media/Photo/…`,图库「来自应用 RapidRAW」可见)
+- [x] FileKit 文件选择桥 + 导入流(2026-10-04,见 6.7):`pick_ohos_files`(`collapse_suffix_filters` 规避 100 字符上限)+ 导入 FAB/图像选择器/LUT/预设消费点全接;Rust `std::fs` 直读媒体库路径实证
 - [x] TLS 根证书策略已确认(2026-10-03):维持 reqwest rustls 捆绑 webpki 根——rustls-platform-verifier 无 OHOS 后端,捆绑根对 HF/ohpm 端点足够;真机 TLS 握手验证顺延至 Phase 3/4 有设备时
-- [ ] tauri-plugin-dialog 其余消费点(LUT 导入/预设导入/图像选择器/导出保存对话框)接桥或前端替代——文件夹选择已由 6.6 桥替代;plugin-fs 无前端使用,无替代需求
+- [x] tauri-plugin-dialog 其余消费点接桥(2026-10-04,见 6.7):文件选择(LUT 导入/预设导入/图像选择器)走 `pick_ohos_files`,另存为走 `pick_ohos_save_file`(`save_file_as` 设备端验证顺延)——文件夹选择已由 6.6 桥替代;plugin-fs 无前端使用,无替代需求
 - [ ] 深色模式/安全区/返回手势等系统 UI 适配
 - [x] 窗口控制可用(2026-10-04,见 6.5):系统装饰栏原生提供 最小化/最大化/关闭;自绘标题栏保留(标题/拖动),拖动经 Rust↔ArkTS `startMoving` 桥(实测 +400px 精确);OHOS 隐藏自绘三按钮——系统装饰输入矩形残留发现,原"隐藏 decor 独占"方案(2026-10-03)已反转(历史与教训见 6.4)
 - [x] 应用图标与 label 对齐其他平台:entry 字符串资源 + layered_image 双层图标 + startIcon,均取自 `src-tauri/icons/full_res_original.png`(2026-10-03,见 6.4)。**注:以上 EntryAbility/字符串/图标三处改动均位于 gitignored 的 `gen/ohos/`,`cargo tauri ohos init` 重跑后需按 6.4 重打**
