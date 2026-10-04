@@ -289,7 +289,7 @@ export function useFileOperations(
 
   const handleImportClick = useCallback(
     async (targetPath: string) => {
-      const { supportedTypes, osPlatform } = useSettingsStore.getState();
+      const { supportedTypes, osPlatform, isOhos } = useSettingsStore.getState();
       const { setUI } = useUIStore.getState();
       const isAndroid = osPlatform === 'android';
 
@@ -314,11 +314,21 @@ export function useFileOperations(
               { name: 'All Files', extensions: ['*'] },
             ];
 
-        const selected = await open({
-          filters: typeFilters,
-          multiple: true,
-          title: 'Select files to import',
-        });
+        let selected: string[] | string | null = null;
+        if (isOhos) {
+          // tauri-plugin-dialog is unavailable on OHOS; the FileKit picker
+          // bridge filters by extension picker-side.
+          selected = await invoke<string[]>(Invokes.PickOhosFiles, {
+            supportedExtensions: allImageExtensions,
+            maxSelect: 500,
+          });
+        } else {
+          selected = await open({
+            filters: typeFilters,
+            multiple: true,
+            title: 'Select files to import',
+          });
+        }
 
         if (Array.isArray(selected) && selected.length > 0) {
           const invalidExtensions = new Set<string>();
@@ -355,7 +365,7 @@ export function useFileOperations(
             return;
           }
 
-          if (isAndroid) {
+          if (isAndroid || isOhos) {
             const DEFAULT_IMPORT_SETTINGS = {
               filenameTemplate: '{original_filename}',
               organizeByDate: false,

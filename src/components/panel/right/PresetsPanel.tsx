@@ -44,6 +44,7 @@ import { TextColors, TextVariants, TextWeights } from '../../../types/typography
 import { Adjustments, INITIAL_ADJUSTMENTS, ADJUSTMENT_GROUPS } from '../../../utils/adjustments';
 import { Invokes, OPTION_SEPARATOR, Panel, Preset, SelectedImage } from '../../ui/AppProperties';
 import { useEditorStore } from '../../../store/useEditorStore';
+import { useSettingsStore } from '../../../store/useSettingsStore';
 import { useUIStore } from '../../../store/useUIStore';
 import { useEditorActions } from '../../../hooks/useEditorActions';
 
@@ -1033,21 +1034,33 @@ export default function PresetsPanel({ onNavigateToCommunity }: PresetsPanelProp
 
   const handleImportPresets = async () => {
     try {
-      const selectedPaths = await openDialog({
-        filters: [
-          { name: t('editor.presets.dialog.allPresetFiles'), extensions: ['rrpreset', 'xmp', 'lrtemplate'] },
-          { name: t('editor.presets.dialog.rapidRawPreset'), extensions: ['rrpreset'] },
-          { name: t('editor.presets.dialog.legacyPreset'), extensions: ['xmp', 'lrtemplate'] },
-        ],
-        multiple: true,
-        title: t('editor.presets.dialog.importPresetsTitle'),
-      });
+      const { isOhos } = useSettingsStore.getState();
 
-      if (!selectedPaths) {
-        return;
+      let paths: string[] = [];
+      if (isOhos) {
+        // tauri-plugin-dialog is unavailable on OHOS; the FileKit picker
+        // bridge filters by extension picker-side.
+        paths = await invoke<string[]>(Invokes.PickOhosFiles, {
+          supportedExtensions: ['rrpreset', 'xmp', 'lrtemplate'],
+          maxSelect: 100,
+        });
+      } else {
+        const selectedPaths = await openDialog({
+          filters: [
+            { name: t('editor.presets.dialog.allPresetFiles'), extensions: ['rrpreset', 'xmp', 'lrtemplate'] },
+            { name: t('editor.presets.dialog.rapidRawPreset'), extensions: ['rrpreset'] },
+            { name: t('editor.presets.dialog.legacyPreset'), extensions: ['xmp', 'lrtemplate'] },
+          ],
+          multiple: true,
+          title: t('editor.presets.dialog.importPresetsTitle'),
+        });
+
+        if (!selectedPaths) {
+          return;
+        }
+
+        paths = Array.isArray(selectedPaths) ? selectedPaths : [selectedPaths];
       }
-
-      const paths = Array.isArray(selectedPaths) ? selectedPaths : [selectedPaths];
       if (paths.length === 0) {
         return;
       }
@@ -1065,19 +1078,32 @@ export default function PresetsPanel({ onNavigateToCommunity }: PresetsPanelProp
     }
   };
 
+  const pickPresetExportPath = async (defaultName: string, title: string): Promise<string | null> => {
+    const { isOhos } = useSettingsStore.getState();
+    if (isOhos) {
+      // tauri-plugin-dialog is unavailable on OHOS; the FileKit save picker
+      // creates the file and returns its path.
+      return invoke<string | null>(Invokes.PickOhosSaveFile, { fileName: defaultName });
+    }
+    return saveDialog({
+      defaultPath: defaultName,
+      filters: [{ name: t('editor.presets.dialog.presetFile'), extensions: ['rrpreset'] }],
+      title,
+    });
+  };
+
   const handleExport = async (item: UserPreset) => {
     const isFolder = !!item.folder;
     const name = isFolder ? item.folder?.name : item.preset?.name;
     const itemsToExport = [item];
 
     try {
-      const filePath = await saveDialog({
-        defaultPath: `${name}.rrpreset`.replace(/[<>:"/\\|?*]/g, '_'),
-        filters: [{ name: t('editor.presets.dialog.presetFile'), extensions: ['rrpreset'] }],
-        title: t('editor.presets.dialog.exportTitle', {
+      const filePath = await pickPresetExportPath(
+        `${name}.rrpreset`.replace(/[<>:"/\\|?*]/g, '_'),
+        t('editor.presets.dialog.exportTitle', {
           type: isFolder ? t('editor.presets.types.folder') : t('editor.presets.types.preset'),
         }),
-      });
+      );
 
       if (filePath) {
         await exportPresetsToFile(itemsToExport, filePath);
@@ -1092,11 +1118,7 @@ export default function PresetsPanel({ onNavigateToCommunity }: PresetsPanelProp
       return;
     }
     try {
-      const filePath = await saveDialog({
-        defaultPath: 'all_presets.rrpreset',
-        filters: [{ name: t('editor.presets.dialog.presetFile'), extensions: ['rrpreset'] }],
-        title: t('editor.presets.dialog.exportAllTitle'),
-      });
+      const filePath = await pickPresetExportPath('all_presets.rrpreset', t('editor.presets.dialog.exportAllTitle'));
 
       if (filePath) {
         await exportPresetsToFile(presets, filePath);

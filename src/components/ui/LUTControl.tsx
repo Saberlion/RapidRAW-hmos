@@ -7,6 +7,7 @@ import { AnimatePresence, motion } from 'framer-motion';
 import { useContextMenu } from '../../context/ContextMenuContext';
 import { toast } from 'react-toastify';
 import Slider from './Slider';
+import { Invokes } from './AppProperties';
 import { useEditorStore } from '../../store/useEditorStore';
 import { useSettingsStore } from '../../store/useSettingsStore';
 
@@ -141,21 +142,31 @@ export default function LUTControl({
 
   const handleImport = async () => {
     try {
-      const { osPlatform } = useSettingsStore.getState();
+      const { osPlatform, isOhos } = useSettingsStore.getState();
       const isAndroid = osPlatform === 'android';
 
-      const selected = await open({
-        multiple: true,
-        filters: isAndroid
-          ? []
-          : [
-              {
-                name: t('ui.lut.filterLabel'),
-                extensions: [...SUPPORTED_EXTENSIONS, ...SUPPORTED_EXTENSIONS.map((ext) => ext.toUpperCase())],
-              },
-            ],
-      });
-      const sourcePaths = Array.isArray(selected) ? selected : selected ? [selected] : [];
+      let sourcePaths: string[] = [];
+      if (isOhos) {
+        // tauri-plugin-dialog is unavailable on OHOS; the FileKit picker
+        // bridge filters by extension picker-side.
+        sourcePaths = await invoke<string[]>(Invokes.PickOhosFiles, {
+          supportedExtensions: SUPPORTED_EXTENSIONS,
+          maxSelect: 100,
+        });
+      } else {
+        const selected = await open({
+          multiple: true,
+          filters: isAndroid
+            ? []
+            : [
+                {
+                  name: t('ui.lut.filterLabel'),
+                  extensions: [...SUPPORTED_EXTENSIONS, ...SUPPORTED_EXTENSIONS.map((ext) => ext.toUpperCase())],
+                },
+              ],
+        });
+        sourcePaths = Array.isArray(selected) ? selected : selected ? [selected] : [];
+      }
       if (sourcePaths.length === 0) return;
 
       let validPaths = sourcePaths;
