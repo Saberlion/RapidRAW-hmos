@@ -461,11 +461,71 @@ OHOS 复用 Android 的 compute-only + 回读路径:GPU compute → 回读(map)�
 - **4GB 模拟器天花板**:编辑器路径 45MP 通 / 61MP 亡(去马赛克 f32 中间链 ~2GB+ 触发系统查杀);全分辨率导出 45MP 即亡(编辑器驻留 1.76GB + 8448×5632 全尺寸 GPU 缓冲超出剩余预算)
 - 61MP 缩略图走 ARW 内嵌预览提取,零去马赛克成本——大文件**浏览**不受编辑器天花板影响
 - **真机预期**:8~16GB RAM + 独立 GPU 内存预算下,按上述内存模型推算 61MP 编辑器与全分辨率导出可行,待真机按本节方法学复测确认
+- **缓解方向已评估**(2026-10-04,见 6.11):死因定位为 rawler 开发管线校准/裁剪阶段的"双缓冲同栖峰值"(1.6GB),非 f32 字节宽度本身;建议路径 = 短期降分辨率编辑模式+资源预检(编排层,零 fork)→ 中期驻留瘦身+校准/裁剪 in-place 小 fork;全管线 u16/f16 替换明确不做
 
 **5. 阻塞与顺延**
 
 - 真机基线:无硬件(项目级阻塞);复测清单 = DSC00395.ARW + synth45.dng + 本节测量通道命令序列
 - 模拟器 GPU 为宿主透传,绝对数值不可外推;仅结构性结论(路径连通性/天花板存在性/资源感知行为)可迁移
+
+### 6.11 Phase 3-3 后续:61MP LowMemoryKill 缓解方向——f32 管线可行性评估(2026-10-04)
+
+**背景**:6.10 落定 61MP 编辑器加载被 LowMemoryKill 后,引出问题——**能否不使用 f32 管线**(全分辨率 RAW 管线改用 u16/f16 承载)以降内存?结论:**技术上可行但不值得——死因是开发管线内部的"拷贝语义峰值",不是 f32 的字节宽度;全类型替换是手术最大、收益错位的杠杆。**
+
+**1. f32 在管线中的三个角色(代码证据)**
+
+| 角色 | 位置 | 证据 |
+|---|---|---|
+| 计算介质 | rawler `Intermediate` 全程 | `PixF32`/`Color2D<f32,3>`(`RapidRAW-DngLab` fork,`imgop/develop.rs:131` `develop_intermediate`);校准矩阵 `xyz2cam` 含负系数、WB 增益 2~4×、线性域 >1.0,数学上必须浮点 |
+| 传输类型 | 全下游公共契约 | `DynamicImage::ImageRgb32F`:`downscale_f32_image`(`image_processing.rs:216`)15 个调用方;GPU 上传在边界 `to_rgba_f16` 转 f16;降噪/蒙版/导出全部以 Rgb32F 为输入 |
+| 驻留格式 | 会话状态 | `AppState`/`CachedPreview` 持全分辨率 `Arc<DynamicImage>`(61MP=734MB)+ small_image + GPU 缓存 |
+
+注:rawler 为上游作者自有 fork(`Cargo.toml` git 依赖 @ `934af4b2`),技术上可改;但桌面版共用同一管线,改动有回归面。
+
+**2. 61MP 加载峰值解剖(死因定位)**
+
+`develop_intermediate` 内部字节账(9600×6376,各阶段存活缓冲):
+
+```
+rawimage.clone()      u16 CFA   122MB   ← develop 入口整份克隆(L132),全程存活
+Monochrome 中间态     f32 CFA   245MB   ← as_f32() 转换(L138)
+demosaic 输出         f32 RGB   734MB
+── 校准 map_3ch_to_rgb(&pixels,…)  新分配 734MB,输入输出同栖 → 峰值 1.59GB(L252)
+── 裁剪 pixels.crop(crop)          新分配 723MB,同栖        → 峰值 1.58GB(L279-284)
++ file_bytes(123MB 压缩原文件同时在内存)+ 应用基线 0.6~1.2GB
+= 加载瞬间 ~2.3-2.9GB → 4GB 模拟器 LMK(与 6.10"日志止于 crop 行"吻合)
+```
+
+**关键推论**:驻留改 u16 只省"编辑期"的 367MB,**加载瞬间的 1.6GB 峰值分毫未减——61MP 照死在加载**。治峰值需动 rawler 校准/裁剪的拷贝语义,而这与"换掉 f32"是两件事:两个函数 in-place 化(不改任何类型)即可把峰值压到 ~1.1GB(demosaic 阶段成为新峰值:克隆 122 + Monochrome 245 + ThreeColor 734)。
+
+**3. 选项评估**
+
+| 方案 | 改动面 | 收益 | 判断 |
+|---|---|---|---|
+| A. 全管线换 u16/f16 | rawler fork(负值→偏置编码约定贯穿 demosaic/校准)+ 下游 15+ 调用点全改型 + 画质回归风险(u16 阴影 banding;f16 十位尾数在色彩矩阵连乘后误差累积) | 峰值与驻留都减半 | ✗ 不推荐:手术最大、与桌面版永久分叉,同额收益用 C/D 小手术同样可得 |
+| B. 驻留瘦身+按需重开发 | `AppState.original_image` 模型:保留 u16(367MB)或 CFA(122MB),编辑用现成 preview,导出/ROI 时释放编辑态后单次重开发(~1.4s@61MP) | 驻留 -367~-612MB;**不解决加载峰值** | ○ 中期架构项,需与 C/D 组合 |
+| C. 低内存设备降分辨率编辑模式 | 编排层:复用现成 `fast_demosaic` 旋钮(`get_fast_demosaic_scale_factor`,`raw_processing.rs:274`,已有 0.5/0.25 档;0.5×线性=15.3MP→f32 184MB,加载峰值 ~0.3GB)+ 导出时全分辨率重开发 | 4GB 设备 61MP **可编辑、可全分辨率导出**,PSS ~1.0GB | ✓ 推荐先行:不动 rawler、不动下游类型,最小手术 |
+| D. 加载前资源预检+可见降级提示 | 复用导出路径资源感知先例(`Batch Export: N cores, X GB free RAM -> M threads`) | 消灭"闪退"观感 | ✓ 配合 C,几十行 |
+
+中间档(若必须全分辨率进低内存设备):校准/裁剪 in-place 化小 fork,~50-100 LOC,加载峰值 1.59→1.1GB,61MP 编辑会话 PSS 落 ~1.5-2.0GB——真机 4GB 大概率能过,x86 模拟器自身开销大、仍临界。此类 PR 可推回 rawler 上游,维护成本最低。
+
+**4. 边界与结论**
+
+- **换掉 CPU 侧 f32 救不了全分辨率导出**:45MP 导出死在 GPU 侧全分辨率纹理(`Creating new GPU Processor for dimensions up to 8448x5632` 后 `onAbilityDied`),与 CPU 缓冲类型无关;导出解法是**输入纹理分块**(GPU 渲染已有 TILE_SIZE=2048 分块,但输入上传仍是整图),独立工作项
+- **f32 管线在真机不是缺陷**:8~16GB 设备 61MP 峰值 ~2.4GB 本来能过;4GB 模拟器低于上游设计基线(上游 README:16GB recommended)。C+D 是为低内存环境补的适配层,不是管线重写的理由
+- **建议路径**:短期 C+D(编排层,零 fork,4GB 设备立刻可用)→ 中期 B + in-place 小 fork(可推回上游)→ A 明确不做
+
+### 6.12 Phase 4 前置:模型下载"权限问题"根因与 AI 运行时管线打通(2026-10-04)
+
+**问题**:模拟器实测触发 AI 功能,模型下载完整落盘前报权限错误(用户所见"权限问题")。根因不在网络也不在目录创建:`persist_downloaded_asset` 的 `fs::rename` 在 OHOS FUSE 用户文件挂载(app_data_dir 落于 `/storage/media/100/.../Docs/.local/share/<bundle>`)上返回 `Permission denied (os error 13)`——同目录 rename 也拒,且 shell 上下文 `mv` 却可用(FUSE 按会话管控)。SAM encoder 100,293,382 B 完整下载后死在 rename,临时文件 `.sam_*.download` 冻结。
+
+**修复 1(ai_processing.rs `persist_downloaded_asset`)**:fsync 降级 best-effort(下载后 sha256 复验使其对正确性冗余)+ rename 失败回退纯字节拷贝(`File::create`+`io::copy`,只用已验证可行的读写路径,避开元数据操作)。验证:5 个模型(SAM enc/dec、u2net、skyseg、depth,合计 ~560MB)全部落盘,3 次 rename EACCES 均由拷贝回退救回(app.log WARN 铁证);skyseg 落盘时 rename 又恰好成功——FUSE 行为不稳定,回退必须常驻。
+
+**修复 2(ORT 运行库从未进 HAP——连带缺口)**:`ohrs build --dist entry/libs` 会**清空目标 ABI 目录**再放入 cargo 产物,手动放置的 .so 活不过构建;而 ort 为 load-dynamic(运行时按裸 soname `libonnxruntime.so` dlopen,见 lib.rs ORT_DYLIB_PATH 设置)。症状:模型全部就绪后 `Session::builder` PANIC `Error loading shared library libc++_shared.so (needed by .../libs/x86_64/libonnxruntime.so)`。修复 = `build-ohos.ps1` 新增打包后注入阶段:从 `src-tauri/libs/ohos/<abi>/` 注入 libonnxruntime.so + NDK 对应 ABI 的 `libc++_shared.so`(ORT 的 DT_NEEDED;cmake 只给 arm64 出了一份);`-SkipBuild` 开关可单独重注入。x86_64 ORT v1.28.2 取自 csukuangfj/onnxruntime-libs "ohos" release(与 ort rc.10 绑定经 C API 版本协商向后兼容);build.rs 查找路径由硬编码 arm64-v8a 升级为按 ABI 映射(aarch64→arm64-v8a / arm→armeabi-v7a / x86_64→x86_64)。
+
+**已知边界(非缺陷,与 6.10 同构)**:4GB 模拟器装不下 5 模型 AI 蒙版栈——SAM enc+dec+u2net+skyseg+depth 会话 ≈560MB + 编辑器基线,大图小图两次触发 LowMemoryKill(hilog 20:49:40 / 20:55:54);真机 8GB+ 在预算内。
+
+**端到端实证(NIND AI 降噪,单模型路径)**:124MB NIND 从 hf-mirror 下载→FUSE 持久化→ORT dlopen(注入后无 PANIC)→分块推理→前后对比 UI→保存 `small_test_Denoised.png`(1.08MB)+ .rrdata 落盘,全程无崩溃。**AI 功能在模拟器经单模型路径全通;5 模型蒙版路径待真机**。
 
 ## 7. 移植路线图与进度清单
 
@@ -501,10 +561,10 @@ OHOS 复用 Android 的 compute-only + 回读路径:GPU compute → 回读(map)�
 ### Phase 3 — 渲染验证(1~2 周)
 - [x] compute-only + IPC 回读路径点亮编辑器(Android 同款,零新增风险)(2026-10-04,见 6.8):Mali-G77 GLES 后端实测点亮——GPU Processor/apply_adjustments/estimate_export_size/generate_thumbnail_data 全链路日志铁证,交互 ROI ~29 FPS,曝光编辑视觉生效;`Fake map` 为回读路径良性产物
 - [x] 评估 wgpu GLES surface 直渲(XComponent + `OhosNdkWindowHandle`)提性能(2026-10-04,见 6.9):结论 **GO(有条件)**——上游 wgpu ≥25 原生支持 OHOS GLES(本仓 29.0.4 无需 fork),rwh 0.6.2 `OhosNdkWindowHandle`/tao fork/`tauri::ohos::APP` 链路就绪;风险 gfx-rs/wgpu #9158(GLES sRGB,OPEN)+ webview 层级合成;估算 1~2 周 / 300~600 LOC;建议真机基线后按数据决策立项
-- [ ] 高像素 RAW(≥60MP)真机性能与内存基线(**模拟器基线已完成** 2026-10-04,见 6.10:61MP 编辑器 LowMemoryKill / 45MP 编辑器全通·交互 14~29 FPS·PSS 1.76GiB / 45MP 全分辨率导出进程死亡;交互 FPS 与源 MP 无关、GPU Processor 按预览尺寸创建为结构性结论;真机复测待硬件,资产与方法学已固化)
+- [ ] 高像素 RAW(≥60MP)真机性能与内存基线(**模拟器基线已完成** 2026-10-04,见 6.10:61MP 编辑器 LowMemoryKill / 45MP 编辑器全通·交互 14~29 FPS·PSS 1.76GiB / 45MP 全分辨率导出进程死亡;交互 FPS 与源 MP 无关、GPU Processor 按预览尺寸创建为结构性结论;真机复测待硬件,资产与方法学已固化;**缓解方向评估已完成**,见 6.11——短期降分辨率编辑+预检 / 中期驻留瘦身+in-place 小 fork / 全管线 u16/f16 替换否决)
 
 ### Phase 4 — AI 与发布(2~3 周)
-- [ ] ORT 动态加载真机验证;AI 蒙版/降噪功能分级测试
+- [ ] ORT 动态加载真机验证;AI 蒙版/降噪功能分级测试(**模拟器部分已完成** 2026-10-04,见 6.12:NIND AI 降噪端到端全通——下载/持久化/ORT dlopen/推理/保存;模型下载 FUSE rename EACCES 已由拷贝回退修复;5 模型蒙版栈被 4GB 模拟器 LMK 阻塞待真机;x86_64 ORT v1.28.2 经 build-ohos.ps1 注入 HAP)
 - [ ] (可选)MindSpore Lite / NNRt NPU 路径评估(**前置调研已完成** 2026-10-04,见 `docs/MINDSPORE_LITE_NPU_EVAL.md`:结论 GO 基础上分模型——系统 MindSpore Lite Kit(`libmindspore_lite_ndk.z.so`,`OH_AI_*` C API,NNRT+CPU 逐算子回退)为推荐路径,Rust 绑定需手写(无现成 crate);converter_lite 2.10.0 离线转换;U2Net/skyseg/NIND 低风险、ViT 系需重导出、**LaMa 受 FFT 阻塞**;**全部验证需真机**——模拟器无 Kit/NNRT 支持,与 Phase 3-3 同一硬件阻塞)
 - [ ] AGC 签名、AppGallery 上架(摄影类目)、版本通道
 
