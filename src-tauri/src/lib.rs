@@ -2195,6 +2195,7 @@ pub fn run() {
             android_integration::resolve_android_content_uri_name,
             ohos_integration::ohos_window_control,
             ohos_integration::is_ohos_build,
+            ohos_integration::get_ohos_color_mode,
                 ohos_integration::pick_ohos_folder,
                 ohos_integration::pick_ohos_files,
                 ohos_integration::pick_ohos_save_file,

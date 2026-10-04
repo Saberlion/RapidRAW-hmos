@@ -62,3 +62,8 @@ export const THEMES: Array<ThemeProps> = [
 ];
 
 export const DEFAULT_THEME_ID = Theme.Dark;
+
+// Theme.System has no cssVariables of its own; it resolves to Dark/Light from
+// the OS color scheme (OHOS bridge event or prefers-color-scheme elsewhere).
+export const resolveThemeId = (themeId: string, isSystemDark: boolean | null): Theme =>
+  themeId === Theme.System ? (isSystemDark ? Theme.Dark : Theme.Light) : (themeId as Theme);

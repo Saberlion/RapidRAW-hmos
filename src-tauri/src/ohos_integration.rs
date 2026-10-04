@@ -8,17 +8,22 @@
 
 #[cfg(target_env = "ohos")]
 pub fn initialize_ohos(window: &tauri::WebviewWindow) {
+    use tauri::Manager;
+
     log::info!(
         "Initializing RapidRAW on OpenHarmony (window: '{}').",
         window.label()
     );
 
+    system_bridge::set_app_handle(window.app_handle().clone());
+
     // Phase 2 work items (see docs/HARMONYOS_PORTING.md):
-    // - User file access via FileKit / photoAccessHelper URIs (the equivalent
-    //   of the Android content-URI bridge), wired through the tauri-ohos NAPI
-    //   layer (`@ohos-rs/ability`).
-    // - Gallery export (`save_image_bytes_to_ohos_gallery`) as the equivalent
-    //   of `save_image_bytes_to_android_gallery`.
+    // - File access via FileKit / photoAccessHelper: DONE (file_bridge +
+    //   EntryAbility picker handlers, see 6.6/6.7).
+    // - Gallery export (save_image_bytes_to_ohos_gallery): DONE (6.7).
+    // - System UI adaptation: back gesture + color mode live in
+    //   `system_bridge` below; safe-area/keyboard avoidance is handled on
+    //   the ArkTS side (EntryAbility patch).
     // - TLS platform verifier: rustls-platform-verifier has no OHOS backend
     //   yet, so reqwest currently relies on bundled webpki roots.
 }
@@ -95,6 +100,93 @@ mod window_controller {
 #[tauri::command]
 pub fn is_ohos_build() -> bool {
     cfg!(target_env = "ohos")
+}
+
+// ---------------------------------------------------------------------------
+// System UI bridge: back gesture & color mode (Phase 2 system UI adaptation)
+// ---------------------------------------------------------------------------
+//
+// Back: the app installs its own @Entry page (gen/ohos .../pages/Index.ets,
+// machine-local patch — see docs 6.5) whose page-level `onBackPress` calls
+// the `notifyOhosBackPressed` NAPI export below. A page-level return of
+// `true` fully consumes the gesture (ability-level `onBackPressed` can only
+// background or destroy the app, which would fire even when the webview just
+// closed a modal). The re-emitted `ohos-back-pressed` tauri event drives the
+// same chain as the Android back button (useAndroidBackHandler.ts: close
+// modals, then a synthetic Escape keydown).
+//
+// Color mode: EntryAbility (machine-local patch, docs 6.5) pushes the system
+// color mode through `notify_ohos_color_mode` at startup and on every
+// onConfigurationUpdate. The crate's Rust event loop also receives
+// ConfigChanged, but tauri's OHOS runtime consumes that loop without exposing
+// configuration updates to the app, hence this side channel. The frontend
+// queries the initial value (`get_ohos_color_mode`) and follows changes via
+// the `ohos-color-mode` event.
+
+#[cfg(target_env = "ohos")]
+mod system_bridge {
+    use std::sync::OnceLock;
+    use std::sync::atomic::{AtomicU8, Ordering};
+
+    use napi_ohos::bindgen_prelude::Result;
+
+    // 0 = unknown, 1 = dark, 2 = light.
+    static COLOR_MODE: AtomicU8 = AtomicU8::new(0);
+    static APP_HANDLE: OnceLock<tauri::AppHandle> = OnceLock::new();
+
+    pub fn set_app_handle(handle: tauri::AppHandle) {
+        let _ = APP_HANDLE.set(handle);
+    }
+
+    pub fn color_mode() -> Option<bool> {
+        match COLOR_MODE.load(Ordering::Relaxed) {
+            1 => Some(true),
+            2 => Some(false),
+            _ => None,
+        }
+    }
+
+    fn emit(event: &str, payload: serde_json::Value) {
+        if let Some(handle) = APP_HANDLE.get() {
+            use tauri::Emitter;
+            let _ = handle.emit(event, payload);
+        }
+    }
+
+    /// NAPI export (ArkTS name: `notifyOhosBackPressed`). Called by the app's
+    /// custom entry page when the user triggers the system back gesture.
+    #[napi_derive_ohos::napi]
+    pub fn notify_ohos_back_pressed() -> Result<()> {
+        emit("ohos-back-pressed", serde_json::Value::Null);
+        Ok(())
+    }
+
+    /// NAPI export (ArkTS name: `notifyOhosColorMode`). EntryAbility pushes
+    /// the current system color mode here.
+    #[napi_derive_ohos::napi]
+    pub fn notify_ohos_color_mode(dark: bool) -> Result<()> {
+        let next = if dark { 1 } else { 2 };
+        let previous = COLOR_MODE.swap(next, Ordering::Relaxed);
+        if previous != next {
+            log::info!("OHOS system color mode changed: dark={dark}");
+            emit("ohos-color-mode", serde_json::json!({ "dark": dark }));
+        }
+        Ok(())
+    }
+}
+
+/// Latest OHOS system color mode reported by the ArkTS side, or `None` when
+/// the bridge has not reported yet (always `None` on other platforms).
+#[tauri::command]
+pub fn get_ohos_color_mode() -> Option<bool> {
+    #[cfg(target_env = "ohos")]
+    {
+        system_bridge::color_mode()
+    }
+    #[cfg(not(target_env = "ohos"))]
+    {
+        None
+    }
 }
 
 // ---------------------------------------------------------------------------

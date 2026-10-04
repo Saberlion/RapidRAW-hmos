@@ -1880,7 +1880,8 @@
     "themes": {
       "dark": "Dunkel",
       "grey": "Grau",
-      "light": "Hell"
+      "light": "Hell",
+      "system": "System"
     },
     "title": "Einstellungen",
     "tooltips": {

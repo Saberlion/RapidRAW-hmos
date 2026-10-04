@@ -1878,7 +1878,8 @@
     "themes": {
       "dark": "다크",
       "grey": "그레이",
-      "light": "라이트"
+      "light": "라이트",
+      "system": "시스템"
     },
     "title": "설정",
     "tooltips": {

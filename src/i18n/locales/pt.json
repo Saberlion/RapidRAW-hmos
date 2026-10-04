@@ -1914,7 +1914,8 @@
     "themes": {
       "dark": "Escuro",
       "grey": "Cinza",
-      "light": "Claro"
+      "light": "Claro",
+      "system": "Sistema"
     },
     "title": "Configurações",
     "tooltips": {

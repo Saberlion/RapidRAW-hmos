@@ -1913,7 +1913,8 @@
     "themes": {
       "dark": "Scuro",
       "grey": "Grigio",
-      "light": "Chiaro"
+      "light": "Chiaro",
+      "system": "Sistema"
     },
     "title": "Impostazioni",
     "tooltips": {

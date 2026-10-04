@@ -33,7 +33,7 @@ import Input from '../ui/Input';
 import Slider from '../ui/Slider';
 import { ThemeProps, THEMES, DEFAULT_THEME_ID } from '../../utils/themes';
 import { useTranslation } from 'react-i18next';
-import { Invokes } from '../ui/AppProperties';
+import { Invokes, Theme } from '../ui/AppProperties';
 import {
   formatKeyCode,
   KeybindDefinition,
@@ -1079,10 +1079,13 @@ export default function SettingsPanel({
                       <SettingItem label={t('settings.general.theme')} description={t('settings.general.themeDesc')}>
                         <Dropdown
                           onChange={(value: any) => onSettingsChange({ ...appSettings, theme: value })}
-                          options={THEMES.map((theme: ThemeProps) => ({
-                            value: theme.id,
-                            label: t(theme.name as any),
-                          }))}
+                          options={[
+                            { value: Theme.System, label: t('settings.themes.system') },
+                            ...THEMES.map((theme: ThemeProps) => ({
+                              value: theme.id,
+                              label: t(theme.name as any),
+                            })),
+                          ]}
                           value={appSettings?.theme || DEFAULT_THEME_ID}
                           triggerClassName="bg-bg-primary"
                         />

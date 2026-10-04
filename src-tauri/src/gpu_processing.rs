@@ -225,6 +225,14 @@ pub fn get_or_init_gpu_context(
         format!("Failed to find a wgpu adapter: {}", e)
     })?;
 
+    let adapter_info = adapter.get_info();
+    log::info!(
+        "Using GPU adapter: {} (backend: {:?}, type: {:?})",
+        adapter_info.name,
+        adapter_info.backend,
+        adapter_info.device_type
+    );
+
     let mut required_features = wgpu::Features::empty();
     if adapter
         .features()

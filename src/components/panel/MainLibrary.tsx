@@ -21,7 +21,7 @@ import CullingView from './library/CullingView';
 import { motion, AnimatePresence } from 'framer-motion';
 import { useTranslation } from 'react-i18next';
 import Button from '../ui/Button';
-import { ThemeProps, THEMES, DEFAULT_THEME_ID } from '../../utils/themes';
+import { ThemeProps, THEMES, DEFAULT_THEME_ID, resolveThemeId } from '../../utils/themes';
 import {
   AppSettings,
   ImageFile,
@@ -184,6 +184,7 @@ export default function MainLibrary(props: MainLibraryProps) {
   };
 
   const searchCriteria = useLibraryStore((state) => state.searchCriteria);
+  const isSystemDark = useSettingsStore((state) => state.isSystemDark);
 
   const translatedRatingFilterOptions = useMemo(
     () => [
@@ -321,7 +322,7 @@ export default function MainLibrary(props: MainLibraryProps) {
     const hasLastPath = !!props.appSettings.lastRootPath || !!props.appSettings.rootFolders?.length;
     const currentThemeId = props.theme || DEFAULT_THEME_ID;
     const selectedTheme: ThemeProps | undefined =
-      THEMES.find((t: ThemeProps) => t.id === currentThemeId) ||
+      THEMES.find((t: ThemeProps) => t.id === resolveThemeId(currentThemeId, isSystemDark)) ||
       THEMES.find((t: ThemeProps) => t.id === DEFAULT_THEME_ID);
     const splashImage = selectedTheme?.splashImage;
 

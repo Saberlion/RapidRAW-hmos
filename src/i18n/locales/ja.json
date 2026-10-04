@@ -1878,7 +1878,8 @@
     "themes": {
       "dark": "ダーク",
       "grey": "グレー",
-      "light": "ライト"
+      "light": "ライト",
+      "system": "システム"
     },
     "title": "設定",
     "tooltips": {

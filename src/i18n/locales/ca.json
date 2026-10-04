@@ -1880,7 +1880,8 @@
     "themes": {
       "dark": "Fosc",
       "grey": "Gris",
-      "light": "Clar"
+      "light": "Clar",
+      "system": "Sistema"
     },
     "title": "Configuració",
     "tooltips": {

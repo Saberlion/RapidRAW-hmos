@@ -1913,7 +1913,8 @@
     "themes": {
       "dark": "Oscuro",
       "grey": "Gris",
-      "light": "Claro"
+      "light": "Claro",
+      "system": "Sistema"
     },
     "title": "Ajustes",
     "tooltips": {

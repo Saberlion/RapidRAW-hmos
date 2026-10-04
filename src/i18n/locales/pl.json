@@ -1948,7 +1948,8 @@
     "themes": {
       "dark": "Ciemny",
       "grey": "Szary",
-      "light": "Jasny"
+      "light": "Jasny",
+      "system": "Systemowy"
     },
     "title": "Ustawienia",
     "tooltips": {

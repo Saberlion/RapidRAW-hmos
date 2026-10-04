@@ -1,12 +1,13 @@
 import { useEffect, useRef } from 'react';
 import { invoke } from '@tauri-apps/api/core';
+import { listen } from '@tauri-apps/api/event';
 import { useShallow } from 'zustand/react/shallow';
 import { useSettingsStore } from '../store/useSettingsStore';
 import { useUIStore, reconcileWorkspace } from '../store/useUIStore';
 import { useLibraryStore } from '../store/useLibraryStore';
 import { useEditorStore } from '../store/useEditorStore';
 import { useProcessStore } from '../store/useProcessStore';
-import { THEMES, DEFAULT_THEME_ID, ThemeProps } from '../utils/themes';
+import { THEMES, DEFAULT_THEME_ID, ThemeProps, resolveThemeId } from '../utils/themes';
 import { COPYABLE_ADJUSTMENT_KEYS, withAdjustmentLayout } from '../utils/adjustments';
 import {
   FilterCriteria,
@@ -62,6 +63,7 @@ export const useAppInitialization = ({
     appSettings,
     theme,
     osPlatform,
+    isSystemDark,
     setAppSettings,
     setTheme,
     setSupportedTypes,
@@ -72,6 +74,7 @@ export const useAppInitialization = ({
       appSettings: state.appSettings,
       theme: state.theme,
       osPlatform: state.osPlatform,
+      isSystemDark: state.isSystemDark,
       setAppSettings: state.setAppSettings,
       setTheme: state.setTheme,
       setSupportedTypes: state.setSupportedTypes,
@@ -138,6 +141,39 @@ export const useAppInitialization = ({
   useEffect(() => {
     initPlatform();
   }, [initPlatform]);
+
+  // Source of truth for Theme.System: the OHOS bridge (initial query + event,
+  // authoritative) or the standard media query everywhere else.
+  useEffect(() => {
+    let active = true;
+    const unlisteners: Array<() => void> = [];
+
+    invoke<boolean | null>(Invokes.GetOhosColorMode)
+      .then((dark) => {
+        if (active && typeof dark === 'boolean') useSettingsStore.getState().setSystemDark(dark);
+      })
+      .catch(() => undefined);
+
+    listen<{ dark: boolean }>('ohos-color-mode', (event) => {
+      useSettingsStore.getState().setSystemDark(event.payload.dark);
+    })
+      .then((unlisten) => {
+        if (active) unlisteners.push(unlisten);
+        else unlisten();
+      })
+      .catch(() => undefined);
+
+    const media = window.matchMedia('(prefers-color-scheme: dark)');
+    useSettingsStore.getState().setSystemDark(media.matches);
+    const onMediaChange = (event: MediaQueryListEvent) => useSettingsStore.getState().setSystemDark(event.matches);
+    media.addEventListener('change', onMediaChange);
+
+    return () => {
+      active = false;
+      unlisteners.forEach((unlisten) => unlisten());
+      media.removeEventListener('change', onMediaChange);
+    };
+  }, []);
 
   useEffect(() => {
     invoke(Invokes.GetSupportedFileTypes)
@@ -475,10 +511,10 @@ export const useAppInitialization = ({
 
   useEffect(() => {
     const root = document.documentElement;
-    const currentThemeId = theme || DEFAULT_THEME_ID;
+    const resolvedThemeId = resolveThemeId(theme || DEFAULT_THEME_ID, isSystemDark);
 
     const baseTheme =
-      THEMES.find((t: ThemeProps) => t.id === currentThemeId) ||
+      THEMES.find((t: ThemeProps) => t.id === resolvedThemeId) ||
       THEMES.find((t: ThemeProps) => t.id === DEFAULT_THEME_ID);
     if (!baseTheme) return;
 
@@ -494,5 +530,5 @@ export const useAppInitialization = ({
         ? '-apple-system, BlinkMacSystemFont, system-ui, sans-serif'
         : "'Poppins', system-ui, sans-serif";
     root.style.setProperty('--font-family', fontStack);
-  }, [theme, appSettings?.fontFamily]);
+  }, [theme, isSystemDark, appSettings?.fontFamily]);
 };

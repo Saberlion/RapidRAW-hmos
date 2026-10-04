@@ -52,6 +52,7 @@ export enum Invokes {
   EstimateExportSizes = 'estimate_export_sizes',
   ExportImages = 'export_images',
   FrontendLog = 'frontend_log',
+  GetOhosColorMode = 'get_ohos_color_mode',
   GenerateAiForegroundMask = 'generate_ai_foreground_mask',
   GenerateAiSkyMask = 'generate_ai_sky_mask',
   GenerateAiSubjectMask = 'generate_ai_subject_mask',
@@ -170,6 +171,7 @@ export enum Theme {
   MutedGreen = 'muted-green',
   Sepia = 'sepia',
   Snow = 'snow',
+  System = 'system',
 }
 
 export enum ThumbnailAspectRatio {

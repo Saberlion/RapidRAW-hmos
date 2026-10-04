@@ -10,12 +10,14 @@ interface SettingsState {
   supportedTypes: SupportedTypes | null;
   osPlatform: string;
   isOhos: boolean;
+  isSystemDark: boolean | null;
 
   // Actions
   initPlatform: () => void;
   setAppSettings: (settings: AppSettings | null) => void;
   setTheme: (theme: string) => void;
   setSupportedTypes: (types: SupportedTypes | null) => void;
+  setSystemDark: (dark: boolean) => void;
   handleSettingsChange: (newSettings: AppSettings) => Promise<void>;
 }
 
@@ -25,6 +27,7 @@ export const useSettingsStore = create<SettingsState>((set, get) => ({
   supportedTypes: null,
   osPlatform: '',
   isOhos: false,
+  isSystemDark: null,
 
   initPlatform: () => {
     try {
@@ -44,6 +47,8 @@ export const useSettingsStore = create<SettingsState>((set, get) => ({
   setTheme: (theme) => set({ theme }),
 
   setSupportedTypes: (types) => set({ supportedTypes: types }),
+
+  setSystemDark: (dark) => set({ isSystemDark: dark }),
 
   handleSettingsChange: async (newSettings: AppSettings) => {
     if (!newSettings) {
