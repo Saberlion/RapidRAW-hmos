@@ -505,7 +505,7 @@ OHOS 复用 Android 的 compute-only + 回读路径:GPU compute → 回读(map)�
 
 ### Phase 4 — AI 与发布(2~3 周)
 - [ ] ORT 动态加载真机验证;AI 蒙版/降噪功能分级测试
-- [ ] (可选)MindSpore Lite / NNRt NPU 路径评估
+- [ ] (可选)MindSpore Lite / NNRt NPU 路径评估(**前置调研已完成** 2026-10-04,见 `docs/MINDSPORE_LITE_NPU_EVAL.md`:结论 GO 基础上分模型——系统 MindSpore Lite Kit(`libmindspore_lite_ndk.z.so`,`OH_AI_*` C API,NNRT+CPU 逐算子回退)为推荐路径,Rust 绑定需手写(无现成 crate);converter_lite 2.10.0 离线转换;U2Net/skyseg/NIND 低风险、ViT 系需重导出、**LaMa 受 FFT 阻塞**;**全部验证需真机**——模拟器无 Kit/NNRT 支持,与 Phase 3-3 同一硬件阻塞)
 - [ ] AGC 签名、AppGallery 上架(摄影类目)、版本通道
 
 ## 8. 环境搭建速查(Phase 1 参考)
