@@ -38,6 +38,7 @@ import { ImportState, Status } from '../ui/ExportImportProperties';
 import Text from '../ui/Text';
 import { TextColors, TextVariants, TextWeights } from '../../types/typography';
 import { useLibraryStore } from '../../store/useLibraryStore';
+import { useSettingsStore } from '../../store/useSettingsStore';
 import { useUIStore } from '../../store/useUIStore';
 import SettingsPanel from './SettingsPanel';
 
@@ -657,7 +658,7 @@ export default function MainLibrary(props: MainLibraryProps) {
           <Text>{t('library.filters.noMatch')}</Text>
         </div>
       )}
-      {props.isAndroid && (
+      {(props.isAndroid || useSettingsStore.getState().isOhos) && (
         <Button
           className="absolute bottom-18 right-8 h-12 w-12 bg-accent text-button-text shadow-lg p-0 flex items-center justify-center z-50 border border-border-color/50"
           onClick={(e) => {
