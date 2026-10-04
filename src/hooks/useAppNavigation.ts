@@ -509,7 +509,7 @@ export function useAppNavigation({ clearThumbnailQueue, refs }: AppNavigationPro
   }, [handleSelectSubfolder, handleSelectAlbum]);
 
   const handleOpenFolder = useCallback(async () => {
-    const { osPlatform, appSettings, handleSettingsChange } = useSettingsStore.getState();
+    const { osPlatform, isOhos, appSettings, handleSettingsChange } = useSettingsStore.getState();
     const { rootPaths, folderTrees, setLibrary } = useLibraryStore.getState();
     const isAndroid = osPlatform === 'android';
 
@@ -517,6 +517,11 @@ export function useAppNavigation({ clearThumbnailQueue, refs }: AppNavigationPro
       let selectedPath = '';
       if (isAndroid) {
         selectedPath = await invoke<string>(Invokes.GetOrCreateInternalLibraryRoot);
+      } else if (isOhos) {
+        // OHOS: tauri-plugin-dialog is excluded (its rfd backend has no
+        // OpenHarmony support); the ArkTS DocumentViewPicker bridge returns
+        // the picked folder path (null when the user cancelled).
+        selectedPath = (await invoke<string | null>(Invokes.PickOhosFolder)) ?? '';
       } else {
         const selected = await open({ directory: true, multiple: false, defaultPath: await homeDir() });
         if (typeof selected === 'string') {

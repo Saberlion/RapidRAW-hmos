@@ -9,6 +9,7 @@ interface SettingsState {
   theme: string;
   supportedTypes: SupportedTypes | null;
   osPlatform: string;
+  isOhos: boolean;
 
   // Actions
   initPlatform: () => void;
@@ -23,6 +24,7 @@ export const useSettingsStore = create<SettingsState>((set, get) => ({
   theme: DEFAULT_THEME_ID,
   supportedTypes: null,
   osPlatform: '',
+  isOhos: false,
 
   initPlatform: () => {
     try {
@@ -30,6 +32,11 @@ export const useSettingsStore = create<SettingsState>((set, get) => ({
     } catch (_err) {
       set({ osPlatform: '' });
     }
+    // plugin-os reports "linux" on OpenHarmony; detect OHOS through the Rust
+    // bridge instead (same pattern as the TitleBar window controls).
+    invoke<boolean>(Invokes.IsOhosBuild)
+      .then((ohos) => set({ isOhos: ohos }))
+      .catch(() => set({ isOhos: false }));
   },
 
   setAppSettings: (settings) => set({ appSettings: settings }),

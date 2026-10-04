@@ -87,6 +87,71 @@ pub fn is_ohos_build() -> bool {
     cfg!(target_env = "ohos")
 }
 
+// ---------------------------------------------------------------------------
+// File bridge: OHOS folder picker (tauri-plugin-dialog replacement)
+// ---------------------------------------------------------------------------
+//
+// tauri-plugin-dialog is excluded from OHOS builds (its rfd backend has no
+// OpenHarmony support — see Cargo.toml), so folder selection goes through the
+// FileKit DocumentViewPicker on the ArkTS side. `pick_ohos_folder` parks a
+// oneshot sender, forwards a `pick_folder` op through the window-controller
+// ThreadsafeFunction, and waits; the EntryAbility callback runs the picker,
+// resolves the picked URI to a path (`fileUri.FileUri(...).path`), and calls
+// the `resolve_ohos_pick_folder` NAPI export to complete the channel.
+
+#[cfg(target_env = "ohos")]
+mod file_bridge {
+    use std::sync::Mutex;
+
+    use napi_ohos::bindgen_prelude::Result;
+    use tokio::sync::oneshot;
+
+    static PICK_TX: Mutex<Option<oneshot::Sender<Option<String>>>> = Mutex::new(None);
+
+    /// NAPI export (ArkTS name: `resolveOhosPickFolder`). Called by the
+    /// EntryAbility picker callback with the resolved folder path, or `None`
+    /// when the user cancelled / picking failed.
+    #[napi_derive_ohos::napi]
+    pub fn resolve_ohos_pick_folder(path: Option<String>) -> Result<()> {
+        if let Some(tx) = PICK_TX.lock().unwrap().take() {
+            let _ = tx.send(path);
+        }
+        Ok(())
+    }
+
+    /// Ask the ArkTS side to open the folder picker and wait for the result.
+    pub async fn pick_folder() -> std::result::Result<Option<String>, String> {
+        let (tx, rx) = oneshot::channel();
+        {
+            let mut slot = PICK_TX.lock().unwrap();
+            if slot.is_some() {
+                return Err("an OHOS folder pick is already in progress".to_string());
+            }
+            *slot = Some(tx);
+        }
+        if let Err(e) = super::window_controller::dispatch("pick_folder") {
+            PICK_TX.lock().unwrap().take();
+            return Err(e);
+        }
+        rx.await
+            .map_err(|_| "OHOS folder picker channel closed without a result".to_string())
+    }
+}
+
+/// Open the OHOS system folder picker (FileKit `DocumentViewPicker`) and
+/// return the selected folder's path, or `None` when the user cancelled.
+#[tauri::command]
+pub async fn pick_ohos_folder() -> Result<Option<String>, String> {
+    #[cfg(target_env = "ohos")]
+    {
+        file_bridge::pick_folder().await
+    }
+    #[cfg(not(target_env = "ohos"))]
+    {
+        Err("pick_ohos_folder is only available on OpenHarmony builds".to_string())
+    }
+}
+
 /// Drive an OHOS main-window operation through the ArkTS bridge.
 ///
 /// Supported operations: `minimize`, `maximize`, `restore`, `start_drag`.
