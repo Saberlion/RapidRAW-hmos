@@ -1,7 +1,7 @@
 # RapidRAW 鸿蒙(HarmonyOS / OpenHarmony)移植报告
 
 > 分析日期:2026-10 · 分支:`feature/harmonyos-port`
-> 状态:Phase 1 收官 —— 模拟器已点亮(2026-10-03 23:25,x86_64 模拟器完整渲染欢迎页 UI,无崩溃,见 6.4);aarch64/x86_64 双架构出包端到端 EXIT=0(57.4MB / 120.5MB,见 6.3/6.4);Phase 2 窗口控制完成(2026-10-04:系统装饰栏提供三键 + Rust↔ArkTS startMoving 拖动桥,见 6.5);"打开文件夹"完成(2026-10-04:FileKit DocumentViewPicker 桥端到端验证,见 6.6);下一步 Phase 2 其余平台集成 + 真机验证
+> 状态:Phase 0–2 全部完成(窗口控制 6.5 / FileKit 导入导出 6.6-6.7 / 系统 UI 适配 6.8),Phase 3 模拟器侧完成(编辑器 GPU 管线点亮 6.8、直渲评估 6.9、高像素基线与缓解评估 6.10/6.11),Phase 4 前置打通(AI 降噪单模型全通 6.12、HAP 签名 2026-10-05);当前阻塞:无真机硬件;全部待办与优先级见 §9 盘点
 
 ## 1. 结论(TL;DR)
 
@@ -289,7 +289,7 @@ hdc shell "hilog -x | grep -iE 'CppCrash|rapidraw.*(fatal|crash)'"   # 崩溃扫
 
 **5. 已知限制/顺延项**
 
-- 网格实际图片显示未在本会话直接验证(用户存储无图片可扫;shell 受 SELinux 限制写不进用户存储,root/su 不可用)——但读取链已由 stat/GetFolderTree/ListImagesInDir(空结果无错)证实,图片渲染链已由 6.4 编辑器照片测试覆盖,残余风险低
+- 网格实际图片显示未在本会话直接验证(用户存储无图片可扫;shell 受 SELinux 限制写不进用户存储,root/su 不可用)——但读取链已由 stat/GetFolderTree/ListImagesInDir(空结果无错)证实,图片渲染链已由 6.4 编辑器照片测试覆盖,残余风险低(→ 缩略图渲染已由 6.7 导入链实证)
 - FileKit 单文件选择(导入流)与保存对话框(LUT/预设/导出面板等其余 plugin-dialog 消费点)仍待接桥——同模式复制即可(→ 已由 6.7 落地)
 - 相册导出 `save_image_bytes_to_ohos_gallery`(photoAccessHelper)顺延(→ 已由 6.7 落地)
 
@@ -549,7 +549,7 @@ demosaic 输出         f32 RGB   734MB
 - [x] 模拟器点亮应用窗口(2026-10-03 23:25,DevEco x86_64 模拟器:完整欢迎页 UI 渲染、Canvas 图片正常、`tauri` 自定义协议注册、无崩溃,超预期完成,见 6.4;真机仍待接入)
 
 ### Phase 2 — 平台集成(3~4 周)
-- [x] FileKit 文件夹选择桥(2026-10-04,见 6.6):"打开文件夹"端到端可用——DocumentViewPicker 桥(oneshot+napi 回传)+ `isOhos` 探测 + `handleOpenFolder` OHOS 分支;`FileUri.path` 直出沙箱路径、Rust 可读(stat 实证)、跨重启持久;photoAccessHelper 相册 URI 桥(单文件/相册)仍待接
+- [x] FileKit 文件夹选择桥(2026-10-04,见 6.6):"打开文件夹"端到端可用——DocumentViewPicker 桥(oneshot+napi 回传)+ `isOhos` 探测 + `handleOpenFolder` OHOS 分支;`FileUri.path` 直出沙箱路径、Rust 可读(stat 实证)、跨重启持久;photoAccessHelper 相册 URI 桥(单文件/相册)已由 6.7 覆盖(导入走 FileKit picker 可导航相册,导出走 showAssetsCreationDialog)
 - [x] 相册导出 `save_image_bytes_to_ohos_gallery`(2026-10-04,见 6.7):showAssetsCreationDialog 弹窗授权 + 沙箱中转 + fd 拷贝端到端实证(`save_to_gallery ok: file://media/Photo/…`,图库「来自应用 RapidRAW」可见)
 - [x] FileKit 文件选择桥 + 导入流(2026-10-04,见 6.7):`pick_ohos_files`(`collapse_suffix_filters` 规避 100 字符上限)+ 导入 FAB/图像选择器/LUT/预设消费点全接;Rust `std::fs` 直读媒体库路径实证
 - [x] TLS 根证书策略已确认(2026-10-03):维持 reqwest rustls 捆绑 webpki 根——rustls-platform-verifier 无 OHOS 后端,捆绑根对 HF/ohpm 端点足够;真机 TLS 握手验证顺延至 Phase 3/4 有设备时
@@ -566,7 +566,7 @@ demosaic 输出         f32 RGB   734MB
 ### Phase 4 — AI 与发布(2~3 周)
 - [ ] ORT 动态加载真机验证;AI 蒙版/降噪功能分级测试(**模拟器部分已完成** 2026-10-04,见 6.12:NIND AI 降噪端到端全通——下载/持久化/ORT dlopen/推理/保存;模型下载 FUSE rename EACCES 已由拷贝回退修复;5 模型蒙版栈被 4GB 模拟器 LMK 阻塞待真机;x86_64 ORT v1.28.2 经 build-ohos.ps1 注入 HAP)
 - [ ] (可选)MindSpore Lite / NNRt NPU 路径评估(**前置调研已完成** 2026-10-04,见 `docs/MINDSPORE_LITE_NPU_EVAL.md`:结论 GO 基础上分模型——系统 MindSpore Lite Kit(`libmindspore_lite_ndk.z.so`,`OH_AI_*` C API,NNRT+CPU 逐算子回退)为推荐路径,Rust 绑定需手写(无现成 crate);converter_lite 2.10.0 离线转换;U2Net/skyseg/NIND 低风险、ViT 系需重导出、**LaMa 受 FFT 阻塞**;**全部验证需真机**——模拟器无 Kit/NNRT 支持,与 Phase 3-3 同一硬件阻塞)
-- [ ] AGC 签名、AppGallery 上架(摄影类目)、版本通道
+- [ ] AGC 签名、AppGallery 上架(摄影类目)、版本通道(**签名已打通** 2026-10-05:sign-app/verify-app 全通、signed.hap 已产出;命令、证书材料与坑位记录在**未入库**的 `.csr/SIGNING.md`——签名材料含私钥,永不入库,`.csr/` 与 `*.p12/*.p7b/*.jks` 已加 .gitignore;上架待干净 aarch64 release 包重建 + 真机安装验证)
 
 ## 8. 环境搭建速查(Phase 1 参考)
 
@@ -626,3 +626,40 @@ cargo tauri ohos build -d -t aarch64
 ```
 
 **一键构建**:`%TEMP%\opencode\build-ohos.ps1`(自包含上述环境;fail-fast 预检、看门狗超时、心跳进度、daemon 清理)。
+
+## 9. 未完成工作盘点(2026-10-05)
+
+> 全量盘点 §6/§7 的未勾选项、顺延项与已知限制。**最大单一阻塞:无真机硬件**——§9.1/9.2 的验证项全部等设备;不依赖硬件、建议先行的工程项见 9.3。
+
+### 9.1 路线图未勾选项(Phase 3 余 1 项、Phase 4 全部 3 项)
+
+| 项 | 已完成部分 | 阻塞点 |
+|---|---|---|
+| ≥60MP 真机性能/内存基线(6.10/6.11) | 模拟器基线 + 缓解方向评估 | 无真机(复测资产与方法学已固化于 6.10) |
+| ORT 真机验证 + AI 蒙版/降噪分级测试(6.12) | NIND 降噪模拟器单模型端到端全通 | 5 模型蒙版栈被 4GB 模拟器 LMK 阻塞,待 8GB+ 真机 |
+| MindSpore Lite / NNRt NPU 路径(可选) | 前置调研完成(`MINDSPORE_LITE_NPU_EVAL.md`) | 全部验证需真机(模拟器无 Kit/NNRT);LaMa 受 FFT 阻塞、ViT 系需重导出 |
+| AGC 签名、AppGallery 上架、版本通道 | **签名已打通**(2026-10-05:sign-app/verify-app 全通、signed.hap 产出,材料见未入库 `.csr/SIGNING.md`) | 待干净 aarch64 release 包重建 + 真机安装验证 |
+
+### 9.2 被"无真机"阻塞的散布验证项
+
+- 真机 TLS 握手验证(§7 Phase 2 备注:rustls 捆绑 webpki 根策略已定)
+- mimalloc OHOS 启用评估(§5 风险 8:已回退系统分配器)
+- `save_file_as`(.cube LUT / 预设另存为)设备端验证(6.7)
+- 模拟器 GPU 为宿主透传,全部性能绝对值不可外推(6.10 §5)
+
+### 9.3 不依赖真机、可立即推进
+
+1. **低内存适配 C+D(6.11 推荐先行,零 fork)**:降分辨率编辑模式(复用 `fast_demosaic` 旋钮)+ 加载前资源预检 + 可见降级提示——4GB 设备 61MP 可编辑、可全分辨率导出的关键路径
+2. **发布包瘦身(6.4-3)**:双 ABI .so 同包(strip 后 120.5MB),出真机/release 包前清 `entry/libs` 或配 abiFilters
+3. 直方图 canvas 无选中时噪点/空白帧排查(6.7,疑似 GPU readback 或未初始化缓冲)
+4. 批量导出逐张弹系统对话框 → 评估 `MediaAssetChangeRequest` 批量授权或收集式 UX(6.7)
+5. 库视图导出成功无 toast;编辑器视图导出未复测(6.7)
+6. 全分辨率导出输入纹理分块(6.11 §4:GPU 侧整图上传是 45MP 导出死因,独立工作项)
+7. 中期 B:驻留瘦身 + rawler 校准/裁剪 in-place 小 fork(6.11,~50-100 LOC,可推回上游)
+8. `app_cache_dir()` OHOS 指向用户公共存储区的长期方案:Rust 直写沙箱缓存目录(6.7,现靠 ArkTS 沙箱中转兜底)
+
+### 9.4 条件性 / 低优先级 / 非本仓
+
+- wgpu GLES surface 直渲 PoC(6.9):结论 GO(有条件),**排在真机基线之后按数据决策**(交互不达 60 FPS 才立项);风险 wgpu #9158 sRGB + webview 层级合成
+- 外观瑕疵(6.5):浅色主题系统条视觉断层、系统条应用名与自绘标题重复
+- tao-ohos 窗口操作 stub(fork 级);`feat/open-harmony` 等上游合并后摘 `[patch]` 表(见 `Cargo.toml` 注释)

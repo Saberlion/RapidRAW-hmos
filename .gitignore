@@ -40,5 +40,12 @@ src-tauri/libs/
 **/keystore.jks
 **/key.properties
 
+# HarmonyOS signing material: private key (.p12), certs, profiles, material keys,
+# and the un-tracked signing recipe doc. NEVER commit.
+.csr/
+*.p12
+*.p7b
+*.jks
+
 # bench/replay.js result dumps
 bench/out/
