@@ -172,6 +172,22 @@ pub fn get_or_init_gpu_context(
         instance_desc.backends = wgpu::Backends::PRIMARY;
     }
 
+    // OpenHarmony: neither GPU backend is currently reliable on real devices,
+    // so allow both and let adapter enumeration pick whatever loads.
+    //  - Real device (Maleoon, 2026-10-05 faultlog cppcrash-24077): the GLES
+    //    translation layer (libhvgr_v210.so) smashes the stack inside
+    //    Queue::submit on the readback path (read_texture_data_roi), and the
+    //    Vulkan loader is unreachable because ash looks for libvulkan.so.1
+    //    while OHOS ships libvulkan.so (needs the ash fork, porting doc 6.9).
+    //  - Emulator: no Vulkan stack at all — GLES (host passthrough) is the
+    //    working path there.
+    // An explicit user choice still wins because settings.processing_backend
+    // sets WGPU_BACKEND at startup before this runs (lib.rs).
+    #[cfg(target_env = "ohos")]
+    if std::env::var("WGPU_BACKEND").is_err() {
+        instance_desc.backends = wgpu::Backends::VULKAN | wgpu::Backends::GL;
+    }
+
     let flag_path = state.gpu_crash_flag_path.lock().unwrap().clone();
     if let Some(p) = &flag_path {
         if let Some(parent) = p.parent() {
