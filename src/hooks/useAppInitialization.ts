@@ -290,7 +290,11 @@ export const useAppInitialization = ({
               expandedFolders: settings.lastFolderState?.expandedFolders ?? rootFolders,
               showImageCounts: settings.enableFolderImageCounts || settings.folderTreeSort?.key === 'imageCount',
             }),
-            images: isAlbum ? undefined : invoke(command, { path: currentPath }),
+            // A dead root (revoked FileKit grant) rejects this promise long
+            // before anyone consumes it — swallow it here so it does not
+            // surface as an unhandled rejection at startup; consumers treat
+            // undefined as "no preload" and load fresh.
+            images: isAlbum ? undefined : invoke(command, { path: currentPath }).catch(() => undefined),
           };
         }
 
