@@ -2,6 +2,7 @@ import { RustAbility } from '@ohos-rs/ability'
 import Want from '@ohos.app.ability.Want'
 import { AbilityConstant, Configuration, ConfigurationConstant } from '@kit.AbilityKit';
 import { BusinessError } from '@kit.BasicServicesKit';
+import { KeyboardAvoidMode } from '@ohos.arkui.UIContext';
 import window from '@ohos.window';
 import picker from '@ohos.file.picker';
 import fileUri from '@ohos.file.fileuri';
@@ -23,20 +24,14 @@ export default class EntryAbility extends RustAbility {
   }
 
   async onWindowStageCreate(windowStage: window.WindowStage): Promise<void> {
-    const window = windowStage.getMainWindowSync();
-    await window.setWindowLayoutFullScreen(false);
-    // Deterministic keyboard avoidance: RESIZE shrinks the window so the
-    // webview's visualViewport handlers reflow the UI above the IME, the
-    // same effect as the Android insets padding in MainActivity.kt.
-    try {
-      window.setKeyboardAvoidMode(window.KeyboardAvoidMode.RESIZE);
-    } catch (e) {
-      console.error(`[RapidRAW] setKeyboardAvoidMode failed: ${JSON.stringify(e)}`);
-    }
+    // NOTE: local name must NOT be `window` — it would shadow the module
+    // import and break enum access like window.AvoidAreaType (docs 6.8).
+    const win = windowStage.getMainWindowSync();
+    await win.setWindowLayoutFullScreen(false);
     // Safe-area evidence: with layoutFullScreen(false) the window manager
     // reserves the system bars already; log the remaining avoid rect.
     try {
-      const avoid = window.getWindowAvoidArea(window.AvoidAreaType.TYPE_SYSTEM);
+      const avoid = win.getWindowAvoidArea(window.AvoidAreaType.TYPE_SYSTEM);
       console.info(`[RapidRAW] system avoid area: ${JSON.stringify(avoid)}`);
     } catch (e) {
       console.error(`[RapidRAW] getWindowAvoidArea failed: ${JSON.stringify(e)}`);
@@ -46,9 +41,19 @@ export default class EntryAbility extends RustAbility {
     // callback registered here (tao-ohos stubs the native window ops).
     // Fire-and-forget on purpose: awaiting lifecycle helpers here once
     // caused the ability to terminate right after startup (docs 6.4).
-    this.registerRapidrawWindowController(window);
+    this.registerRapidrawWindowController(win);
     super.onWindowStageCreate(windowStage);
     await windowStage.loadContent('pages/Index');
+    // Deterministic keyboard avoidance: RESIZE shrinks the layout so the
+    // webview's visualViewport handlers reflow the UI above the IME, the
+    // same effect as the Android insets padding in MainActivity.kt. Since
+    // API 26 this lives on the window's UIContext (ArkUI), not on Window,
+    // and the UIContext only exists after loadContent.
+    try {
+      win.getUIContext().setKeyboardAvoidMode(KeyboardAvoidMode.RESIZE);
+    } catch (e) {
+      console.error(`[RapidRAW] setKeyboardAvoidMode failed: ${JSON.stringify(e)}`);
+    }
     // Keep the system window decoration VISIBLE. We previously hid it
     // (setWindowDecorVisible(false) retry loop) so the custom webview
     // titlebar could own the whole window, but that is unsafe: hiding the
@@ -144,9 +149,9 @@ export default class EntryAbility extends RustAbility {
     if (typeof notify !== 'function') {
       return;
     }
-    if (colorMode === ConfigurationConstant.ColorMode.COLOR_DARK) {
+    if (colorMode === ConfigurationConstant.ColorMode.COLOR_MODE_DARK) {
       notify(true);
-    } else if (colorMode === ConfigurationConstant.ColorMode.COLOR_LIGHT) {
+    } else if (colorMode === ConfigurationConstant.ColorMode.COLOR_MODE_LIGHT) {
       notify(false);
     }
   }
