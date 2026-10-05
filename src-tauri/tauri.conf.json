@@ -26,7 +26,10 @@
       "capabilities": ["default"],
       "assetProtocol": {
         "enable": true,
-        "scope": ["$APPCACHE/thumbnails/*"]
+        "scope": [
+          "$APPCACHE/thumbnails/*",
+          "/data/storage/el2/base/cache/thumbnails/*"
+        ]
       }
     },
     "macOSPrivateApi": true
