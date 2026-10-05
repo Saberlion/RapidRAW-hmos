@@ -34,7 +34,7 @@ RapidRAW 的架构对鸿蒙移植异常友好——它已经完成了最贵的�
 |---|---|---|
 | Rust OHOS 目标 | ✅ **Tier 2 with Host Tools**(`aarch64`/`armv7`/`x86_64-unknown-linux-ohos`,Rust 1.87 起) | [rust#137011](https://github.com/rust-lang/rust/pull/137011)、[官方平台支持文档](https://doc.rust-lang.org/stable/rustc/platform-support/openharmony.html) |
 | Tauri 2 on OHOS | ✅ 社区移植已合入官方 `feat/open-harmony` 分支(wry#1607、tao#1128、tauri#15064),Eclipse Oniro 背书,2026-06 仍活跃 | [tauri 分支](https://github.com/tauri-apps/tauri/tree/feat/open-harmony)、[richerfu/tauri-demo](https://github.com/richerfu/tauri-demo) |
-| wgpu on OHOS | ✅ GLES 后端已进上游(PR #7085,2025-02,含 CI);Vulkan 经社区验证可用(需 ash fork,仅 aarch64/x86_64) | [wgpu#7085](https://github.com/gfx-rs/wgpu/pull/7085) |
+| wgpu on OHOS | ✅ GLES 后端已进上游(PR #7085,2025-02,含 CI);**Vulkan 真机(Maleoon 916)已验证可用**(ash fork 以仓内 vendor 补丁落地,见 6.13;仅 aarch64/x86_64) | [wgpu#7085](https://github.com/gfx-rs/wgpu/pull/7085) |
 | raw-window-handle | ✅ `OhosNdkWindowHandle` 官方支持 | 上游 `src/ohos.rs` |
 | napi-ohos(Rust↔ArkTS) | ✅ 活跃维护,262K+ 下载,Tauri-ohos 底层同款 | [ohos-rs/ohos-rs](https://github.com/ohos-rs/ohos-rs) |
 | ONNX Runtime | ⚠️ 无微软官方 OHOS 构建;社区预编译 v1.16.3(sherpa-onnx / csukuangfj),或走官方 NNRt/MindSpore Lite | [onnxruntime#20895](https://github.com/microsoft/onnxruntime/issues/20895) |
@@ -68,7 +68,7 @@ RapidRAW 的架构对鸿蒙移植异常友好——它已经完成了最贵的�
 4. **文件访问沙箱(中)**:用户文件须走 FileKit/photoAccessHelper(类似 Android SAF),需编写 `ohos_integration.rs` 对应层(Phase 2)。
 5. **Tauri 插件空缺(中低)**:dialog/fs/os/process/shell 插件无 OHOS 实现,仅有 demo 先例。
 6. **Windows 开发机链接器(低)**:OHOS NDK clang 是 Unix 脚本,Windows 主机构建需 `.cmd` 包装;建议 Linux/macOS 出包。
-7. **手机端性能(低,已验证)**:Android 已趟过高像素 RAW 的回读路径;华为 Maleoon GPU 走 GLES 预计同级。
+7. **手机端性能(低,已验证)**:Android 已趟过高像素 RAW 的回读路径;**真机已验证(6.13,2026-10-05)**——Maleoon GLES 转译层读回必崩(驱动缺陷,`__stack_chk_fail`),Vulkan 后端交互预览 ~250-290ms/趟、缩略图 ~500ms;首趟 WGSL 管线编译 ~11s 已由启动期后台预热吸收(6.13 遗留清单)。
 8. **mimalloc(低)**:已在 OHOS 目标回退系统分配器(本分支已处理),待真机验证后再评估启用。
 
 ## 6. 本分支已完成的脚手架(Phase 0)
@@ -527,6 +527,42 @@ demosaic 输出         f32 RGB   734MB
 
 **端到端实证(NIND AI 降噪,单模型路径)**:124MB NIND 从 hf-mirror 下载→FUSE 持久化→ORT dlopen(注入后无 PANIC)→分块推理→前后对比 UI→保存 `small_test_Denoised.png`(1.08MB)+ .rrdata 落盘,全程无崩溃。**AI 功能在模拟器经单模型路径全通;5 模型蒙版路径待真机**。
 
+### 6.13 真机渲染全链路修复——四层根因逐一击破(2026-10-05)
+
+**结论:真机(HAD-W32 平板 / Kirin + Maleoon 916 / HarmonyOS 7.0.0.17 log 版)编辑器全链路渲染打通**——Vulkan 后端 + 沙箱路径 + asset 协议三层修复后,24/33MP ARW 画布正常出图、库/胶片栏缩略图全真图,交互预览 ~290ms/趟,三轮装测零 faultlog。问题为四层嵌套,黑屏主因(第 3 层)与 GPU 无关。
+
+**1. 四层根因与修复清单**
+
+| # | 断点 | 证据 | 修复 |
+|---|---|---|---|
+| 1 | GLES 转译层崩溃:Maleoon `libhvgr_v210.so` 在 GPU 回读路径栈溢出 | faultlog cppcrash-24077/32612:`SIGSEGV@0x0` ← `__stack_chk_fail` ← libhvgr ← `wgpu_hal::gles::Queue::submit` ← `read_texture_data_roi`(gpu_processing.rs 的 `copy_texture_to_buffer`+`queue.submit`);同栈两次复现 100% | `gpu_processing.rs`:OHOS 无显式 `WGPU_BACKEND` 时默认后端改 `VULKAN \| GL`(真机命中 Vulkan,模拟器无 Vulkan 落 GL;显式用户设置仍最高优先) |
+| 2 | Vulkan 加载不了:ash 上游在"非 android 的 Unix"分支找 `libvulkan.so.1`,OHOS 只装 `/system/lib64/libvulkan.so`(ICD `vulkan.hvgr_v210.so`,Vulkan 1.3.231,原生驱动健在) | app.log `Failed to find a wgpu adapter: ... vulkan drivers/libraries could not be loaded`;ash 0.38.0 entry.rs:74 cfg 链实锤(OHOS=`target_os=linux` 非 android → 命中 `.so.1` 分支) | **vendor ash**:`src-tauri/vendor/ash/`(0.38.0+1.3.281 原样拷贝,仅 entry.rs 增加 `all(unix, target_env="ohos")` → `libvulkan.so` 分支)+ `[patch.crates-io] ash = { path = "vendor/ash" }`;Cargo.lock 仅 ash 块 2 行变更;其他平台 cfg 零影响 |
+| 3 | **黑屏主因(与 GPU 无关)**:fork 用桌面 XDG 语义解析 app 路径(`path/desktop.rs`,OHOS 命中 `not(target_os="android")` 分支)→ `app_data_dir` = `$HOME/.local/share/<bundle>` 落 FUSE 用户存储 `/storage/Users/currentUser/...` → 真机写入 **EPERM**(模拟器恰好可写,故模拟器全通)→ settings 载入失败 → 前端拿不到 `editorPreviewResolution` → `previewSize={0,0}` → **编辑器根本不创建 canvas**(useImageLoader.ts:75-76);后台索引/缩略图/LUT 列举同源阵亡 | app.log 三连:`Failed to load/save settings` + `Failed to start background indexing` + `Failed to list LUTs`(均 EPERM);CDP 页面内实测 `apply_adjustments` invoke 返回合法 JPEG(FF D8 FF E0)且 `createImageBitmap` 成功——GPU/IPC/解码全通,矛头锁定前端状态机;DOM 探针 0 个 `<img>`/canvas | **新建 `src-tauri/src/app_paths.rs`**:OHOS 直连应用沙箱(`files/appdata`、`files/config`、`files/logs`、`cache` 四个映射,基根 `/data/storage/el2/base`,返回前 `create_dir_all`),其余平台原样委托 tauri resolver;全仓 **20 处调用点**机械替换(lib.rs×8、file_management×6、lut_processing×3、app_settings/ai_processing/ohos_integration 各 1);`setup_logging` 的 OHOS 内联分支统一收编 |
+| 4 | 缩略图写入沙箱后,前端 `convertFileSrc` 加载被 asset 协议拒绝(scope 只有 `$APPCACHE/thumbnails/*`,而 `$APPCACHE` 经 fork 解析仍指 FUSE 路径) | app.log `asset protocol not configured to allow the path: /data/storage/el2/base/cache/thumbnails/<hash>_small.jpg` | `tauri.conf.json` `assetProtocol.scope` 追加字面路径 `/data/storage/el2/base/cache/thumbnails/*`(其他平台该路径不存在,无副作用) |
+
+**2. 真机终验数据(17:20 构建)**
+
+- 适配器:`Using GPU adapter: Maleoon 916 (backend: Vulkan, type: IntegratedGpu)`;downlevel 仅缺 `SURFACE_VIEW_FORMATS`(本管线为无 surface 的 compute+回读,不受影响);loader 警告 ICD 接口 v3<5(LDP_DRIVER_7,非阻塞)
+- 渲染:24MP(DSC0009)经 CDP 页面内实测 invoke→JPEG→解码 OK;33MP(DSC06677)编辑器画布出图;库 2×2 网格 + 胶片栏 4/4 真实缩略图;设置持久化/会话恢复正常(重装后"继续会话"页出现)
+- 性能:RAW 解码 24MP 522ms(模拟器 5.97s 的 1/11);交互预览 1024x683 **286~353ms/趟(3.45~3.50 FPS)**;缩略图 1280x853 480~580ms;全预览作业 648ms;**安装后首趟 ~11s 为 WGSL 管线编译一次性开销(稳态亚秒;当日已由启动期管线预热解决,见遗留清单)**
+- 稳定性:三轮构建装测零新 faultlog(最新崩溃档仍停在 GLES 时代 14:42);全会话仅 1 条良性 ERROR(重装后授权恢复尝试)
+
+**3. 调试方法学(真机排障复用价值高)**
+
+- **ArkWeb DevTools 直连(本轮定位黑屏的决定性手段)**:`hdc -t <key> fport tcp:9222 localabstract:webview_devtools_remote_<pid>`(socket 名 `cat /proc/net/unix` 可见;pid 用 `ps -ef | grep -i rapidraw`——comm 15 字符截断,`pidof` 全名查不到)→ Node ≥22 原生 WebSocket 走 CDP(`/json/list` 取页面 WS URL),`Runtime.evaluate` 在页面内实测 `__TAURI_INTERNALS__.invoke` 返回类型/JPEG 魔数/`createImageBitmap`/DOM 状态
+- **uitest dumpLayout**:可暴露 webview 内 DOM(元素属性 `originalText` + `origBounds` `[x,y][x,y]` 两角格式),但**不稳定**(时有时无);PowerShell 5.1 读取须 `[IO.File]::ReadAllText(path, UTF8)`(默认 GBK 会乱码导致中文关键词搜不到);坐标提取正则须锚定 `origBounds` 紧邻 `originalText` 的属性顺序
+- **像素扫描兜底**:系统原生对话框(非 webview)dump 抓不到时,用 System.Drawing 阈值扫描(暗面板中最宽纯白矩形 = 主按钮;底栏蓝色块 = 确认按钮)求中心;视觉模型坐标估计不可靠(同图两次估计可差 900px)
+- **真机日志**:`/data/app/el2/100/base/<bundle>/files/logs/app.log`(`setup_logging` OHOS 直写沙箱,宿主 shell 可读;stdout/stderr 真机上接 /dev/null)
+- **注意**:picker 目录授权不跨 `install -r` 存活,重装后首次"继续会话"会 EPERM(WARN 非崩溃),重走一遍"添加文件夹"即恢复
+
+**4. 遗留与后续**
+
+- ~~首趟 WGSL 管线编译 ~11s~~ → **已解决(2026-10-05 晚,启动期管线预热)**:`gpu_processing.rs` 新增 `warm_up_pipelines()`(OHOS 门控,初始化 GPU 上下文 + 创建 256×256 一次性 GpuProcessor 触发全部 5 条管线编译后丢弃——管线与处理器尺寸无关,真实处理器按需创建时命中驱动热缓存),`lib.rs` 启动时经 `pipeline-warmup` 后台线程调用。真机冷缓存(卸载重装)实测:预热 9.98s 在启动后台吸收,首个真实 GPU 作业 588ms、编辑器首开全预览 578ms(修复前 11.16s/11.49s),稳态 ~250ms/趟(4+ FPS);日志标记 `[pipeline-warmup] completed in Xs`
+- ArkWeb `window.localStorage` 为 null(前端任何 `Object.keys(localStorage)` 会抛,未伤主流程,待排查)
+- 模型下载目标随 app_paths 迁至沙箱后,FUSE rename EACCES 场景消失,但 `persist_downloaded_asset` 的字节拷贝回退**必须保留**(AGENTS.md 纪律,对旧数据/异常环境冗余)
+- ≥60MP 真机基线(6.10/6.11 方法论就绪,61MP 资产已推真机 Download)、ORT/AI 5 模型蒙版真机分级验证仍待跑
+- 模拟器回归冒烟:x86_64 新构建重装验证一轮(沙箱路径模拟器同样可写,风险低)
+
 ## 7. 移植路线图与进度清单
 
 ### Phase 0 — 技术验证(1~2 周)
@@ -629,23 +665,23 @@ cargo tauri ohos build -d -t aarch64
 
 ## 9. 未完成工作盘点(2026-10-05)
 
-> 全量盘点 §6/§7 的未勾选项、顺延项与已知限制。**最大单一阻塞:无真机硬件**——§9.1/9.2 的验证项全部等设备;不依赖硬件、建议先行的工程项见 9.3。
+> 全量盘点 §6/§7 的未勾选项、顺延项与已知限制。~~最大单一阻塞:无真机硬件~~ → **真机已到位且渲染全链路打通(6.13,2026-10-05)**,§9.1/9.2 的真机验证项不再被硬件阻塞;不依赖硬件、建议先行的工程项见 9.3。
 
 ### 9.1 路线图未勾选项(Phase 3 余 1 项、Phase 4 全部 3 项)
 
 | 项 | 已完成部分 | 阻塞点 |
 |---|---|---|
-| ≥60MP 真机性能/内存基线(6.10/6.11) | 模拟器基线 + 缓解方向评估 | 无真机(复测资产与方法学已固化于 6.10) |
-| ORT 真机验证 + AI 蒙版/降噪分级测试(6.12) | NIND 降噪模拟器单模型端到端全通 | 5 模型蒙版栈被 4GB 模拟器 LMK 阻塞,待 8GB+ 真机 |
+| ≥60MP 真机性能/内存基线(6.10/6.11) | 模拟器基线 + 缓解方向评估;**渲染管线真机已通(6.13:24/33MP 出图,Vulkan ~290ms/趟)**,61MP 资产已在真机 Download | 跑基线即可(方法学已固化于 6.10) |
+| ORT 真机验证 + AI 蒙版/降噪分级测试(6.12) | NIND 降噪模拟器单模型端到端全通 | 待真机执行(23GB 内存充裕);注意模型下载目标已随 app_paths 迁至沙箱(6.13) |
 | MindSpore Lite / NNRt NPU 路径(可选) | 前置调研完成(`MINDSPORE_LITE_NPU_EVAL.md`) | 全部验证需真机(模拟器无 Kit/NNRT);LaMa 受 FFT 阻塞、ViT 系需重导出 |
 | AGC 签名、AppGallery 上架、版本通道 | **签名已打通**(2026-10-05:sign-app/verify-app 全通、signed.hap 产出,材料见未入库 `.csr/SIGNING.md`) | 待干净 aarch64 release 包重建 + 真机安装验证 |
 
 ### 9.2 被"无真机"阻塞的散布验证项
 
-- 真机 TLS 握手验证(§7 Phase 2 备注:rustls 捆绑 webpki 根策略已定)
-- mimalloc OHOS 启用评估(§5 风险 8:已回退系统分配器)
-- `save_file_as`(.cube LUT / 预设另存为)设备端验证(6.7)
-- 模拟器 GPU 为宿主透传,全部性能绝对值不可外推(6.10 §5)
+- 真机 TLS 握手验证(§7 Phase 2 备注:rustls 捆绑 webpki 根策略已定)→ 真机已到位待跑
+- mimalloc OHOS 启用评估(§5 风险 8:已回退系统分配器)→ 真机已到位待跑
+- `save_file_as`(.cube LUT / 预设另存为)设备端验证(6.7)→ 真机已到位待跑
+- 模拟器 GPU 为宿主透传,性能绝对值不可外推(6.10 §5)→ **真机数据已补**(6.13:Vulkan 交互 ~290ms/趟)
 
 ### 9.3 不依赖真机、可立即推进
 
@@ -656,10 +692,10 @@ cargo tauri ohos build -d -t aarch64
 5. 库视图导出成功无 toast;编辑器视图导出未复测(6.7)
 6. 全分辨率导出输入纹理分块(6.11 §4:GPU 侧整图上传是 45MP 导出死因,独立工作项)
 7. 中期 B:驻留瘦身 + rawler 校准/裁剪 in-place 小 fork(6.11,~50-100 LOC,可推回上游)
-8. `app_cache_dir()` OHOS 指向用户公共存储区的长期方案:Rust 直写沙箱缓存目录(6.7,现靠 ArkTS 沙箱中转兜底)
+8. ~~`app_cache_dir()` OHOS 指向用户公共存储区的长期方案~~ → **已解决(6.13)**:`app_paths.rs` 将全部 app 路径 OHOS 直连 `/data/storage/el2/base/` 沙箱,不再经过用户存储 FUSE(rename EACCES 场景随之消失);ArkTS 沙箱中转现仅导出桥仍在用
 
 ### 9.4 条件性 / 低优先级 / 非本仓
 
-- wgpu GLES surface 直渲 PoC(6.9):结论 GO(有条件),**排在真机基线之后按数据决策**(交互不达 60 FPS 才立项);风险 wgpu #9158 sRGB + webview 层级合成
+- wgpu GLES surface 直渲 PoC(6.9):结论 GO(有条件),**真机数据已到(6.13)**——Vulkan 回读路径全帧 ~290ms@1024x683(ROI 交互真机未测,模拟器上限 ~29 FPS 参考),远低于 60 FPS 目标,按既定规则 PoC 可立项;**注意真机 GLES 不可用(转译层必崩),直渲 surface 必须走 Vulkan**;风险 wgpu #9158 sRGB + webview 层级合成
 - 外观瑕疵(6.5):浅色主题系统条视觉断层、系统条应用名与自绘标题重复
 - tao-ohos 窗口操作 stub(fork 级);`feat/open-harmony` 等上游合并后摘 `[patch]` 表(见 `Cargo.toml` 注释)
