@@ -622,7 +622,7 @@ impl Default for AppSettings {
             filter_criteria: None,
             theme: Some("system".to_string()),
             font_family: None,
-            decorations: Some(false),
+            decorations: Some(true),
             ai_connector_address: None,
             last_folder_state: None,
             ui_visibility: None,

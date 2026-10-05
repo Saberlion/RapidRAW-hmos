@@ -1245,7 +1245,7 @@ export default function SettingsPanel({
                           description={t('settings.general.nativeTitlebarDesc')}
                         >
                           <Switch
-                            checked={appSettings?.decorations ?? false}
+                            checked={appSettings?.decorations ?? true}
                             id="native-titlebar-toggle"
                             label={t('settings.general.enableOsTitlebar')}
                             onChange={(checked) => {
