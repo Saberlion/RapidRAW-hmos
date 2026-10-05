@@ -43,6 +43,7 @@
         "shadows": "陰影"
       },
       "hue": "色相",
+      "kelvinModeTooltip": "以克耳文顯示色溫",
       "localHue": "局部色調",
       "luminance": "亮度",
       "mixerColors": {
@@ -66,13 +67,13 @@
       "whiteBalance": "白平衡"
     },
     "curves": {
-      "channelTitle": "{{channel}} 通道",
       "channels": {
         "blue": "藍色",
         "green": "綠色",
         "luma": "亮度",
         "red": "紅色"
       },
+      "channelTitle": "{{channel}} 通道",
       "copyParametric": "複製 {{channel}} 參數曲線",
       "copyPoint": "複製 {{channel}} 點曲線",
       "curveDataUnavailable": "曲線資料不可用。",
@@ -188,6 +189,9 @@
       "denoise": "降噪影像",
       "editImage": "編輯影像",
       "exportImage": "匯出影像",
+      "flag": "標記",
+      "flagPick": "留用",
+      "flagReject": "已拒絕",
       "frameImage": "裝裱影像",
       "mergeHdr": "合併為 HDR",
       "noLabel": "無標籤",
@@ -201,7 +205,8 @@
       "resetAdjustments": "重置調整",
       "stitchPanorama": "拼接全景圖",
       "tagging": "標籤",
-      "undo": "復原"
+      "undo": "復原",
+      "unflagged": "無標記"
     },
     "folders": {
       "changeIcon": "更換圖示",
@@ -224,6 +229,7 @@
     "library": {
       "addCopiedToAlbum_one": "將複製的影像新增到相簿",
       "addCopiedToAlbum_other": "將 {{count}} 張複製的影像新增到相簿",
+      "deleteRejected": "刪除已拒絕的影像",
       "refreshView": "重新整理檢視"
     },
     "merge": {
@@ -405,7 +411,8 @@
         "quickErase": "快速擦除 {{count}}",
         "quickErase_one": "快速擦除 {{count}}",
         "quickErase_other": "快速擦除 {{count}}",
-        "retouch": "修飾 {{count}}"
+        "retouch": "修飾 {{count}}",
+        "retouch_other": "修飾 {{count}}"
       },
       "resetInpaintingTooltip": "重置影像修復",
       "settings": {
@@ -436,8 +443,8 @@
         "hPlaceholder": "高",
         "hTooltip": "高度",
         "removeTooltip": "刪除已儲存的寬高比",
-        "saveTooltip": "將寬高比儲存為預設",
         "savedTooltip": "已儲存的寬高比 {{ratio}}",
+        "saveTooltip": "將寬高比儲存為預設",
         "wPlaceholder": "寬",
         "wTooltip": "寬度"
       },
@@ -696,8 +703,8 @@
       "organization": {
         "addTagPlaceholder": "新增標籤...",
         "colorLabel": "顏色標籤",
-        "noTags": "無標籤",
         "none": "無",
+        "noTags": "無標籤",
         "rating": "評分",
         "ratingLabels": "評分與標籤",
         "tags": "標籤",
@@ -875,12 +882,12 @@
       "estimatedSize": "預計檔案大小：約 {{size}}",
       "estimatedTotalSize": "預計總大小：約 {{size}}",
       "estimatingSize": "正在估算大小...",
+      "exporting": "匯出中…",
+      "exportingProgress": "匯出中…（{{current}}/{{total}}）",
       "exportMultiple": "匯出 {{count}} {{label}}",
       "exportMultiple_one": "匯出 {{count}} {{label}}",
       "exportMultiple_other": "匯出 {{count}} {{label}}",
       "exportSingle": "匯出 {{label}}",
-      "exporting": "匯出中…",
-      "exportingProgress": "匯出中…（{{current}}/{{total}}）",
       "failed": "匯出失敗",
       "noImageSelected": "未選擇要匯出的影像。",
       "noImagesSelected": "未選擇影像。",
@@ -939,8 +946,8 @@
       "iso": "ISO",
       "metadata": "中繼資料",
       "noMetadataAvailable": "無可用中繼資料",
-      "noTagsAdded": "未新增標籤",
       "none": "無",
+      "noTagsAdded": "未新增標籤",
       "rateAndLabel": "評分與標籤",
       "rating": "評分",
       "selectImagesToCompare": "選擇要比較的影像",
@@ -955,6 +962,12 @@
         "all": "所有影像",
         "editedOnly": "僅已編輯",
         "uneditedOnly": "僅未編輯"
+      },
+      "flag": {
+        "all": "所有影像",
+        "excludeRejected": "隱藏已拒絕",
+        "picked": "留用",
+        "rejected": "已拒絕"
       },
       "noMatch": "未找到匹配過濾條件的影像。",
       "rating": {
@@ -1037,6 +1050,7 @@
         "filterByColorLabel": "按顏色標籤過濾",
         "filterByEdited": "按編輯狀態過濾",
         "filterByFileType": "按檔案型別過濾",
+        "filterByFlag": "按標記過濾",
         "filterByRating": "按評分過濾",
         "groupEditedFiles": "Include edited files in groups",
         "groupIgnoreMetadata": "Ignore mismatched EXIF dates",
@@ -1070,11 +1084,21 @@
       "expandFolder": "展開資料夾",
       "imagesCount_one": "1 張影像",
       "imagesCount_other": "{{count}} 張影像",
+      "rejected": "已拒絕",
       "tooltipAperture": "光圈",
       "tooltipFocalLength": "焦距",
       "tooltipIso": "ISO",
       "tooltipShutterSpeed": "快門速度",
       "tooltipVirtualCopy": "虛擬副本"
+    },
+    "reject": {
+      "deleteConfirm": "刪除已拒絕",
+      "deleteMessage_one": "確定要刪除 {{count}} 張已拒絕的影像嗎？它們將被移至資源回收筒。",
+      "deleteMessage_other": "確定要刪除 {{count}} 張已拒絕的影像嗎？它們將被移至資源回收筒。",
+      "deleteTitle": "刪除已拒絕的影像",
+      "noneToDelete": "沒有可刪除的已拒絕影像。",
+      "virtualCopiesWarning_one": "由於原始影像已被拒絕，{{count}} 個未被拒絕的虛擬副本也將被刪除。",
+      "virtualCopiesWarning_other": "由於原始影像已被拒絕，{{count}} 個未被拒絕的虛擬副本也將被刪除。"
     },
     "search": {
       "noResults": "未找到結果",
@@ -1134,6 +1158,11 @@
       "communityPresets": "社群預設",
       "goHome": "返回首頁",
       "importImages": "匯入影像"
+    },
+    "viewMode": {
+      "culling": "篩選檢視",
+      "grid": "網格檢視",
+      "list": "列表檢視"
     }
   },
   "masks": {
@@ -1258,13 +1287,13 @@
     "culling": {
       "actionDelete": "移至垃圾桶",
       "actionRateZero": "將評分設為 1 星",
-      "actionReject": "標記為已拒絕（紅色標籤）",
+      "actionReject": "標記為已拒絕",
       "applyButton_one": "應用到 1 張影像",
       "applyButton_other": "應用到 {{count}} 張影像",
       "bestImage": "最佳影像",
+      "blurryImagesTab": "模糊影像",
       "blurThreshold": "模糊臨界值",
       "blurThresholdDesc": "銳度評分低於此值的影像將被標記。值越高越嚴格。",
-      "blurryImagesTab": "模糊影像",
       "cancel": "取消",
       "close": "關閉",
       "cullingFailed": "篩選失敗",
@@ -1617,6 +1646,7 @@
         "copy_files": "複製選中的檔案",
         "copy_image_path": "複製所選圖片的路徑",
         "cycle_zoom": "迴圈縮放（適應、2倍適應、100%）",
+        "delete_rejected": "刪除已拒絕的檔案",
         "delete_selected": "刪除選中的檔案",
         "focus_search": "聚焦搜尋框",
         "open_image": "開啟選中的影像",
@@ -1649,9 +1679,12 @@
         "toggle_library_exif": "切換 EXIF 疊加",
         "toggle_masks": "切換遮色片面板",
         "toggle_metadata": "切換後設資料面板",
+        "toggle_pick": "切換留用標記",
         "toggle_presets": "切換預設面板",
+        "toggle_reject": "切換拒絕標記",
         "toggle_right_panel": "切換右側面板",
         "undo": "復原調整",
+        "unflag": "取消標記",
         "zoom_100": "縮放到 100%",
         "zoom_fit": "縮放以適應",
         "zoom_in": "放大",
@@ -1831,8 +1864,8 @@
     "tagging": {
       "addCustomPlaceholder": "新增自定義 AI 標籤（逗號分隔）...",
       "addCustomTooltip": "新增 AI 標籤",
-      "addShortcutTooltip": "新增快捷方式",
       "addShortcutsPlaceholder": "新增快捷方式（逗號分隔）...",
+      "addShortcutTooltip": "新增快捷方式",
       "aiTagging": "AI 標籤",
       "aiTaggingDesc": "使用 AI（CLIP）模型啟用自動影像標籤。這將下載額外的模型，並在瀏覽資料夾時影響效能。標籤用於搜尋資料夾。",
       "amount": "數量",
@@ -1990,6 +2023,10 @@
         "virtualCopy": "虛擬副本"
       },
       "virtualCopyAbbreviation": "VC"
+    },
+    "flags": {
+      "togglePick": "切換留用",
+      "toggleReject": "切換拒絕"
     },
     "imagePicker": {
       "clearImage": "清除影像",

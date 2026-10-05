@@ -15,7 +15,7 @@ Frontend (repo root):
 - `npm start` — full app (`tauri dev`); `npm run dev` — frontend only (Vite, port 1420, strictPort)
 - `npm run typecheck` / `lint` / `lint:fix` / `format` / `format:check`
 - `npm run tauri build` — release build; `npm run start:tethering` — dev with the `tethering` feature (macOS/Linux only, needs `libgphoto2`)
-- i18n (14 locales): `npm run i18n:extract` — extract new keys; `npm run i18n:check` — sync + runtime check
+- i18n (15 locales): `npm run i18n:extract` — extract new keys; `npm run i18n:check` — sync + runtime check
 
 Rust — always in `src-tauri/` (no workspace; `rust-toolchain.toml` pinning Rust 1.98 lives there, not at repo root):
 
