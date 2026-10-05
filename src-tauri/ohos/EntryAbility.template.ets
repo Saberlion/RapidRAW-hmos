@@ -7,6 +7,8 @@ import window from '@ohos.window';
 import picker from '@ohos.file.picker';
 import fileUri from '@ohos.file.fileuri';
 import fs from '@ohos.file.fs';
+import { fileShare } from '@kit.CoreFileKit';
+import deviceInfo from '@ohos.deviceInfo';
 import { photoAccessHelper } from '@kit.MediaLibraryKit';
 
 export default class EntryAbility extends RustAbility {
@@ -21,6 +23,15 @@ export default class EntryAbility extends RustAbility {
 
   async onCreate(want: Want, launchParam: AbilityConstant.LaunchParam): Promise<void> {
     super.onCreate(want, launchParam);
+    // Form-factor evidence for the folder-grant strategy (docs 6.14): 2in1
+    // keeps persistent folder grants; tablets/phones stay on per-launch
+    // re-grant because the persistence capability is 2in1-only.
+    console.info(`[RapidRAW] deviceType: ${deviceInfo.deviceType}`);
+    // Persistent folder grants are NOT auto-activated on app start: replay
+    // the recorded ones now, ahead of the webview's library preload (which
+    // fires seconds later). Fire-and-forget on purpose — awaiting lifecycle
+    // helpers here once caused the ability to terminate (docs 6.4).
+    this.activatePersistedGrants();
   }
 
   async onWindowStageCreate(windowStage: window.WindowStage): Promise<void> {
@@ -211,6 +222,15 @@ export default class EntryAbility extends RustAbility {
           } catch (e) {
             console.error(`[RapidRAW] pick_folder stat FAILED for ${resolved}: ${JSON.stringify(e)}`);
           }
+          // Convert the picker's temporary grant into a persistent one
+          // (2in1/PC form factors only — pads lack the capability; docs 6.14).
+          // Guarded: grant persistence must never break the pick flow —
+          // resolvePickFolder below must always run.
+          try {
+            this.persistFolderGrant(rawUri, resolved);
+          } catch (e) {
+            console.error(`[RapidRAW] persistFolderGrant threw: ${JSON.stringify(e)}`);
+          }
         }
       }
       resolvePickFolder(requestId, resolved);
@@ -357,6 +377,88 @@ export default class EntryAbility extends RustAbility {
       console.error(`[RapidRAW] save picker failed: ${JSON.stringify(e)}`);
       resolveSaveFileAs(requestId, null, JSON.stringify(e));
     });
+  }
+
+  // Convert the picker's temporary folder grant into a persistent one
+  // (fileShare.persistPermission) and record the URI for later launches.
+  // 2in1/PC only: tablets/phones lack the capability (docs 6.14) and stay
+  // on the per-launch re-grant flow in the frontend.
+  private persistFolderGrant(uri: string, path: string): void {
+    if (deviceInfo.deviceType !== '2in1') {
+      console.info(`[RapidRAW] persist grant skipped (deviceType=${deviceInfo.deviceType})`);
+      return;
+    }
+    // READ|WRITE: .rrdata sidecars are written next to the originals in
+    // the library folder (parse_virtual_path in file_management.rs).
+    const policy: fileShare.PolicyInfo = {
+      uri: uri,
+      operationMode: fileShare.OperationMode.READ_MODE | fileShare.OperationMode.WRITE_MODE,
+    };
+    fileShare.persistPermission([policy]).then(() => {
+      console.info(`[RapidRAW] persistPermission ok for ${uri}`);
+      this.recordFolderGrant(uri, path);
+    }).catch((e: BusinessError) => {
+      // Non-fatal: the temporary grant still covers this session and the
+      // frontend re-grant flow remains the fallback. Expected 201 while the
+      // debug profile lacks the FILE_ACCESS_PERSIST ACL (docs 6.14).
+      console.error(`[RapidRAW] persistPermission failed: ${JSON.stringify(e)}`);
+    });
+  }
+
+  private recordFolderGrant(uri: string, path: string): void {
+    try {
+      const grantsFile: string = `${this.context.filesDir}/ohos_grants.json`;
+      let grants: Array<Record<string, string>> = [];
+      try {
+        grants = JSON.parse(fs.readTextSync(grantsFile)) as Array<Record<string, string>>;
+      } catch (e) {
+        grants = [];
+      }
+      if (!grants.some((g: Record<string, string>) => g['uri'] === uri)) {
+        const entry: Record<string, string> = { 'uri': uri, 'path': path };
+        grants.push(entry);
+        const file: fs.File = fs.openSync(grantsFile,
+          fs.OpenMode.READ_WRITE | fs.OpenMode.CREATE | fs.OpenMode.TRUNC);
+        fs.writeSync(file.fd, JSON.stringify(grants));
+        fs.closeSync(file);
+      }
+    } catch (e) {
+      console.error(`[RapidRAW] recordFolderGrant failed: ${JSON.stringify(e)}`);
+    }
+  }
+
+  // Persistent grants are not loaded into the kernel on app start; call
+  // activatePermission for every recorded folder URI before the webview
+  // reads the library. Per-URI isolation: one stale entry must not block
+  // the rest.
+  private async activatePersistedGrants(): Promise<void> {
+    try {
+      const grantsFile: string = `${this.context.filesDir}/ohos_grants.json`;
+      let grants: Array<Record<string, string>> = [];
+      try {
+        grants = JSON.parse(fs.readTextSync(grantsFile)) as Array<Record<string, string>>;
+      } catch (e) {
+        return;
+      }
+      let activated: number = 0;
+      for (const g of grants) {
+        const policy: fileShare.PolicyInfo = {
+          uri: g['uri'],
+          operationMode: fileShare.OperationMode.READ_MODE | fileShare.OperationMode.WRITE_MODE,
+        };
+        try {
+          await fileShare.activatePermission([policy]);
+          activated++;
+        } catch (e) {
+          console.error(`[RapidRAW] activate grant failed for ${g['uri']}: ${JSON.stringify(e)}`);
+        }
+      }
+      if (activated > 0) {
+        console.info(`[RapidRAW] activated ${activated} persisted folder grant(s)`);
+      }
+    } catch (e) {
+      console.error(`[RapidRAW] activatePersistedGrants failed: ${JSON.stringify(e)}`);
+    }
   }
 
   private unlinkQuietly(path: string): void {
