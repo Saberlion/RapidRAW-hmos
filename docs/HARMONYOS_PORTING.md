@@ -253,7 +253,7 @@ hdc shell "hilog -x | grep -iE 'CppCrash|rapidraw.*(fatal|crash)'"   # 崩溃扫
 
 ### 6.6 Phase 2:FileKit 文件夹选择桥——"打开文件夹"(2026-10-04)
 
-**成果**:"打开文件夹"在 OHOS 端到端可用——欢迎页/图库"添加文件夹"按钮 → 系统"选择路径"对话框(DocumentViewPicker)→ 选定文件夹成为图库根(树渲染、跨重启持久化、扫描链无错)。
+**成果**:"打开文件夹"在 OHOS 端到端可用——欢迎页/图库"添加文件夹"按钮 → 系统"选择路径"对话框(DocumentViewPicker)→ 选定文件夹成为图库根(树渲染、扫描链无错)。~~跨重启持久化~~ → **2026-10-05 真机修正:授权为进程会话级,任何进程死亡即失效(模拟器才持久;失效已由 6.14 探针自愈,详见该节)**;**同日深夜再修正:声明 `FILE_ACCESS_PERSIST` 后 2in1/PC 形态经 v3(fileShare.persistPermission)恢复跨重启持久,会话级语义现仅适用于 pad 形态与未声明权限的构建(见 6.14 第 5 节)**。
 
 **1. 背景:tauri-plugin-dialog 在 OHOS 被排除**
 
@@ -553,15 +553,77 @@ demosaic 输出         f32 RGB   734MB
 - **uitest dumpLayout**:可暴露 webview 内 DOM(元素属性 `originalText` + `origBounds` `[x,y][x,y]` 两角格式),但**不稳定**(时有时无);PowerShell 5.1 读取须 `[IO.File]::ReadAllText(path, UTF8)`(默认 GBK 会乱码导致中文关键词搜不到);坐标提取正则须锚定 `origBounds` 紧邻 `originalText` 的属性顺序
 - **像素扫描兜底**:系统原生对话框(非 webview)dump 抓不到时,用 System.Drawing 阈值扫描(暗面板中最宽纯白矩形 = 主按钮;底栏蓝色块 = 确认按钮)求中心;视觉模型坐标估计不可靠(同图两次估计可差 900px)
 - **真机日志**:`/data/app/el2/100/base/<bundle>/files/logs/app.log`(`setup_logging` OHOS 直写沙箱,宿主 shell 可读;stdout/stderr 真机上接 /dev/null)
-- **注意**:picker 目录授权不跨 `install -r` 存活,重装后首次"继续会话"会 EPERM(WARN 非崩溃),重走一遍"添加文件夹"即恢复
+- **注意**:picker 目录授权在真机上默认为**进程会话级**(任何进程死亡即失效——`install -r`、force-stop、标题栏优雅关闭皆然;模拟器才跨重启持久),失效后"继续会话"由探针自动捕获并重弹 picker 自愈(见 6.14)。**深夜补充:声明 `FILE_ACCESS_PERSIST` 后 2in1/PC 形态经 v3 持久化跨 force-stop/重启存活(见 6.14 第 5 节)——本条会话级语义适用于 pad 形态与未声明权限的构建**
 
 **4. 遗留与后续**
 
 - ~~首趟 WGSL 管线编译 ~11s~~ → **已解决(2026-10-05 晚,启动期管线预热)**:`gpu_processing.rs` 新增 `warm_up_pipelines()`(OHOS 门控,初始化 GPU 上下文 + 创建 256×256 一次性 GpuProcessor 触发全部 5 条管线编译后丢弃——管线与处理器尺寸无关,真实处理器按需创建时命中驱动热缓存),`lib.rs` 启动时经 `pipeline-warmup` 后台线程调用。真机冷缓存(卸载重装)实测:预热 9.98s 在启动后台吸收,首个真实 GPU 作业 588ms、编辑器首开全预览 578ms(修复前 11.16s/11.49s),稳态 ~250ms/趟(4+ FPS);日志标记 `[pipeline-warmup] completed in Xs`
-- ArkWeb `window.localStorage` 为 null(前端任何 `Object.keys(localStorage)` 会抛,未伤主流程,待排查)
+- ~~ArkWeb `window.localStorage` 为 null~~ → **已解决(2026-10-05 晚,见 6.14)**:新增 `webStorageShim.ts` 启动期以 `Object.defineProperty` 装内存版兜底(CDP 实证 ls/ss=object、读写往返 ok、`Object.keys` 不再抛);前端本身零 localStorage 使用(zustand 无 persist、i18next 无检测器),兜底面向未来代码与三方库
 - 模型下载目标随 app_paths 迁至沙箱后,FUSE rename EACCES 场景消失,但 `persist_downloaded_asset` 的字节拷贝回退**必须保留**(AGENTS.md 纪律,对旧数据/异常环境冗余)
 - ≥60MP 真机基线(6.10/6.11 方法论就绪,61MP 资产已推真机 Download)、ORT/AI 5 模型蒙版真机分级验证仍待跑
 - 模拟器回归冒烟:x86_64 新构建重装验证一轮(沙箱路径模拟器同样可写,风险低)
+
+### 6.14 会话恢复授权自愈 + ArkWeb 存储兜底 + 授权持久化 v3(2026-10-05)
+
+**背景**:6.13 遗留清单的两项真机日常使用之痛——重装/重启后"继续会话"死路(空库且无提示),与 ArkWeb `localStorage` null 隐患。修复后真机四轮端到端验证全通(18:48 构建,18:49-19:12 实测)。
+
+**1. FileKit 目录授权的真实语义(真机实证,修正 6.6 模拟器结论)**
+
+- DocumentViewPicker(FOLDER 模式)授予的目录访问权在真机上是**进程会话级**:任何进程死亡都失效——标题栏 X 优雅关闭(19:10 实验:dumpLayout 定位 `EnhanceCloseBtn` → 点击 → `pidof` 确认进程退出 → 重启后启动预载与探针双双 EPERM)与 `aa force-stop`(18:57 实验)结果相同;模拟器(x86_64 标准镜像)才跨重启持久。**(本条为 v2 时代结论,系未声明 `FILE_ACCESS_PERSIST` 时的默认语义;声明该权限后 2in1/PC 形态经 v3 持久化,force-stop/优雅关闭/整机重启均不再失效——见第 5 节;pad 形态与未声明权限的构建仍适用本条)**
+- 授权失效表现为**元数据可读 + `read_dir` EPERM**(`Operation not permitted (os error 1)`);而 `scan_dir_lazy`(file_management.rs)吞掉 `read_dir` 错误返回空列表 → 树/children 扫描命令对死根无感知(仍返回"空但合法"的树节点)——探针因此不能复用扫描命令
+
+**2. 修复设计(探针 + 重授权流 + 双兜底)**
+
+| 层 | 文件 | 内容 |
+|---|---|---|
+| Rust 探针 | `file_management.rs` 新增 `check_paths_readable(paths) -> Vec<bool>`(lib.rs 注册) | 裸 `read_dir().is_ok()`,权限失败必然传导。首轮方案用 `get_folder_children` 探活,因 `scan_dir_lazy` 吞 EPERM 把死根误判为活(教训:探针语义必须与扫描语义解耦) |
+| 前端重授权流 | `useAppNavigation.ts` `handleContinueSession` | 恢复前 OHOS 门控探活;发现死根 → console.warn 留痕 + toast 提示 + 直弹 `pick_ohos_folder`;重选 → 合并根目录(同路径=授权刷新/不同路径=换根,前缀判定)+ **作废启动预载的陈旧空树 promise**(`preloadedDataRef.current = undefined`,否则同路径重选会消费已 resolve 的空树)+ 持久化 rootFolders → 走正常恢复;取消且无活根 → toast + 回欢迎页;部分活根 → 只恢复活的 |
+| 预载兜底 | `useAppInitialization.ts` | 预载 images promise 加 `.catch(() => undefined)`:死根时该 promise 无人 await 即 reject,修复前每次启动产生 1 条 unhandled rejection ERROR 日志;消费方对 undefined 走全新加载,行为不变 |
+| ArkWeb 兜底 | 新增 `src/utils/webStorageShim.ts`(main.tsx 首行安装) | ArkWeb 的 `localStorage`/`sessionStorage` 为 null,任何访问(含 `Object.keys`)抛 TypeError;shim 探测不可用后以 `Object.defineProperty(window, ...)` 装内存版(非持久) |
+
+**3. 真机验证矩阵**
+
+- **重授权主流程 ×3 全通**(三种触发:install -r 清授权 / force-stop 重启 / 优雅关闭重启):探针 console.warn 留痕(`Library roots unreadable (FileKit grant revoked?), requesting re-grant: [...]`)→ toast → FileKit picker 弹出 → 重选 Download → 库恢复(3 ARW + 1 PNG 缩略图全渲染、零错误)
+- **取消分支**:picker 取消 → 回欢迎页不卡死,可再次触发(第二轮即恢复)
+- **unhandled rejection**:修复前每次死根启动 1 条 ERROR,修复后 0 条
+- ~~**已知边界**:**每次冷启动需一次重授权点击**(授权为进程会话级)~~ → **已由 v3 解决(2in1/PC 形态,同日深夜,见第 5 节:picker 授权经 `fileShare.persistPermission` 持久化 + 启动期 activate,跨 force-stop/整机重启直通恢复)**;pad 形态保留本边界(设备能力所限,v2 重授权流即其最终形态)
+
+**4. 调试方法学补充(相对 6.13-3)**
+
+- **dumpLayout 保存路径带时间戳**(`layout_<n>.json`),须解析命令输出里的实际文件名再 `file recv`——直接收 `layout.json` 会拿到陈旧文件
+- **系统装饰栏按钮 id**:`EnhanceCloseBtn`/`EnhanceMinimizeBtn`/`EnhanceMaximizeBtn`(dumpLayout 精确定位;本日两次实证视觉模型坐标估计误差分别达 235px 与 1290px,系统 UI 点击一律 dumpLayout 取 bounds)
+- **CDP 点击 React 按钮**(`querySelector` + `.click()`)零坐标误差,适用于 webview 内元素;系统模态对话框不在 webview 内,仍须 uitest + dumpLayout
+- 截图体积特征可做快速状态判别(本机):欢迎页 ~346KB / 系统对话框开启 ~276KB / 库网格渲染 ~331KB
+
+**5. v3:picker 授权持久化(2in1/PC 形态)——pad/PC 双形态定稿(2026-10-05 深夜)**
+
+**需求**:同一 HAP 同时覆盖 pad 与 PC(2in1),按设备形态区别处理文件持久化权限——PC 免重授权直通恢复,pad 保留 v2 冷启动重授权(能力差异,非选择)。
+
+- **设计(ArkTS-only,`EntryAbility.template.ets` 三方法,Rust/前端零改动)**:
+  - `persistFolderGrant(uri, path)`:`pickFolder` select 成功回调调用(外层 try/catch 防同步抛跳过 `resolvePickFolder`);`deviceInfo.deviceType === '2in1'` 门控(非 2in1 留 console 痕迹后跳过);`fileShare.persistPermission([{uri, operationMode: READ_MODE | WRITE_MODE}])`——读写模式必须:`.rrdata` 侧车写在图库夹原图旁(parse_virtual_path)
+  - `recordFolderGrant(uri, path)`:persist 成功后把 `{uri, path}` 追加进 `${this.context.filesDir}/ohos_grants.json`(JSON 数组按 uri 去重;openSync `READ_WRITE|CREATE|TRUNC`)
+  - `activatePersistedGrants()`:`onCreate` 火忘重放(逐 URI try/catch 隔离;不 await——6.4 教训:生命周期内 await 辅助调用曾致 ability 终止)
+  - 全链失败非致命 → 自动落回 v2 探针/重授权流(第 2 节);pad 形态即始终走 v2
+- **权限与路径真相(实证,含两个推翻性结论)**:
+  - **`FILE_ACCESS_PERSIST` 仅声明即可**:module.json5 声明后 persistPermission 即成功(hilog `[RapidRAW] persistPermission ok for file://docs/storage/Users/currentUser/Download`)——空 `allowed-acls` 调试档案**不拦**(他包档案普遍含该 ACL 曾误导出"须 AGC 重发档案"假说)——**官方根源:该权限 API 11 为 system_basic 受限级,API 12 起降为 normal 级 system_grant**(restricted-permissions.md 变更记录),无需 ACL 是制度性的、非调试档案宽容;`bm dump reqPermissionStates:[0,0]` 与 `atm dump grantStatus:0/flag:4(SYSTEM_FIXED)` **均不反映运行时拒绝**——校准法:INTERNET 同显 0 而 webview no-cors fetch 实通
+  - **`UIAbilityContext.filesDir` 是 hap 级路径**:`/data/app/el2/100/base/<bundle>/haps/entry/files/`,**≠** Rust/Tauri 侧应用级 `files/`(app.log 所在)——grants 文件落在 hap 级路径;曾以应用级路径 cat 误判"记录失败"空追一轮
+- **持久化语义(真机实证,20:29 构建)**:pick → persist ok → 记录落盘;**force-stop → 重启 Continue Session 直通恢复**(无 picker 无重授权);**整机 reboot(锁屏解锁后)→ 同样直通**——临时授权必死于重启,唯 persist+activate 链可活,故 reboot 通过即最深证明(判定证据 = app.log 无 re-grant WARN + 截图视觉确认库网格)。`install -r` 对已持久化授权的行为未测(历史杀授权案例均为未声明权限的构建;即便吊销,v2 流自愈)。**文档矛盾注**:官方 select-user-file.md 称 select() 返回"临时只读授权",与真机实证矛盾——本机 FOLDER 模式 READ|WRITE 持久化成功(hilog 实证)且历次会话 `.rrdata` 侧车原图旁写入正常,以行为为准
+- **deviceType 门控实证**:`param dump` → `const.product.devicetype=2in1`(HAD-W32);UA `Mozilla/5.0 (PC; OpenHarmony 7.0) ...`;pad 按官方文档报 `tablet` → gate 走 v2(fail-safe:一切非 2in1 形态保守重授权);**官方旁证**:tablet 最小 syscap 集不含 FolderAuthorization(tablet-syscap-list),且 persistPermission 的"仅 2in1"措辞在 OpenHarmony 6.0/master 已放宽为 syscap 门控(5.1.0 尚存)——pad 无持久化能力系系统配置所限,未来 pad 机型若配备该 syscap 可升级为 `canIUse` 探测
+- **双形态矩阵**:
+
+| 形态 | deviceType | 持久化策略 | 冷启动行为 | 验证状态 |
+|---|---|---|---|---|
+| PC/2in1 | `2in1`(param 实证) | persistPermission(READ\|WRITE)+ hap 级记录 + onCreate activate | Continue Session 直通(零 picker) | 真机端到端:pick → force-stop → 整机 reboot 全通(20:30-21:23 实测) |
+| pad/tablet | `tablet`(文档值) | gate 跳过(留痕日志) | v2:探针失败 → toast → 重授权 | v2 流真机 ×3(本机);真 pad 待验 |
+
+- **gen/ 手动复制纪律(两处,`ohos init` 重跑后必查)**:① `cargo tauri ohos build` **不复制** `src-tauri/ohos/*.template.ets` 进 gen(仅 `ohos init` 复制且其会重置签名配置)——模板改动须手动 copy + 字节级 diff 校验;② module.json5 的 `FILE_ACCESS_PERSIST` 声明也只存在于 gitignored 的 gen/ ——init 重跑后须重加
+
+**6. 调试方法学补充二(v3 排障沉淀,接第 4 节)**
+
+- **dumpLayout 跨进程窗口盲区(重大,曾致连续三轮误诊)**:默认 `uitest dumpLayout` 只合并**本应用**窗口;系统 FileKit picker 渲染于独立窗口(com.huawei.hmos.filemanager),**须 `dumpLayout -i`(不合并模式)才可见**——"默认 dump 看不到 picker"≠ picker 没开;picker 元素提取须按 hostWindowId 过滤(库内脚本 `extract-picker.js` 模式)
+- **hilog 与 ArkTS console**:app 域 tag 为 `A03D00/<bundle>/JSAPP`(info/error 均达 hilog);但**应用自身启动窗口的 JSAPP 行会被自身 chromium 洪流流控丢弃**(他进程 JSAPP 行可见,证明机制本身正常)——启动期证据以行为学为准(app.log + 截图);grep 模式必须对准实际日志文本(如 `persistPermission` 匹配不到 `recordFolderGrant failed` 行)
+- **截图体积签判(补充第 4 节)**:全屏态:欢迎 ~346KB / picker ~277-280KB / 库 ~313-322KB / **锁屏 ~570KB(新增)**;**窗口非全屏或系统弹窗悬浮时整体偏移**(reboot 后窗口化 + "USB 连接方式"对话框悬浮 → 281K/258K)——跨重启场景先截图视觉定标再比字节
+- **锁屏/reboot 测试 runbook**:reboot 后设备必锁屏;el2 用户存储解锁前不可访问(app.log `No such file` ≠ 文件丢失);锁屏期 `aa start` 拒启(**10106102**,developer mode 不自动解锁);**锁屏窗口对 dumpLayout 零节点暴露**(安全特性)→ 交互靠截图+视觉定位(本机:密码框中心 (1560,1750)、眼睛图标 [1718,1715][1758,1765]、圆形提交钮 [1800,1705][1872,1777] 中心 (1836,1741));**keyEvent 键码权威值(`@ohos.multimodalInput.keyCode`):数字 0-9 = 2000-2009(KEYCODE_1=2001)、字母 A-Z = 2017-2042、ENTER = 2054**——错误记忆 2019 实为字母 C,曾打出 "CCCCCC" 提交被拒;锁屏拒绝**无任何错误提示**(静默清空字段),靠"6 圆点→空字段+零报错"指纹定位
 
 ## 7. 移植路线图与进度清单
 
@@ -585,7 +647,7 @@ demosaic 输出         f32 RGB   734MB
 - [x] 模拟器点亮应用窗口(2026-10-03 23:25,DevEco x86_64 模拟器:完整欢迎页 UI 渲染、Canvas 图片正常、`tauri` 自定义协议注册、无崩溃,超预期完成,见 6.4;真机仍待接入)
 
 ### Phase 2 — 平台集成(3~4 周)
-- [x] FileKit 文件夹选择桥(2026-10-04,见 6.6):"打开文件夹"端到端可用——DocumentViewPicker 桥(oneshot+napi 回传)+ `isOhos` 探测 + `handleOpenFolder` OHOS 分支;`FileUri.path` 直出沙箱路径、Rust 可读(stat 实证)、跨重启持久;photoAccessHelper 相册 URI 桥(单文件/相册)已由 6.7 覆盖(导入走 FileKit picker 可导航相册,导出走 showAssetsCreationDialog)
+- [x] FileKit 文件夹选择桥(2026-10-04,见 6.6):"打开文件夹"端到端可用——DocumentViewPicker 桥(oneshot+napi 回传)+ `isOhos` 探测 + `handleOpenFolder` OHOS 分支;`FileUri.path` 直出沙箱路径、Rust 可读(stat 实证)、~~跨重启持久~~ → 会话级修正(2026-10-05)→ **2in1 形态 v3 恢复跨重启持久(2026-10-05 深夜,fileShare.persistPermission + 启动期 activate,见 6.14 第 5 节;pad 形态走 v2 重授权自愈)**;photoAccessHelper 相册 URI 桥(单文件/相册)已由 6.7 覆盖(导入走 FileKit picker 可导航相册,导出走 showAssetsCreationDialog)
 - [x] 相册导出 `save_image_bytes_to_ohos_gallery`(2026-10-04,见 6.7):showAssetsCreationDialog 弹窗授权 + 沙箱中转 + fd 拷贝端到端实证(`save_to_gallery ok: file://media/Photo/…`,图库「来自应用 RapidRAW」可见)
 - [x] FileKit 文件选择桥 + 导入流(2026-10-04,见 6.7):`pick_ohos_files`(`collapse_suffix_filters` 规避 100 字符上限)+ 导入 FAB/图像选择器/LUT/预设消费点全接;Rust `std::fs` 直读媒体库路径实证
 - [x] TLS 根证书策略已确认(2026-10-03):维持 reqwest rustls 捆绑 webpki 根——rustls-platform-verifier 无 OHOS 后端,捆绑根对 HF/ohpm 端点足够;真机 TLS 握手验证顺延至 Phase 3/4 有设备时
