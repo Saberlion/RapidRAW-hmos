@@ -169,7 +169,7 @@ cargo check --target aarch64-unknown-linux-ohos
 4. **新坑:WS 脐带**。hvigor 的 tauri 集成在 `:entry:default@PreBuild` 后调用内部子命令 `cargo tauri ohos dev-eco-studio-script --target aarch64`,该子命令从 `%TEMP%\<identifier>-server-addr` 读父进程写下的 WebSocket 地址并经 JSON-RPC 拉取构建选项(tauri-cli `crates/tauri-cli/src/mobile/mod.rs:410`)。**独立 `hvigorw assembleHap` 不可行**:没有活着的父 `cargo tauri ohos build` 进程提供 WS 服务器;读到陈旧 addr 文件则 ConnectionRefused panic(00308018)。本文档原"下一步"设想的独立 hvigorw 迭代路线作废;
 5. **新坑:java PATH**。`:entry:default@PackageHap` 调 SDK toolchains 的 Java 打包工具(app_packing_tool),Node spawn 裸命令 `java`——PATH 无 java 时报 `spawn java ENOENT`(00308018)。修复:PATH 加入 DevEco 自带 JBR(`$dev\jbr\bin`)并设 `JAVA_HOME=$dev\jbr`。此前所有尝试都死在更早环节,从未到达需要 java 的打包步骤。
 
-**最终打通(2026-10-03 21:45)**:`cargo tauri ohos build -d -t aarch64` 全链路 EXIT=0,33 个 hvigor 任务全过(SignHap 因无 signingConfigs 跳过,符合预期)→ `entry-default-unsigned.hap`(52.4MB;dev .so 378.7MB 经 `DoNativeStrip` 裁剪后打包)落位 `gen/ohos/entry/build/default/outputs/default/`。端到端自动化脚本:`%TEMP%\opencode\build-ohos.ps1`(自包含环境 + fail-fast 预检 + 看门狗超时杀进程树 + 10s 心跳进度 + daemon 清理,成功/失败路径均已实测)。
+**最终打通(2026-10-03 21:45)**:`cargo tauri ohos build -d -t aarch64` 全链路 EXIT=0,33 个 hvigor 任务全过(SignHap 因无 signingConfigs 跳过,符合预期)→ `entry-default-unsigned.hap`(52.4MB;dev .so 378.7MB 经 `DoNativeStrip` 裁剪后打包)落位 `gen/ohos/entry/build/default/outputs/default/`。端到端自动化脚本:`scripts/build-ohos.ps1`(2026-10-05 起入库,原 `%TEMP%\opencode\` 机器本地版;自包含环境 + fail-fast 预检 + 看门狗超时杀进程树 + 10s 心跳进度 + daemon 清理,成功/失败路径均已实测)。
 
 ### 6.4 Phase 1 收官:模拟器首亮(2026-10-03 23:25)
 
@@ -182,7 +182,7 @@ cargo check --target aarch64-unknown-linux-ohos
 | `src-tauri/ohos/ohos-toolchain.cmake`(入库) | 架构参数化:`OHOS_ARCH` env(`aarch64` 默认 \| `x86_64` \| `armv7`);未设时与旧版行为等价,既有配方零影响 |
 | `~/.cargo/bin`(机器本地) | 新增 `x86_64-unknown-linux-ohos-{clang,clang++,ar}.cmd`(junction 无空格路径,同 6.1 模式,已冒烟验证) |
 | `src-tauri/.cargo/config.toml`(机器本地,gitignored) | 新增 `[target.x86_64-unknown-linux-ohos]` 链接器段 |
-| `%TEMP%\opencode\build-ohos.ps1` | 参数化 `-Target aarch64(默认) \| x86_64 \| armv7`,短名→完整三元组映射驱动 CC/CXX/AR env 与 `-t` 参数 |
+| `scripts/build-ohos.ps1`(现入库;原 `%TEMP%\opencode\`) | 参数化 `-Target aarch64(默认) \| x86_64 \| armv7`,短名→完整三元组映射驱动 CC/CXX/AR env 与 `-t` 参数 |
 
 **装机/启动/取证命令(已验证)**:
 
@@ -545,7 +545,7 @@ demosaic 输出         f32 RGB   734MB
 - [x] 主仓 `cargo check --target aarch64-unknown-linux-ohos` 全量通过 + 宿主无回归(见 6.2)
 - [x] `cargo tauri ohos init` 生成 `gen/ohos` 工程(2026-10-03;产物 gitignored,未引入跟踪文件变更)
 - [x] lensfun_db / resources 打包进 HAP(2026-10-03:include_dir 嵌入 .so 随 HAP 打包,镜像 Android 路径,commit `0b11a54a`;宿主+OHOS 双目标 cargo check 通过;HAP 体积已复验(2026-10-03 22:53 全链路重建 EXIT=0):52.4→57.4MB,+5.0MB 与 lensfun_db 4.99MB 载荷吻合,`<lensdatabase` 标记已在 .so 二进制内确证。`src-tauri/resources/` 仅含 gitignored 的 ORT 二进制,无需打包;OHOS 版 `libonnxruntime.so` 走 `libs/ohos/` 各机自备)
-- [x] hvigor 出包:未签名 HAP 已产出(2026-10-03,52.4MB,见 6.3;自动化脚本 `%TEMP%\opencode\build-ohos.ps1`)
+- [x] hvigor 出包:未签名 HAP 已产出(2026-10-03,52.4MB,见 6.3;自动化脚本 `scripts/build-ohos.ps1`)
 - [x] 模拟器点亮应用窗口(2026-10-03 23:25,DevEco x86_64 模拟器:完整欢迎页 UI 渲染、Canvas 图片正常、`tauri` 自定义协议注册、无崩溃,超预期完成,见 6.4;真机仍待接入)
 
 ### Phase 2 — 平台集成(3~4 周)
@@ -625,7 +625,7 @@ cargo tauri ohos build -d -t aarch64
 #   src-tauri/gen/ohos/entry/build/default/outputs/default/entry-default-unsigned.hap
 ```
 
-**一键构建**:`%TEMP%\opencode\build-ohos.ps1`(自包含上述环境;fail-fast 预检、看门狗超时、心跳进度、daemon 清理)。
+**一键构建**:`scripts/build-ohos.ps1`(**入库版**,2026-10-05 起;仓库根由脚本位置推导,机器本地前置同上述环境;自包含上述环境;fail-fast 预检、看门狗超时、心跳进度、daemon 清理;用法见脚本头注释)。
 
 ## 9. 未完成工作盘点(2026-10-05)
 
