@@ -33,6 +33,7 @@ mod ai_commands;
 mod ai_connector;
 mod ai_processing;
 mod android_integration;
+mod app_paths;
 mod app_settings;
 mod app_state;
 mod apple_raw;
@@ -1528,7 +1529,16 @@ async fn generate_preview_for_path(
 }
 
 fn setup_logging(app_handle: &tauri::AppHandle) {
-    let log_dir = match app_handle.path().app_log_dir() {
+    // OpenHarmony: the tauri fork's desktop path resolver would point
+    // app_log_dir() into the FUSE user storage (EPERM on real devices);
+    // `app_paths::app_log_dir` redirects it to the process sandbox at
+    // /data/storage/el2/base, which is always mounted and writable (the
+    // webview keeps its data under files/__arkweb there). From the host
+    // shell the log is readable at
+    // /data/app/el2/100/base/<bundle>/files/logs/app.log. stdout/stderr are
+    // wired to /dev/null on real devices (verified via faultlog OPEN_FILES,
+    // 2026-10-05), so the log file is the only output channel there.
+    let log_dir = match crate::app_paths::app_log_dir(app_handle) {
         Ok(dir) => dir,
         Err(e) => {
             eprintln!("Failed to get app log directory: {}", e);
@@ -1604,7 +1614,7 @@ fn setup_logging(app_handle: &tauri::AppHandle) {
 
 #[tauri::command]
 fn get_log_file_path(app_handle: tauri::AppHandle) -> Result<String, String> {
-    let log_dir = app_handle.path().app_log_dir().map_err(|e| e.to_string())?;
+    let log_dir = crate::app_paths::app_log_dir(&app_handle).map_err(|e| e.to_string())?;
     let log_file_path = log_dir.join("app.log");
     Ok(log_file_path.to_string_lossy().to_string())
 }
@@ -1719,7 +1729,7 @@ fn frontend_ready(
         let _ = (&app_handle, is_first_run);
 
         #[cfg(any(windows, target_os = "linux"))]
-        if is_first_run && let Ok(config_dir) = app_handle.path().app_config_dir() {
+        if is_first_run && let Ok(config_dir) = crate::app_paths::app_config_dir(&app_handle) {
             let path = config_dir.join("window_state.json");
 
             if let Ok(contents) = std::fs::read_to_string(&path)
@@ -1904,7 +1914,7 @@ pub fn run() {
 
             let app_handle = app.handle().clone();
 
-            if let Ok(cache_dir) = app_handle.path().app_cache_dir() {
+            if let Ok(cache_dir) = crate::app_paths::app_cache_dir(&app_handle) {
                 crate::exif_processing::initialize_cache_dir(cache_dir);
             }
 
@@ -1917,7 +1927,8 @@ pub fn run() {
                 });
             }
 
-            let config_dir = app_handle.path().app_config_dir().expect("Failed to get config dir");
+            let config_dir = crate::app_paths::app_config_dir(&app_handle)
+                .expect("Failed to get config dir");
             let crash_flag_path = config_dir.join(".gpu_init_crash_flag");
 
             {
@@ -2082,7 +2093,7 @@ pub fn run() {
                     );
                 }
 
-                if let Ok(config_dir) = app.path().app_config_dir() {
+                if let Ok(config_dir) = crate::app_paths::app_config_dir(app) {
                     let path = config_dir.join("window_state.json");
                     if let Ok(contents) = std::fs::read_to_string(&path) {
                         if let Ok(state) = serde_json::from_str::<WindowState>(&contents) {
@@ -2141,7 +2152,7 @@ pub fn run() {
 
                         if let Some(state) = state_to_save
                             && let Ok(config_dir) =
-                                app_handle_for_saver.path().app_config_dir()
+                                crate::app_paths::app_config_dir(&app_handle_for_saver)
                         {
                             let path = config_dir.join("window_state.json");
                             let _ = std::fs::create_dir_all(&config_dir);
