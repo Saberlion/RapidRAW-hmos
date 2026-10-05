@@ -2083,6 +2083,33 @@ pub fn run() {
             #[cfg(target_env = "ohos")]
             ohos_integration::initialize_ohos(&window);
 
+            #[cfg(target_env = "ohos")]
+            {
+                // Pipeline warmup: the Maleoon Vulkan driver takes ~11s to
+                // compile the five compute pipelines on a cold cache (first
+                // launch or after a WGSL change, 2026-10-05) — that used to
+                // stall the first image opened. Compile them at startup in
+                // the background with a tiny throwaway processor; pipelines
+                // are dimension-independent, so the processor created on
+                // demand hits a warm driver cache.
+                let warmup_handle = app.handle().clone();
+                std::thread::Builder::new()
+                    .name("pipeline-warmup".into())
+                    .spawn(move || {
+                        let state = warmup_handle.state::<AppState>();
+                        match gpu_processing::warm_up_pipelines(&state, &warmup_handle) {
+                            Ok(elapsed) => {
+                                log::info!("[pipeline-warmup] completed in {elapsed:.2?}")
+                            }
+                            Err(e) => log::warn!(
+                                "[pipeline-warmup] failed (first image open may stall): {}",
+                                e
+                            ),
+                        }
+                    })
+                    .expect("failed to spawn pipeline warmup thread");
+            }
+
             #[cfg(not(any(target_os = "android", target_env = "ohos")))]
             {
                 let app_state = app.state::<AppState>();

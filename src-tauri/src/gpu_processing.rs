@@ -456,6 +456,28 @@ pub fn get_or_init_gpu_context(
     Ok(new_context)
 }
 
+/// Compile all compute pipelines at startup with a tiny throwaway processor
+/// so the first image the user opens does not pay the driver's pipeline
+/// compilation cost (~11s on a cold Maleoon Vulkan cache, 2026-10-05; see
+/// porting doc 6.13). Pipelines are identical regardless of the processor's
+/// texture dimensions, so the processor created on demand hits a warm driver
+/// cache — only the cheap texture allocations are thrown away. The GPU
+/// context initialized here also removes the adapter-enumeration cost from
+/// the first open. OHOS-only: desktop pre-initializes the context at startup
+/// anyway and compiles in ~100ms; Android behavior is upstream's concern.
+#[cfg(target_env = "ohos")]
+pub fn warm_up_pipelines(
+    state: &tauri::State<AppState>,
+    app_handle: &tauri::AppHandle,
+) -> Result<std::time::Duration, String> {
+    let start = std::time::Instant::now();
+    let context = get_or_init_gpu_context(state, app_handle)?;
+    // 256x256 keeps the throwaway textures tiny; pipeline creation is
+    // dimension-independent.
+    GpuProcessor::new(context, 256, 256)?;
+    Ok(start.elapsed())
+}
+
 fn read_texture_data_roi(
     device: &wgpu::Device,
     queue: &wgpu::Queue,
