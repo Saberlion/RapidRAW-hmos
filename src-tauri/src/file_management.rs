@@ -1313,6 +1313,21 @@ pub async fn get_folder_children(
     }
 }
 
+/// Returns whether each given directory is readable (a bare `read_dir` probe).
+/// The tree/children scanners swallow read_dir errors, so they cannot detect
+/// this: on OpenHarmony, a FileKit grant revoked by an app reinstall leaves
+/// the folder's metadata readable while read_dir fails with EPERM. The
+/// frontend probes saved library roots before restoring a session and
+/// re-requests the picker grant for the dead ones (porting doc 6.14).
+#[tauri::command]
+pub async fn check_paths_readable(paths: Vec<String>) -> Result<Vec<bool>, String> {
+    tauri::async_runtime::spawn_blocking(move || {
+        paths.iter().map(|p| std::fs::read_dir(p).is_ok()).collect()
+    })
+    .await
+    .map_err(|e| format!("Task failed: {}", e))
+}
+
 #[tauri::command]
 pub async fn get_folder_tree(
     path: String,
