@@ -15,7 +15,6 @@ use rayon::prelude::*;
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 use tauri::Emitter;
-use tauri::Manager;
 use tokenizers::Tokenizer;
 use tokio::sync::Mutex as TokioMutex;
 
@@ -309,7 +308,7 @@ pub fn fast_guided_filter(
 }
 
 fn get_models_dir(app_handle: &tauri::AppHandle) -> Result<PathBuf> {
-    let models_dir = app_handle.path().app_data_dir()?.join("models");
+    let models_dir = crate::app_paths::app_data_dir(app_handle)?.join("models");
     if !models_dir.exists() {
         fs::create_dir_all(&models_dir)?;
     }

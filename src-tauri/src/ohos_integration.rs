@@ -450,11 +450,7 @@ fn ohos_export_temp_file(
     file_name: &str,
     bytes: &[u8],
 ) -> std::result::Result<std::path::PathBuf, String> {
-    use tauri::Manager;
-
-    let base = app_handle
-        .path()
-        .app_cache_dir()
+    let base = crate::app_paths::app_cache_dir(app_handle)
         .map_err(|e| format!("Failed to resolve OHOS app cache dir: {e}"))?;
     let dir = base.join("export_bridge");
     std::fs::create_dir_all(&dir).map_err(|e| {

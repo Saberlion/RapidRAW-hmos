@@ -704,10 +704,7 @@ impl Default for AppSettings {
 }
 
 pub fn get_settings_path(app_handle: &AppHandle) -> Result<PathBuf, String> {
-    let settings_dir = app_handle
-        .path()
-        .app_data_dir()
-        .map_err(|e| e.to_string())?;
+    let settings_dir = crate::app_paths::app_data_dir(app_handle).map_err(|e| e.to_string())?;
 
     if !settings_dir.exists() {
         fs::create_dir_all(&settings_dir).map_err(|e| e.to_string())?;

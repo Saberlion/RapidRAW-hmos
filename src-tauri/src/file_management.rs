@@ -45,10 +45,7 @@ use crate::preset_converter;
 use crate::tagging::COLOR_TAG_PREFIX;
 
 fn resolve_thumbnail_cache_dir(app_handle: &AppHandle) -> std::result::Result<PathBuf, String> {
-    let cache_dir = app_handle
-        .path()
-        .app_cache_dir()
-        .map_err(|e| e.to_string())?;
+    let cache_dir = crate::app_paths::app_cache_dir(app_handle).map_err(|e| e.to_string())?;
     let thumb_cache_dir = cache_dir.join("thumbnails");
     if !thumb_cache_dir.exists() {
         fs::create_dir_all(&thumb_cache_dir).map_err(|e| e.to_string())?;
@@ -845,10 +842,7 @@ pub enum AlbumItem {
 }
 
 fn get_albums_path(app_handle: &AppHandle) -> Result<PathBuf, String> {
-    let data_dir = app_handle
-        .path()
-        .app_data_dir()
-        .map_err(|e| e.to_string())?;
+    let data_dir = crate::app_paths::app_data_dir(app_handle).map_err(|e| e.to_string())?;
     let albums_dir = data_dir.join("albums");
     if !albums_dir.exists() {
         fs::create_dir_all(&albums_dir).map_err(|e| e.to_string())?;
@@ -3126,9 +3120,7 @@ pub fn load_metadata(path: String, app_handle: AppHandle) -> Result<ImageMetadat
 }
 
 fn get_presets_path(app_handle: &AppHandle) -> Result<std::path::PathBuf, String> {
-    let presets_dir = app_handle
-        .path()
-        .app_data_dir()
+    let presets_dir = crate::app_paths::app_data_dir(app_handle)
         .map_err(|e| e.to_string())?
         .join("presets");
 
@@ -3159,9 +3151,7 @@ pub fn save_presets(presets: Vec<PresetItem>, app_handle: AppHandle) -> Result<(
 fn get_internal_library_root_path(app_handle: &AppHandle) -> Result<std::path::PathBuf, String> {
     #[cfg(not(target_os = "android"))]
     {
-        let library_dir = app_handle
-            .path()
-            .app_data_dir()
+        let library_dir = crate::app_paths::app_data_dir(app_handle)
             .map_err(|e| e.to_string())?
             .join("library");
 
@@ -3430,10 +3420,7 @@ pub fn clear_all_sidecars(root_path: String) -> Result<usize, String> {
 
 #[tauri::command]
 pub fn clear_thumbnail_cache(app_handle: AppHandle) -> Result<(), String> {
-    let cache_dir = app_handle
-        .path()
-        .app_cache_dir()
-        .map_err(|e| e.to_string())?;
+    let cache_dir = crate::app_paths::app_cache_dir(&app_handle).map_err(|e| e.to_string())?;
     let thumb_cache_dir = cache_dir.join("thumbnails");
 
     if thumb_cache_dir.exists() {
@@ -3702,10 +3689,7 @@ pub fn delete_files_with_associated(
 }
 
 pub fn get_thumb_cache_dir(app_handle: &AppHandle) -> Result<PathBuf, String> {
-    let cache_dir = app_handle
-        .path()
-        .app_cache_dir()
-        .map_err(|e| e.to_string())?;
+    let cache_dir = crate::app_paths::app_cache_dir(app_handle).map_err(|e| e.to_string())?;
     let thumb_cache_dir = cache_dir.join("thumbnails");
     if !thumb_cache_dir.exists() {
         fs::create_dir_all(&thumb_cache_dir).map_err(|e| e.to_string())?;
