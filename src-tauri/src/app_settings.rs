@@ -620,7 +620,7 @@ impl Default for AppSettings {
             live_preview_quality: Some("high".to_string()),
             sort_criteria: None,
             filter_criteria: None,
-            theme: Some("dark".to_string()),
+            theme: Some("system".to_string()),
             font_family: None,
             decorations: Some(false),
             ai_connector_address: None,
