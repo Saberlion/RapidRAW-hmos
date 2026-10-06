@@ -183,6 +183,7 @@ export default function MainLibrary(props: MainLibraryProps) {
 
   const searchCriteria = useLibraryStore((state) => state.searchCriteria);
   const isSystemDark = useSettingsStore((state) => state.isSystemDark);
+  const isOhos = useSettingsStore((state) => state.isOhos);
 
   const translatedRatingFilterOptions = useMemo(
     () => [
@@ -425,15 +426,22 @@ export default function MainLibrary(props: MainLibraryProps) {
                         </p>
                         <span>-</span>
                         <p>
-                          <a
-                            href="https://ko-fi.com/cybertimon"
-                            className="hover:underline"
-                            target="_blank"
-                            rel="noopener noreferrer"
-                          >
-                            {t('library.splash.donate')}
-                          </a>
-                          <span className="mx-1">{t('library.splash.or')}</span>
+                          {/* Ko-fi donation link is OHOS-excluded: AGC review
+                              rejects payment-adjacent external links, and the
+                              beneficiary is the upstream author anyway. */}
+                          {!isOhos && (
+                            <>
+                              <a
+                                href="https://ko-fi.com/cybertimon"
+                                className="hover:underline"
+                                target="_blank"
+                                rel="noopener noreferrer"
+                              >
+                                {t('library.splash.donate')}
+                              </a>
+                              <span className="mx-1">{t('library.splash.or')}</span>
+                            </>
+                          )}
                           <a
                             href="https://github.com/CyberTimon/RapidRAW"
                             className="hover:underline"
