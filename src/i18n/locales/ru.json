@@ -869,7 +869,9 @@
       "tb": "ТБ"
     },
     "destination": {
+      "chooseFolder": "Выбрать папку…",
       "customFolder": "Пользовательская папка",
+      "exportFolder": "Папка экспорта",
       "originalFolder": "Папка исходного изображения",
       "subfolder": "Вложенная папка",
       "subfolderPlaceholder": "напр. final, WebP"

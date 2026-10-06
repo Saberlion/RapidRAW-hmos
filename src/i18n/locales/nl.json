@@ -821,7 +821,9 @@
       "tb": "TB"
     },
     "destination": {
+      "chooseFolder": "Map kiezen…",
       "customFolder": "Aangepaste map",
+      "exportFolder": "Exportmap",
       "originalFolder": "Originele afbeeldingsmap",
       "subfolder": "Submap",
       "subfolderPlaceholder": "bijv. definitief, WebP"

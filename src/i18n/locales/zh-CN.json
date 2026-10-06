@@ -818,7 +818,9 @@
       "tb": "TB"
     },
     "destination": {
+      "chooseFolder": "选择目录…",
       "customFolder": "自定义文件夹",
+      "exportFolder": "导出目录",
       "originalFolder": "原始图像文件夹",
       "subfolder": "子文件夹",
       "subfolderPlaceholder": "例如：final, WebP"

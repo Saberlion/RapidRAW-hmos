@@ -845,7 +845,9 @@
       "tb": "TB"
     },
     "destination": {
+      "chooseFolder": "Trieu una carpeta…",
       "customFolder": "Carpeta personalitzada",
+      "exportFolder": "Carpeta d'exportació",
       "originalFolder": "Carpeta de la imatge original",
       "subfolder": "Subcarpeta",
       "subfolderPlaceholder": "p. ex. final, WebP"

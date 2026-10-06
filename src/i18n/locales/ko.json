@@ -818,7 +818,9 @@
       "tb": "TB"
     },
     "destination": {
+      "chooseFolder": "폴더 선택…",
       "customFolder": "사용자 지정 폴더",
+      "exportFolder": "내보내기 폴더",
       "originalFolder": "원본 이미지 폴더",
       "subfolder": "하위 폴더",
       "subfolderPlaceholder": "예: final, WebP"

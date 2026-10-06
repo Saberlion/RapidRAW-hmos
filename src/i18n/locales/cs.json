@@ -869,7 +869,9 @@
       "tb": "TB"
     },
     "destination": {
+      "chooseFolder": "Vybrat složku…",
       "customFolder": "Vlastní složka",
+      "exportFolder": "Složka exportu",
       "originalFolder": "Původní složka snímku",
       "subfolder": "Podsložka",
       "subfolderPlaceholder": "např. final, WebP"

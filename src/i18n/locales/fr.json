@@ -845,7 +845,9 @@
       "tb": "To"
     },
     "destination": {
+      "chooseFolder": "Choisir un dossier…",
       "customFolder": "Dossier personnalisé",
+      "exportFolder": "Dossier d'exportation",
       "originalFolder": "Dossier de l'image d'origine",
       "subfolder": "Sous-dossier",
       "subfolderPlaceholder": "ex. final, WebP"

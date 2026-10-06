@@ -869,7 +869,9 @@
       "tb": "TB"
     },
     "destination": {
+      "chooseFolder": "Wybierz folder…",
       "customFolder": "Folder niestandardowy",
+      "exportFolder": "Folder eksportu",
       "originalFolder": "Folder oryginalnego obrazu",
       "subfolder": "Podfolder",
       "subfolderPlaceholder": "np. final, WebP"

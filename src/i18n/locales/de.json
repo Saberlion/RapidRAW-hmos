@@ -821,7 +821,9 @@
       "tb": "TB"
     },
     "destination": {
+      "chooseFolder": "Ordner wählen…",
       "customFolder": "Benutzerdefinierter Ordner",
+      "exportFolder": "Exportordner",
       "originalFolder": "Ursprungsordner des Bildes",
       "subfolder": "Unterordner",
       "subfolderPlaceholder": "z. B. final, WebP"

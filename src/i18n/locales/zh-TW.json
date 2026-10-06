@@ -818,7 +818,9 @@
       "tb": "TB"
     },
     "destination": {
+      "chooseFolder": "選擇目錄…",
       "customFolder": "自訂資料夾",
+      "exportFolder": "匯出目錄",
       "originalFolder": "原始影像資料夾",
       "subfolder": "子資料夾",
       "subfolderPlaceholder": "例如：final, WebP"

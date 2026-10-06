@@ -845,7 +845,9 @@
       "tb": "TB"
     },
     "destination": {
+      "chooseFolder": "Escolher pasta…",
       "customFolder": "Pasta personalizada",
+      "exportFolder": "Pasta de exportação",
       "originalFolder": "Pasta da imagem original",
       "subfolder": "Subpasta",
       "subfolderPlaceholder": "ex. final, WebP"

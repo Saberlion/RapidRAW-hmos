@@ -818,7 +818,9 @@
       "tb": "TB"
     },
     "destination": {
+      "chooseFolder": "フォルダーを選択…",
       "customFolder": "カスタムフォルダー",
+      "exportFolder": "エクスポートフォルダー",
       "originalFolder": "元の画像フォルダー",
       "subfolder": "サブフォルダー",
       "subfolderPlaceholder": "例：final, WebP"

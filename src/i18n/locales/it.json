@@ -845,7 +845,9 @@
       "tb": "TB"
     },
     "destination": {
+      "chooseFolder": "Scegli cartella…",
       "customFolder": "Cartella personalizzata",
+      "exportFolder": "Cartella di esportazione",
       "originalFolder": "Cartella dell'immagine originale",
       "subfolder": "Sottocartella",
       "subfolderPlaceholder": "es. final, WebP"
