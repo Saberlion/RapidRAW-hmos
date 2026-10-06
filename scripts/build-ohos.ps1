@@ -19,11 +19,13 @@
 #   powershell ... -File scripts\build-ohos.ps1 -TimeoutSec 3600
 #   powershell ... -File scripts\build-ohos.ps1 -Target x86_64            # DevEco emulator
 #   powershell ... -File scripts\build-ohos.ps1 -SkipBuild                # re-inject ORT only
+#   powershell ... -File scripts\build-ohos.ps1 -Release                  # release profile (AppGallery submission)
 #   powershell ... -File scripts\build-ohos.ps1 -ExtraArgs @('--','--features','tethering')  # passthrough
 param(
   [int]$TimeoutSec = 1800,
   [string[]]$ExtraArgs = @(),
   [string]$Target = 'aarch64',   # aarch64 (devices) | x86_64 (DevEco emulator) | armv7
+  [switch]$Release,              # release profile; default is debug (-d). ORT injection is always target-ABI-only and foreign ABI dirs are purged.
   [switch]$SkipBuild             # skip the cargo stage; only inject ORT + report (HAP must already exist)
 )
 $ErrorActionPreference = 'Stop'
@@ -113,17 +115,35 @@ Write-Host "preflight OK"
 
 # ---------- 3. build (single cargo stage; cargo/ohrs/hvigor failures all surface via exit code) ----------
 if (-not $SkipBuild) {
-  $buildArgs = (@('cargo', 'tauri', 'ohos', 'build', '-d', '-t', $Target) + $ExtraArgs) -join ' '
+  # Release needs the runner passthrough: the tauri CLI's own cargo stage
+  # follows -d/--debug, but the ohrs stage (which places the .so that hvigor
+  # packages) defaults to dev unless it receives --release via `--` args.
+  if ($Release) {
+    $buildArgs = (@('cargo', 'tauri', 'ohos', 'build', '-t', $Target, '--', '--release') + $ExtraArgs) -join ' '
+  } else {
+    $buildArgs = (@('cargo', 'tauri', 'ohos', 'build', '-d', '-t', $Target) + $ExtraArgs) -join ' '
+  }
   Invoke-Stage -Name 'ohos-build' -Cmd $buildArgs -StageTimeoutSec $TimeoutSec
 }
 
-# ---------- 3.5 inject prebuilt ORT into the HAP ----------
+# ---------- 3.5 inject prebuilt ORT into the HAP (target ABI only) ----------
 # ohrs build WIPES entry/libs/<abi>/ before copying the cargo dylib, so a .so placed
 # there never survives into the HAP. The only channel is post-package zip injection.
 # Machine-local ORT lives at src-tauri/libs/ohos/<abi>/libonnxruntime.so (gitignored).
-$hap = Get-ChildItem "$repo\src-tauri\gen\ohos\entry\build\*\outputs\*\*-unsigned.hap" -ErrorAction SilentlyContinue |
+# Only the build target's ABI gets ORT; foreign ABI dirs (stale .so left behind by
+# earlier builds of other targets, e.g. x86_64 emulator libs inside an aarch64
+# package) are purged so store submissions ship clean and single-ABI.
+$targetAbi = @{ 'aarch64' = 'arm64-v8a'; 'armv7' = 'armeabi-v7a'; 'x86_64' = 'x86_64' }[$Target]
+# hvigor emits *-unsigned.hap when no signingConfig applies, or *-signed.hap when the
+# build-profile signingConfig makes SignHap run. Entry content is identical either way
+# (the signing block lives outside the zip entries). The ORT injection below rewrites
+# the zip via .NET Update mode, which drops any signing block — pack-app.ps1 re-signs
+# afterwards, so both names are valid injection targets. Debug-signed leftovers are
+# excluded by name.
+$hap = Get-ChildItem -Path "$repo\src-tauri\gen\ohos\entry\build\*\outputs\*\*.hap" -File -ErrorAction SilentlyContinue |
+  Where-Object { $_.Name -notmatch 'debug' } |
   Sort-Object LastWriteTime -Descending | Select-Object -First 1
-if (-not $hap) { Fail "no *-unsigned.hap found under gen/ohos/entry/build (build first, or drop -SkipBuild)" }
+if (-not $hap) { Fail "no *.hap found under gen/ohos/entry/build (build first, or drop -SkipBuild)" }
 
 Add-Type -AssemblyName System.IO.Compression.FileSystem
 # HAP abi -> OHOS NDK triple (for libc++_shared.so, the runtime dependency of libonnxruntime.so)
@@ -132,29 +152,32 @@ $ndkLibcxx = @{
   'armeabi-v7a' = "$env:OHOS_NDK_HOME\llvm\lib\armv7-linux-ohos\libc++_shared.so"
   'x86_64'      = "$env:OHOS_NDK_HOME\llvm\lib\x86_64-linux-ohos\libc++_shared.so"
 }
-$injected = @()
-foreach ($abi in @('arm64-v8a','armeabi-v7a','x86_64')) {
-  $ortSrc = "$repo\src-tauri\libs\ohos\$abi\libonnxruntime.so"
-  if (-not (Test-Path $ortSrc)) { continue }
-  $zip = [IO.Compression.ZipFile]::Open($hap.FullName, 'Update')
-  try {
-    $old = $zip.GetEntry("libs/$abi/libonnxruntime.so")
+$zip = [IO.Compression.ZipFile]::Open($hap.FullName, 'Update')
+try {
+  $foreign = @($zip.Entries | Where-Object { $_.FullName -like 'libs/*' -and ($_.FullName.Split('/')[1]) -ne $targetAbi })
+  if ($foreign) {
+    $foreign | ForEach-Object { $_.Delete() }
+    Write-Host "purged foreign ABI entries from HAP libs/: $(($foreign | ForEach-Object { $_.FullName }) -join ', ')"
+  }
+  $ortSrc = "$repo\src-tauri\libs\ohos\$targetAbi\libonnxruntime.so"
+  if (Test-Path $ortSrc) {
+    $old = $zip.GetEntry("libs/$targetAbi/libonnxruntime.so")
     if ($old) { $old.Delete() }
     [IO.Compression.ZipFileExtensions]::CreateEntryFromFile(
-      $zip, $ortSrc, "libs/$abi/libonnxruntime.so",
+      $zip, $ortSrc, "libs/$targetAbi/libonnxruntime.so",
       [IO.Compression.CompressionLevel]::Optimal) | Out-Null
     # libonnxruntime.so needs libc++_shared.so; cmake only ships it for the
     # arch it built (arm64-v8a), so supply the NDK one when the HAP lacks it.
-    if (-not $zip.GetEntry("libs/$abi/libc++_shared.so") -and (Test-Path $ndkLibcxx[$abi])) {
+    if (-not $zip.GetEntry("libs/$targetAbi/libc++_shared.so") -and (Test-Path $ndkLibcxx[$targetAbi])) {
       [IO.Compression.ZipFileExtensions]::CreateEntryFromFile(
-        $zip, $ndkLibcxx[$abi], "libs/$abi/libc++_shared.so",
+        $zip, $ndkLibcxx[$targetAbi], "libs/$targetAbi/libc++_shared.so",
         [IO.Compression.CompressionLevel]::Optimal) | Out-Null
     }
-  } finally { $zip.Dispose() }
-  $injected += $abi
-}
-if ($injected) { Write-Host "ORT injected into HAP libs/: $($injected -join ', ')" }
-else { Write-Host "no machine-local libonnxruntime.so under src-tauri/libs/ohos/ - HAP ships without ORT (AI degrades gracefully)" }
+    Write-Host "ORT injected into HAP libs/$targetAbi/"
+  } else {
+    Write-Host "no machine-local libonnxruntime.so under src-tauri/libs/ohos/$targetAbi - HAP ships without ORT (AI degrades gracefully)"
+  }
+} finally { $zip.Dispose() }
 
 # ---------- 4. report artifact ----------
 Write-Host "HAP: $($hap.FullName)"
