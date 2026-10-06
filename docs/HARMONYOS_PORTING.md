@@ -626,6 +626,37 @@ demosaic 输出         f32 RGB   734MB
 - **截图体积签判(补充第 4 节)**:全屏态:欢迎 ~346KB / picker ~277-280KB / 库 ~313-322KB / **锁屏 ~570KB(新增)**;**窗口非全屏或系统弹窗悬浮时整体偏移**(reboot 后窗口化 + "USB 连接方式"对话框悬浮 → 281K/258K)——跨重启场景先截图视觉定标再比字节
 - **锁屏/reboot 测试 runbook**:reboot 后设备必锁屏;el2 用户存储解锁前不可访问(app.log `No such file` ≠ 文件丢失);锁屏期 `aa start` 拒启(**10106102**,developer mode 不自动解锁);**锁屏窗口对 dumpLayout 零节点暴露**(安全特性)→ 交互靠截图+视觉定位(本机:密码框中心 (1560,1750)、眼睛图标 [1718,1715][1758,1765]、圆形提交钮 [1800,1705][1872,1777] 中心 (1836,1741));**keyEvent 键码权威值(`@ohos.multimodalInput.keyCode`):数字 0-9 = 2000-2009(KEYCODE_1=2001)、字母 A-Z = 2017-2042、ENTER = 2054**——错误记忆 2019 实为字母 C,曾打出 "CCCCCC" 提交被拒;锁屏拒绝**无任何错误提示**(静默清空字段),靠"6 圆点→空字段+零报错"指纹定位
 
+### 6.15 AGC 上架流水线:release 构建、.app 双层签名、权限对齐(2026-10-06)
+
+**成果**:单 ABI aarch64 release `.app`(~25MB,内置 HAP release 签名 + `.app` 级签名块双层)通过 AGC 包级校验(991 三因全破);`build-ohos.ps1 -Release` 一键出包;真机 GPU 导出提速两项(累计 -53.9%)同日入库(§7 Phase 3)。
+
+**release 构建链(当日 6 轮实测)**:
+
+- `-Release` 关键坑:tauri CLI 自身 cargo 阶段跟随 `--release`,但 **ohrs 阶段默认 dev**——必须 `cargo tauri ohos build -t <target> -- --release` 透传,否则 HAP 内是 strip 后的 dev `.so`。build-ohos.ps1 已参数化(`-Release` 开关)。
+- **ORT 注入与单 ABI**:注入仅目标 ABI,并清除异构 ABI 目录残留(x86_64 模拟器遗留 `.so` 不再混入 aarch64 上架包);产物选择改为"最新非 debug 的 `*.hap`"——兼容 build-profile 配置签名后 hvigor 产出 `entry-default-signed.hap`(SignHap 阶段)与未配置签名时的 `entry-default-unsigned.hap` 两种命名(两种包条目内容一致:签名块位于 zip 条目之外)。
+- gen/ohos/build-profile.json5 的 signingConfig 指向发布材料(证书**链**文件 + keyAlias 小写 `rapidraw`)后,hvigor 构建期 SignHap 直接产出 release 签名包;ORT 注入经 .NET `Update` 模式重写 zip 会**顺带去除该签名块**,由打包脚本用同套材料重签——终态等价。
+
+**AGC 991「非法软件包」三因(全部实证;前两因曾致连续 3 次上传被拒)**:
+
+1. `app_packing_tool.jar --mode app` 会把 HAP **拆包重压**,丢掉 ZIP 中央目录前的签名块(加 `--signature` 参数同样丢);
+2. `.app` 内 HAP 条目名必须**严格等于** pack.info `packages[].name + ".hap"`(即 `entry-default.hap`)——任何 `-signed`/`-release-signed` 后缀都被 AGC 解析判死;
+3. **`.app` 文件本身必须带 app 级签名块**(与 HAP 同机制;DevEco 的 Build APP(s) 自动完成,手工流程最易漏)——`hap-sign-tool sign-app` 可直接对 `.app`(本质 zip)签名;验证 `verify-app -inFile xx.app` 须见 `Find Hap Signing Block success` + `Digest verify result: true`。
+
+一键流程(HAP 签名→验签→原字节组 `.app`(pack.info 取自 HAP 内部、条目名规范化)→内置 HAP 字节校验→`.app` 级签名→`.app` 级验签):`.csr\pack-app.ps1`;口令与材料细节见本地 `.csr/SIGNING.md` §8(**不入库**)。
+
+**权限/Profile/隐私三方对齐(AGC 权限一致性检测)**:
+
+- AGC 校验「包内 user_grant 权限」与「隐私说明声明」**逐项一致**,任一方向多出即拒(如"只在隐私政策中的权限"报错);
+- ACL 受限权限(`READ/WRITE_IMAGEVIDEO`、`SHORT_TERM_WRITE_IMAGEVIDEO`、`READ_WRITE_*_DIRECTORY`、`FILE_ACCESS_PERSIST`)须 Profile `allowed-acls` 覆盖——**hvigor/SignHap 构建期不校验**(缺口可编译可签名),AGC 上传/安装期才拦截;
+- 当前包声明 8 项权限(`INTERNET`、`FILE_ACCESS_PERSIST` + 6 项 user_grant:`READ/WRITE_IMAGEVIDEO`、3×目录、`MEDIA_LOCATION`),各配 reason 字符串(`$string:perm_*`,编译进 resources.index)与 usedScene——reason 会自动带入 AGC 权限使用理由表单;
+- module.json5 / string.json 的这些 gen/ 本地修改在 `ohos init` 重跑后需重加(同 6.14 纪律)。
+
+**其他当日事实**:
+
+- deviceTypes 收敛为 `["2in1"]`(PC/2in1 首发;gen/ 本地修改,AGC「支持设备」须只勾 2in1,否则 998);
+- 上架材料要点:应用名称/图标须与包内一致(名称须填 "RapidRAW")、截图 ≥3 张、隐私政策+隐私权利 URL、AI 功能声明(有 AI 降噪/蒙版必须申报);中国大陆另需 APP 备案 + 电子版权证书(非国区首发可豁免后两者);
+- 上传场景选「测试和正式上架」;AGC 上架后会对应用重签名(官方流程,不影响升级)。
+
 ## 7. 移植路线图与进度清单
 
 ### Phase 0 — 技术验证(1~2 周)
