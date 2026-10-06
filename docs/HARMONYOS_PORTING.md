@@ -132,6 +132,7 @@ cargo check --target aarch64-unknown-linux-ohos
 |---|---|
 | `src-tauri/Cargo.toml` | `tauri = "2.11"`(fork 基线;上游 2.12 无 OHOS 支持);`[patch.crates-io]` 8 条 → tauri-apps/tauri `feat/open-harmony`(e3bf6eb1:tauri 2.11.5、tauri-build、tauri-runtime、tauri-runtime-wry、tauri-utils、tauri-macros)、wry(6aaf4b84,v0.56.0)、tao(813572fb,v0.36.0);`[patch."https://github.com/harmony-contrib/openharmony-ability.git"]` 指向本地 vendor;tauri-plugin-dialog 移入 `not(target_env = "ohos")` 段;ohos 段新增 napi-ohos 1.2(`napi8`)+ napi-derive-ohos 1.2 |
 | `src-tauri/vendor/openharmony-ability/` | **入库 vendored 固定版**(rev 295a276a,v0.3.0,`webview` feature 完好)。原因有二:① 上游 master 已迭代到 1.0.0-beta.2 并把 webview 拆入独立插件 crate,wry fork 仍依赖 0.3 的 `features = ["webview"]`;② cargo 不允许 patch 指回同一 git 源("patches must point to different sources"),无法仅以 rev 区分 |
+| `src-tauri/vendor/rawler/` | **入库 vendored 固定版**(CyberTimon/RapidRAW-DngLab @ 934af4b,上游 dnglab/rawler)。原因:哈苏 Phocus 导出的 .fff(X2D 100C)raw strip 藏在 SubIFDs 引用的 IFD 中,原 3FR 解码器只走主 IFD 链,WhiteLevel 查找失败后静默回退内嵌预览(1.6MP 冒充 100MP),需在 tfr.rs 内修补(SubIFD 解析 + 压缩标签分发 + WB 兜底,见提交 fix(ohos): decode Phocus-exported Hasselblad .fff)。testdata/fuzz/benches/tests 已剔除,`data/` 保留(build.rs 内嵌相机/镜头库)。同上,勿随手更新 |
 | `src-tauri/src/lib.rs` | dialog 插件注册移入 `#[cfg(not(target_env = "ohos"))]` 块 |
 | `src-tauri/capabilities/default.json` | 移除 `dialog:default` |
 | `src-tauri/capabilities/dialog.json` | 新建,平台作用域 `["windows", "linux", "macOS", "android", "iOS"]`(fork Target 的 serde 命名为 camelCase,`openHarmony` 亦然) |

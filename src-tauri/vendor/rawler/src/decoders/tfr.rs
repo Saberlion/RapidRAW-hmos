@@ -34,8 +34,18 @@ pub struct TfrDecoder<'a> {
 }
 
 impl<'a> TfrDecoder<'a> {
-  pub fn new(_file: &RawSource, tiff: GenericTiffReader, rawloader: &'a RawLoader) -> Result<TfrDecoder<'a>> {
+  pub fn new(file: &RawSource, _tiff: GenericTiffReader, rawloader: &'a RawLoader) -> Result<TfrDecoder<'a>> {
     debug!("3FR decoder choosen");
+    // The dispatcher builds its TIFF view without sub-IFD tags, but
+    // Phocus-exported 3F (.fff) files keep the raw strip in an IFD referenced
+    // by the SubIFDs tag. Re-parse with sub-IFD support to expose the full tree.
+    let tiff = GenericTiffReader::new(
+      &mut file.reader(),
+      0,
+      0,
+      None,
+      &[TiffCommonTag::SubIFDs.into(), TiffCommonTag::ExifIFDPointer.into()],
+    )?;
     let camera = rawloader.check_supported(tiff.root_ifd())?;
     //let makernotes = new_makernote(file, 8).map_err(|ioerr| RawlerError::with_io_error("load 3FR makernotes", file.path(), ioerr))?;
     Ok(TfrDecoder {
@@ -68,10 +78,18 @@ impl<'a> Decoder for TfrDecoder<'a> {
 
     let src = file.subview_until_eof(offset as u64)?;
 
-    let image = if self.camera.find_hint("uncompressed") {
-      decode_16le(src, width, height, dummy)
-    } else {
+    // Prefer the raw IFD's own compression tag: the same camera produces both
+    // uncompressed in-camera .3fr and LJpeg-compressed Phocus-exported .fff
+    // files, so a static camera hint cannot distinguish them. Fall back to the
+    // camera hint when the tag is missing (older files).
+    let compression = raw
+      .get_entry(TiffCommonTag::Compression)
+      .map(|tag| tag.force_usize(0))
+      .unwrap_or(if self.camera.find_hint("uncompressed") { 1 } else { 7 });
+    let image = if compression == 7 {
       self.decode_compressed(src, width, height, dummy)?
+    } else {
+      decode_16le(src, width, height, dummy)
     };
 
     let crop = Rect::from_tiff(raw).or_else(|| self.camera.crop_area.map(|area| Rect::new_with_borders(Dim2::new(width, height), &area)));
@@ -163,9 +181,15 @@ impl<'a> TfrDecoder<'a> {
   }
 
   fn get_wb(&self) -> Result<[f32; 4]> {
-    let levels = fetch_tiff_tag!(self.tiff, TiffCommonTag::AsShotNeutral);
-    assert_eq!(levels.count(), 3);
-    Ok([1.0 / levels.force_f32(0), 1.0 / levels.force_f32(1), 1.0 / levels.force_f32(2), f32::NAN])
+    match self.tiff.get_entry(TiffCommonTag::AsShotNeutral).map(|entry| &entry.value) {
+      Some(levels) => {
+        assert_eq!(levels.count(), 3);
+        Ok([1.0 / levels.force_f32(0), 1.0 / levels.force_f32(1), 1.0 / levels.force_f32(2), f32::NAN])
+      }
+      // Some 3F/FFF variants carry no AsShotNeutral (tag 0xC628); fall back
+      // to a neutral white balance so the image still decodes (adjustable in-app).
+      None => Ok([1.0, 1.0, 1.0, f32::NAN]),
+    }
   }
 
   fn decode_compressed(&self, src: &[u8], width: usize, height: usize, dummy: bool) -> Result<PixU16> {
