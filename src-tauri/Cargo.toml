@@ -27,7 +27,10 @@ pollster = "1.0"
 bytemuck = { version = "1.25", features = ["derive"] }
 anyhow = "1.0.104"
 kamadak-exif = "0.6.1"
-rawler = { git = "https://github.com/CyberTimon/RapidRAW-DngLab.git" }
+# Vendored from https://github.com/CyberTimon/RapidRAW-DngLab.git @ 934af4b
+# (upstream: dnglab/dnglab). Local fork carries the Hasselblad Phocus-exported
+# .fff (3F) decoder fix in rawler/src/decoders/tfr.rs - do not update casually.
+rawler = { path = "vendor/rawler" }
 tokio = { version = "1", features = ["full"] }
 uuid = { version = "1.25", features = ["v4", "serde"] }
 walkdir = "2.5.0"
