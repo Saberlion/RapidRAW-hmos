@@ -664,7 +664,7 @@ demosaic 输出         f32 RGB   734MB
 ### Phase 4 — AI 与发布(2~3 周)
 - [ ] ORT 动态加载真机验证;AI 蒙版/降噪功能分级测试(**模拟器部分已完成** 2026-10-04,见 6.12:NIND AI 降噪端到端全通——下载/持久化/ORT dlopen/推理/保存;模型下载 FUSE rename EACCES 已由拷贝回退修复;5 模型蒙版栈被 4GB 模拟器 LMK 阻塞待真机;x86_64 ORT v1.28.2 经 build-ohos.ps1 注入 HAP)
 - [ ] (可选)MindSpore Lite / NNRt NPU 路径评估(**前置调研已完成** 2026-10-04,见 `docs/MINDSPORE_LITE_NPU_EVAL.md`:结论 GO 基础上分模型——系统 MindSpore Lite Kit(`libmindspore_lite_ndk.z.so`,`OH_AI_*` C API,NNRT+CPU 逐算子回退)为推荐路径,Rust 绑定需手写(无现成 crate);converter_lite 2.10.0 离线转换;U2Net/skyseg/NIND 低风险、ViT 系需重导出、**LaMa 受 FFT 阻塞**;**全部验证需真机**——模拟器无 Kit/NNRT 支持,与 Phase 3-3 同一硬件阻塞)
-- [ ] AGC 签名、AppGallery 上架(摄影类目)、版本通道(**签名已打通** 2026-10-05:sign-app/verify-app 全通、signed.hap 已产出;命令、证书材料与坑位记录在**未入库**的 `.csr/SIGNING.md`——签名材料含私钥,永不入库,`.csr/` 与 `*.p12/*.p7b/*.jks` 已加 .gitignore;上架待干净 aarch64 release 包重建 + 真机安装验证)
+- [ ] AGC 签名、AppGallery 上架(摄影类目)、版本通道(**签名已打通** 2026-10-05:sign-app/verify-app 全通、signed.hap 已产出;命令、证书材料与坑位记录在**未入库**的 `.csr/SIGNING.md`——签名材料含私钥,永不入库,`.csr/` 与 `*.p12/*.p7b/*.jks` 已加 .gitignore;**release HAP 真机直装已实证走不通** 2026-10-06:hdc install 被拒 code 9568322 "not trusted app source"(卸载重装同样被拒)——release profile 仅 AGC 分发渠道信任,真机迭代一律用 AGC 自动调试材料签名(配方 `SIGNING.md` §7,首启协议门闸即以此装包完成全流程真机验证);上架待干净 aarch64 release 包走 AGC 提审)
 
 ## 8. 环境搭建速查(Phase 1 参考)
 
@@ -736,7 +736,7 @@ cargo tauri ohos build -d -t aarch64
 | ≥60MP 真机性能/内存基线(6.10/6.11) | 模拟器基线 + 缓解方向评估;**渲染管线真机已通(6.13:24/33MP 出图,Vulkan ~290ms/趟)**,61MP 资产已在真机 Download | 跑基线即可(方法学已固化于 6.10) |
 | ORT 真机验证 + AI 蒙版/降噪分级测试(6.12) | NIND 降噪模拟器单模型端到端全通 | 待真机执行(23GB 内存充裕);注意模型下载目标已随 app_paths 迁至沙箱(6.13) |
 | MindSpore Lite / NNRt NPU 路径(可选) | 前置调研完成(`MINDSPORE_LITE_NPU_EVAL.md`) | 全部验证需真机(模拟器无 Kit/NNRT);LaMa 受 FFT 阻塞、ViT 系需重导出 |
-| AGC 签名、AppGallery 上架、版本通道 | **签名已打通**(2026-10-05:sign-app/verify-app 全通、signed.hap 产出,材料见未入库 `.csr/SIGNING.md`) | 待干净 aarch64 release 包重建 + 真机安装验证 |
+| AGC 签名、AppGallery 上架、版本通道 | **签名已打通**(2026-10-05:sign-app/verify-app 全通、signed.hap 产出,材料见未入库 `.csr/SIGNING.md`) | release HAP 真机直装被拒(9568322,2026-10-06 实证)——上架须走 AGC 提审;真机迭代用调试签名(SIGNING.md §7) |
 
 ### 9.2 被"无真机"阻塞的散布验证项
 
