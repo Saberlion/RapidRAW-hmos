@@ -1480,6 +1480,42 @@ impl GpuProcessor {
             queue.submit(Some(encoder.finish()));
         }
 
+        // Blur-on-demand: each blur texture feeds several shader effects with
+        // their own neutral points (shader.wgsl): apply_sharpen early-outs
+        // below |amount| < 0.0005 and reads the tonal blur only in its
+        // positive branch; apply_local_contrast (clarity/structure) and
+        // apply_dehaze early-out at 0.0; apply_tonal_adjustments reads the
+        // tonal blur only in its shadows/blacks branch (whites scales the
+        // blurred luma but never reads it when shadows and blacks are 0);
+        // glow/halation only run above 0.0; centré rides the clarity blur.
+        // Effective amounts blend global and per-mask values (mask influence
+        // is per-pixel), so the probe is conservative: a non-zero value in
+        // any source keeps the blur alive. Skipped blurs bind the 1x1 dummy
+        // view, exactly like the pre-existing radius==0 path, leaving the
+        // output pixel-identical while cutting per-tile dispatches.
+        const SHARPEN_MIN: f32 = 0.0005;
+        let active_masks = &adjustments.mask_adjustments
+            [..(adjustments.mask_count as usize).min(adjustments.mask_adjustments.len())];
+        let needs_sharpness_blur = adjustments.global.sharpness.abs() >= SHARPEN_MIN
+            || active_masks.iter().any(|m| m.sharpness != 0.0);
+        let needs_tonal_blur = adjustments.global.sharpness >= SHARPEN_MIN
+            || adjustments.global.shadows != 0.0
+            || adjustments.global.blacks != 0.0
+            || active_masks.iter().any(|m| m.sharpness > 0.0)
+            || active_masks.iter().any(|m| m.shadows != 0.0)
+            || active_masks.iter().any(|m| m.blacks != 0.0);
+        let needs_clarity_blur = adjustments.global.clarity != 0.0
+            || adjustments.global.centré != 0.0
+            || adjustments.global.halation_amount > 0.0
+            || active_masks.iter().any(|m| m.clarity != 0.0)
+            || active_masks.iter().any(|m| m.halation_amount > 0.0);
+        let needs_structure_blur = adjustments.global.structure != 0.0
+            || adjustments.global.glow_amount > 0.0
+            || adjustments.global.dehaze != 0.0
+            || active_masks.iter().any(|m| m.structure != 0.0)
+            || active_masks.iter().any(|m| m.glow_amount > 0.0)
+            || active_masks.iter().any(|m| m.dehaze != 0.0);
+
         const TILE_SIZE: u32 = 2048;
         const TILE_OVERLAP: u32 = 128;
 
@@ -1604,10 +1640,14 @@ impl GpuProcessor {
                     true
                 };
 
-                let did_create_sharpness_blur = run_blur(1.0, &self.sharpness_blur_view);
-                let did_create_tonal_blur = run_blur(3.5, &self.tonal_blur_view);
-                let did_create_clarity_blur = run_blur(8.0, &self.clarity_blur_view);
-                let did_create_structure_blur = run_blur(40.0, &self.structure_blur_view);
+                let did_create_sharpness_blur =
+                    needs_sharpness_blur && run_blur(1.0, &self.sharpness_blur_view);
+                let did_create_tonal_blur =
+                    needs_tonal_blur && run_blur(3.5, &self.tonal_blur_view);
+                let did_create_clarity_blur =
+                    needs_clarity_blur && run_blur(8.0, &self.clarity_blur_view);
+                let did_create_structure_blur =
+                    needs_structure_blur && run_blur(40.0, &self.structure_blur_view);
 
                 let mut main_encoder = device.create_command_encoder(&Default::default());
 
