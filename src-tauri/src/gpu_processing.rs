@@ -622,6 +622,7 @@ pub struct GpuProcessor {
     high_precision_pipeline: wgpu::ComputePipeline,
     high_precision_tile: std::sync::OnceLock<HighPrecisionTile>,
     tile_output_size: wgpu::Extent3d,
+    tile_size: u32,
     adjustments_buffer: wgpu::Buffer,
     dummy_blur_view: wgpu::TextureView,
     dummy_lut_view: wgpu::TextureView,
@@ -655,6 +656,10 @@ fn high_precision_shader_source() -> String {
 }
 
 const FLARE_MAP_SIZE: u32 = 512;
+
+/// Context margin each tile reads beyond its output bounds so blurs and
+/// detail effects see neighbouring pixels.
+const TILE_OVERLAP: u32 = 128;
 
 impl GpuProcessor {
     pub fn new(context: GpuContext, max_width: u32, max_height: u32) -> Result<Self, String> {
@@ -1085,11 +1090,28 @@ impl GpuProcessor {
         let dummy_lut_view = dummy_lut_texture.create_view(&Default::default());
         let dummy_lut_sampler = device.create_sampler(&wgpu::SamplerDescriptor::default());
 
-        const TILE_SIZE: u32 = 2048;
-        const TILE_OVERLAP: u32 = 128;
+        // Bigger tiles cut per-tile overhead — overlap redundancy, dispatch
+        // boundaries and synchronous readbacks — but tile-sized intermediates
+        // scale with area (~230 MiB at 2048 vs ~830 MiB at 4096 for the f16
+        // blur set plus the tile output). Only take the big tile on roomy
+        // devices whose GPU can address it; smaller machines keep the safe
+        // 2048 default.
+        let mut sys = sysinfo::System::new();
+        sys.refresh_memory();
+        let tile_size: u32 = if sys.total_memory() >= 12 * 1024 * 1024 * 1024u64
+            && device
+                .limits()
+                .max_texture_dimension_2d
+                .saturating_sub(TILE_OVERLAP * 2)
+                >= 4096
+        {
+            4096
+        } else {
+            2048
+        };
 
-        let clamped_tile_width = max_width.min(TILE_SIZE + TILE_OVERLAP * 2);
-        let clamped_tile_height = max_height.min(TILE_SIZE + TILE_OVERLAP * 2);
+        let clamped_tile_width = max_width.min(tile_size + TILE_OVERLAP * 2);
+        let clamped_tile_height = max_height.min(tile_size + TILE_OVERLAP * 2);
 
         let clamped_tile_size = wgpu::Extent3d {
             width: clamped_tile_width,
@@ -1207,6 +1229,7 @@ impl GpuProcessor {
             high_precision_pipeline,
             high_precision_tile: std::sync::OnceLock::new(),
             tile_output_size: clamped_tile_size,
+            tile_size,
             adjustments_buffer,
             dummy_blur_view,
             dummy_lut_view,
@@ -1516,9 +1539,6 @@ impl GpuProcessor {
             || active_masks.iter().any(|m| m.glow_amount > 0.0)
             || active_masks.iter().any(|m| m.dehaze != 0.0);
 
-        const TILE_SIZE: u32 = 2048;
-        const TILE_OVERLAP: u32 = 128;
-
         let output_len = if output_to_display {
             0
         } else {
@@ -1529,22 +1549,22 @@ impl GpuProcessor {
             RenderOutputPrecision::SixteenBit => RenderedPixels::U16(vec![0u16; output_len]),
         };
 
-        let start_tile_x = bounds.x / TILE_SIZE;
-        let start_tile_y = bounds.y / TILE_SIZE;
-        let end_tile_x = (bounds.x + bounds.width).div_ceil(TILE_SIZE);
-        let end_tile_y = (bounds.y + bounds.height).div_ceil(TILE_SIZE);
+        let start_tile_x = bounds.x / self.tile_size;
+        let start_tile_y = bounds.y / self.tile_size;
+        let end_tile_x = (bounds.x + bounds.width).div_ceil(self.tile_size);
+        let end_tile_y = (bounds.y + bounds.height).div_ceil(self.tile_size);
 
         for tile_y in start_tile_y..end_tile_y {
             for tile_x in start_tile_x..end_tile_x {
-                let x_start_unclamped = tile_x * TILE_SIZE;
-                let y_start_unclamped = tile_y * TILE_SIZE;
+                let x_start_unclamped = tile_x * self.tile_size;
+                let y_start_unclamped = tile_y * self.tile_size;
 
                 let x_start = x_start_unclamped.max(bounds.x);
                 let y_start = y_start_unclamped.max(bounds.y);
-                let x_end = (x_start_unclamped + TILE_SIZE)
+                let x_end = (x_start_unclamped + self.tile_size)
                     .min(bounds.x + bounds.width)
                     .min(width);
-                let y_end = (y_start_unclamped + TILE_SIZE)
+                let y_end = (y_start_unclamped + self.tile_size)
                     .min(bounds.y + bounds.height)
                     .min(height);
 
@@ -1557,12 +1577,6 @@ impl GpuProcessor {
                 let input_y_end = (y_end + TILE_OVERLAP).min(height);
                 let input_width = input_x_end - input_x_start;
                 let input_height = input_y_end - input_y_start;
-
-                let input_texture_size = wgpu::Extent3d {
-                    width: input_width,
-                    height: input_height,
-                    depth_or_array_layers: 1,
-                };
 
                 let run_blur = |base_radius: f32, output_view: &wgpu::TextureView| -> bool {
                     let radius = (base_radius * scale).ceil().max(1.0) as u32;
@@ -1787,12 +1801,22 @@ impl GpuProcessor {
                 queue.submit(Some(main_encoder.finish()));
 
                 if !output_to_display {
+                    // Read back only the tile's core; the overlap margin was
+                    // context for the compute passes, not payload.
                     let processed_tile_data = read_texture_data_roi(
                         device,
                         queue,
                         output_tile_texture,
-                        wgpu::Origin3d::ZERO,
-                        input_texture_size,
+                        wgpu::Origin3d {
+                            x: crop_x_start,
+                            y: crop_y_start,
+                            z: 0,
+                        },
+                        wgpu::Extent3d {
+                            width: tile_width,
+                            height: tile_height,
+                            depth_or_array_layers: 1,
+                        },
                         bytes_per_pixel,
                     )?;
 
@@ -1802,9 +1826,7 @@ impl GpuProcessor {
                                 let final_y = y_start + row - bounds.y;
                                 let final_x = x_start - bounds.x;
                                 let final_row_offset = (final_y * out_width + final_x) as usize * 4;
-                                let source_y = crop_y_start + row;
-                                let source_row_offset =
-                                    (source_y * input_width + crop_x_start) as usize * 4;
+                                let source_row_offset = (row * tile_width) as usize * 4;
                                 let copy_bytes = (tile_width * 4) as usize;
 
                                 final_pixels[final_row_offset..final_row_offset + copy_bytes]
@@ -1819,9 +1841,7 @@ impl GpuProcessor {
                                 let final_y = y_start + row - bounds.y;
                                 let final_x = x_start - bounds.x;
                                 let final_row_offset = (final_y * out_width + final_x) as usize * 4;
-                                let source_y = crop_y_start + row;
-                                let source_pixel_offset =
-                                    (source_y * input_width + crop_x_start) as usize;
+                                let source_pixel_offset = (row * tile_width) as usize;
 
                                 for sample in 0..(tile_width as usize * 4) {
                                     let source_byte_offset = (source_pixel_offset * 4 + sample) * 2;
