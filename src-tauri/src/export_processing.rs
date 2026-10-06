@@ -1096,12 +1096,33 @@ fn save_image_with_metadata(
         }
         #[cfg(target_env = "ohos")]
         {
-            crate::ohos_integration::save_image_bytes_to_ohos_gallery(
-                _app_handle,
-                file_name,
-                mime_type_for_extension(&extension),
-                &image_bytes,
-            )?;
+            // Prefer a direct write to the destination: it is a public
+            // directory the user granted through the folder picker (custom
+            // folder) or the source's own folder (original folder), and the
+            // .rrdata sidecars already write to the same trees. Fall back to
+            // the gallery bridge only when the destination is not writable
+            // (e.g. a grant that expired after a reboot).
+            let direct = (|| -> std::io::Result<()> {
+                if let Some(parent) = output_path.parent() {
+                    if !parent.as_os_str().is_empty() {
+                        std::fs::create_dir_all(parent)?;
+                    }
+                }
+                std::fs::write(output_path, &image_bytes)
+            })();
+            if let Err(e) = direct {
+                log::warn!(
+                    "OHOS direct export write to '{}' failed ({}), falling back to the gallery bridge",
+                    output_path.display(),
+                    e
+                );
+                crate::ohos_integration::save_image_bytes_to_ohos_gallery(
+                    _app_handle,
+                    file_name,
+                    mime_type_for_extension(&extension),
+                    &image_bytes,
+                )?;
+            }
         }
     }
 
@@ -1412,12 +1433,30 @@ fn export_masks_for_image(
                 }
                 #[cfg(target_env = "ohos")]
                 {
-                    crate::ohos_integration::save_image_bytes_to_ohos_gallery(
-                        app_handle,
-                        file_name,
-                        "image/png",
-                        &alpha_bytes,
-                    )?;
+                    // Same direct-write policy as save_image_with_metadata:
+                    // land next to the exported mask in the public
+                    // destination, gallery bridge only as a fallback.
+                    let direct = (|| -> std::io::Result<()> {
+                        if let Some(parent) = mask_alpha_path.parent() {
+                            if !parent.as_os_str().is_empty() {
+                                std::fs::create_dir_all(parent)?;
+                            }
+                        }
+                        std::fs::write(&mask_alpha_path, &alpha_bytes)
+                    })();
+                    if let Err(e) = direct {
+                        log::warn!(
+                            "OHOS direct mask-alpha write to '{}' failed ({}), falling back to the gallery bridge",
+                            mask_alpha_path.display(),
+                            e
+                        );
+                        crate::ohos_integration::save_image_bytes_to_ohos_gallery(
+                            app_handle,
+                            file_name,
+                            "image/png",
+                            &alpha_bytes,
+                        )?;
+                    }
                 }
             }
 
@@ -1776,12 +1815,30 @@ pub(crate) async fn export_images_impl(
                             }
                             #[cfg(target_env = "ohos")]
                             {
-                                crate::ohos_integration::save_file_bytes_to_ohos_picker(
-                                    &app_handle_clone,
-                                    file_name,
-                                    "application/octet-stream",
-                                    &cube_bytes,
-                                )?;
+                                // Direct write to the destination like the
+                                // image exports; the save picker is only a
+                                // fallback for unwritable destinations.
+                                let direct = (|| -> std::io::Result<()> {
+                                    if let Some(parent) = output_path.parent() {
+                                        if !parent.as_os_str().is_empty() {
+                                            std::fs::create_dir_all(parent)?;
+                                        }
+                                    }
+                                    std::fs::write(&output_path, &cube_bytes)
+                                })();
+                                if let Err(e) = direct {
+                                    log::warn!(
+                                        "OHOS direct LUT write to '{}' failed ({}), falling back to the save picker",
+                                        output_path.display(),
+                                        e
+                                    );
+                                    crate::ohos_integration::save_file_bytes_to_ohos_picker(
+                                        &app_handle_clone,
+                                        file_name,
+                                        "application/octet-stream",
+                                        &cube_bytes,
+                                    )?;
+                                }
                             }
                         }
                         #[cfg(not(any(target_os = "android", target_env = "ohos")))]

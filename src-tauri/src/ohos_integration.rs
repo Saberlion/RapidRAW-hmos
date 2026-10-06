@@ -471,7 +471,13 @@ fn ohos_export_temp_file(
 ) -> std::result::Result<std::path::PathBuf, String> {
     let base = crate::app_paths::app_cache_dir(app_handle)
         .map_err(|e| format!("Failed to resolve OHOS app cache dir: {e}"))?;
-    let dir = base.join("export_bridge");
+    // This must stay distinct from the ArkTS staging dir
+    // (`context.cacheDir/export_bridge`): the bridge stages tempPath into that
+    // dir with `fs.copyFileSync`, and OHOS fs fails with 13900002 when source
+    // and destination are the same file. On real devices the resolver's cache
+    // dir IS the ability's cacheDir, so a shared "export_bridge" name made
+    // every staged path identical to its source.
+    let dir = base.join("export_temp");
     std::fs::create_dir_all(&dir).map_err(|e| {
         format!(
             "Failed to create OHOS export bridge dir '{}': {e}",
