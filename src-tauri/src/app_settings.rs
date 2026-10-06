@@ -600,6 +600,8 @@ pub struct AppSettings {
     pub adjustment_layout: AdjustmentLayout,
     #[serde(default)]
     pub workspace: WorkspaceState,
+    #[serde(default)]
+    pub agreement_accepted_version: Option<String>,
 }
 
 impl Default for AppSettings {
@@ -699,6 +701,7 @@ impl Default for AppSettings {
             custom_aspect_ratios: Vec::new(),
             adjustment_layout: AdjustmentLayout::default(),
             workspace: WorkspaceState::default(),
+            agreement_accepted_version: None,
         }
     }
 }

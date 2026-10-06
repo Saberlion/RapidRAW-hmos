@@ -102,6 +102,25 @@ pub fn is_ohos_build() -> bool {
     cfg!(target_env = "ohos")
 }
 
+/// Terminate the app. A raw process exit registers as an abnormal ability
+/// death on OHOS, so termination routes through the ArkTS side
+/// (`terminateSelf`, wired as the `exit_app` window op in
+/// EntryAbility.template.ets); desktop exits through the Tauri handle.
+#[tauri::command]
+pub fn exit_app(app_handle: tauri::AppHandle) {
+    #[cfg(target_env = "ohos")]
+    {
+        let _ = &app_handle;
+        if let Err(e) = window_controller::dispatch_event("exit_app") {
+            log::error!("exit_app bridge dispatch failed: {e}");
+        }
+    }
+    #[cfg(not(target_env = "ohos"))]
+    {
+        app_handle.exit(0);
+    }
+}
+
 // ---------------------------------------------------------------------------
 // System UI bridge: back gesture & color mode (Phase 2 system UI adaptation)
 // ---------------------------------------------------------------------------

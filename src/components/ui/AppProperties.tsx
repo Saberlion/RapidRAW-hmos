@@ -75,6 +75,7 @@ export enum Invokes {
   ImportFiles = 'import_files',
   InvokeGenerativeReplaseWithMaskDef = 'invoke_generative_replace_with_mask_def',
   IsOhosBuild = 'is_ohos_build',
+  ExitApp = 'exit_app',
   IsTetheringSupported = 'is_tethering_supported',
   IsRaw9Available = 'is_raw9_available',
   ListImagesInDir = 'list_images_in_dir',
@@ -206,6 +207,7 @@ export interface AppSettings {
   aiConnectorAddress?: string;
   aiProvider?: string;
   decorations?: any;
+  agreementAcceptedVersion?: string;
   editorPreviewResolution?: number;
   smallThumbnailResolution?: number;
   mediumThumbnailResolution?: number;

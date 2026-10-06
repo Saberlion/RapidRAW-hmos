@@ -130,6 +130,11 @@ export default class EntryAbility extends RustAbility {
             case 'start_drag':
               win.startMoving();
               break;
+            case 'exit_app':
+              this.context.terminateSelf().catch((e: BusinessError) => {
+                console.error(`[RapidRAW] window op 'exit_app' failed: ${JSON.stringify(e)}`);
+              });
+              break;
             default:
               console.warn(`[RapidRAW] unknown window op '${op}'`);
           }
