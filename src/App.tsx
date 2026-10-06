@@ -22,6 +22,7 @@ import SettingsPanel from './components/panel/SettingsPanel';
 import ExportPanel from './components/panel/right/ExportPanel';
 import GlobalTooltip from './components/ui/GlobalTooltip';
 import AppModals from './components/modals/AppModals';
+import AgreementGate, { AGREEMENT_VERSION } from './components/AgreementGate';
 
 import SidePanelArea from './components/panel/SidePanelArea';
 import { PANEL_ICONS } from './components/panel/PanelSwitcher';
@@ -841,6 +842,18 @@ function App() {
   const ActiveOverlayIcon = activeLayoutDragItem ? PANEL_ICONS[activeLayoutDragItem] : null;
   const effectiveLeftWidth = uiVisibility.leftPanel ? leftPanelWidth : 48;
   const effectiveRightWidth = uiVisibility.rightPanel ? rightPanelWidth : useWidePanels ? 58 : 48;
+
+  // First-launch consent gate (app-store compliance): until the user accepts
+  // the current agreement version, render only the gate — managers, panels,
+  // and the library (with all its effects) stay unmounted, so no file or
+  // network activity happens before consent.
+  if (!appSettings) {
+    return <div className="h-screen w-screen bg-bg-primary" />;
+  }
+
+  if (appSettings.agreementAcceptedVersion !== AGREEMENT_VERSION) {
+    return <AgreementGate appSettings={appSettings} onAgree={handleSettingsChange} />;
+  }
 
   return (
     <>

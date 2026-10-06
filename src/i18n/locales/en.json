@@ -1521,7 +1521,21 @@
     }
   },
   "settings": {
+    "about": {
+      "agplNotice": "This application is free software licensed under the GNU AGPL-3.0. The full license text and source code are available via the links above.",
+      "licenseDesc": "RapidRAW is licensed under AGPL-3.0",
+      "openSourceLicense": "Open Source License",
+      "privacyPolicy": "Privacy Policy",
+      "privacyPolicyDesc": "How RapidRAW handles your data",
+      "sourceCode": "Source Code",
+      "sourceCodeDesc": "RapidRAW is open source — contributions welcome",
+      "title": "About RapidRAW",
+      "userAgreement": "User Agreement",
+      "userAgreementDesc": "Terms of use for RapidRAW",
+      "view": "View"
+    },
     "categories": {
+      "about": "About",
       "general": "General",
       "processing": "Processing",
       "shortcuts": "Controls"
@@ -1973,6 +1987,18 @@
     "whiteBalance": "White Balance"
   },
   "ui": {
+    "agreement": {
+      "agree": "Agree & Continue",
+      "back": "Back",
+      "confirmExit": "Exit",
+      "decline": "Decline",
+      "exitMessage": "You can only use RapidRAW after accepting the User Agreement and Privacy Policy.",
+      "exitTitle": "Exit RapidRAW?",
+      "privacyTab": "Privacy Policy",
+      "subtitle": "Please read and accept the User Agreement and Privacy Policy to continue",
+      "termsTab": "User Agreement",
+      "title": "Welcome to RapidRAW"
+    },
     "bottomBar": {
       "imagesSelected": "{{current}} of {{total}} images selected",
       "tooltips": {

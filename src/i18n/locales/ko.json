@@ -1518,7 +1518,21 @@
     }
   },
   "settings": {
+    "about": {
+      "agplNotice": "본 애플리케이션은 GNU AGPL-3.0 라이선스의 자유 소프트웨어입니다. 라이선스 전문과 소스 코드는 위 링크에서 확인할 수 있습니다.",
+      "licenseDesc": "RapidRAW는 AGPL-3.0 라이선스로 배포됩니다",
+      "openSourceLicense": "오픈소스 라이선스",
+      "privacyPolicy": "개인정보 처리방침",
+      "privacyPolicyDesc": "RapidRAW가 데이터를 처리하는 방식",
+      "sourceCode": "소스 코드",
+      "sourceCodeDesc": "RapidRAW는 오픈소스입니다. 기여를 환영합니다",
+      "title": "RapidRAW 정보",
+      "userAgreement": "이용약관",
+      "userAgreementDesc": "RapidRAW 이용 약관",
+      "view": "보기"
+    },
     "categories": {
+      "about": "정보",
       "general": "일반",
       "processing": "처리",
       "shortcuts": "컨트롤"
@@ -1970,6 +1984,18 @@
     "whiteBalance": "화이트 밸런스"
   },
   "ui": {
+    "agreement": {
+      "agree": "동의하고 계속",
+      "back": "뒤로",
+      "confirmExit": "종료",
+      "decline": "동의하지 않음",
+      "exitMessage": "이용약관과 개인정보 처리방침에 동의해야 RapidRAW를 사용할 수 있습니다.",
+      "exitTitle": "RapidRAW를 종료할까요?",
+      "privacyTab": "개인정보 처리방침",
+      "subtitle": "계속하려면 이용약관과 개인정보 처리방침을 읽고 동의해 주세요",
+      "termsTab": "이용약관",
+      "title": "RapidRAW에 오신 것을 환영합니다"
+    },
     "bottomBar": {
       "imagesSelected": "이미지 {{total}}개 중 {{current}}개 선택됨",
       "tooltips": {

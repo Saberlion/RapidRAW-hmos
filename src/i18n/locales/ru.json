@@ -1593,7 +1593,21 @@
     }
   },
   "settings": {
+    "about": {
+      "agplNotice": "Это приложение — свободное ПО под лицензией GNU AGPL-3.0. Полный текст лицензии и исходный код доступны по ссылкам выше.",
+      "licenseDesc": "RapidRAW распространяется под лицензией AGPL-3.0",
+      "openSourceLicense": "Открытая лицензия",
+      "privacyPolicy": "Политика конфиденциальности",
+      "privacyPolicyDesc": "Как RapidRAW обрабатывает ваши данные",
+      "sourceCode": "Исходный код",
+      "sourceCodeDesc": "RapidRAW — open source, вклад приветствуется",
+      "title": "О RapidRAW",
+      "userAgreement": "Пользовательское соглашение",
+      "userAgreementDesc": "Условия использования RapidRAW",
+      "view": "Просмотр"
+    },
     "categories": {
+      "about": "О приложении",
       "general": "Общие",
       "processing": "Обработка",
       "shortcuts": "Управление"
@@ -2051,6 +2065,18 @@
     "whiteBalance": "Баланс белого"
   },
   "ui": {
+    "agreement": {
+      "agree": "Принять и продолжить",
+      "back": "Назад",
+      "confirmExit": "Выйти",
+      "decline": "Отклонить",
+      "exitMessage": "RapidRAW можно использовать только после принятия Пользовательского соглашения и Политики конфиденциальности.",
+      "exitTitle": "Выйти из RapidRAW?",
+      "privacyTab": "Политика конфиденциальности",
+      "subtitle": "Пожалуйста, прочитайте и примите Пользовательское соглашение и Политику конфиденциальности, чтобы продолжить",
+      "termsTab": "Пользовательское соглашение",
+      "title": "Добро пожаловать в RapidRAW"
+    },
     "bottomBar": {
       "imagesSelected": "Выбрано снимков: {{current}} из {{total}}",
       "tooltips": {

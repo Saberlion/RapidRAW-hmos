@@ -1557,7 +1557,21 @@
     }
   },
   "settings": {
+    "about": {
+      "agplNotice": "Aquesta aplicació és programari lliure sota la GNU AGPL-3.0. El text complet de la llicència i el codi font estan disponibles mitjançant els enllaços anteriors.",
+      "licenseDesc": "El RapidRAW està llicenciat sota AGPL-3.0",
+      "openSourceLicense": "Llicència de Codi Obert",
+      "privacyPolicy": "Política de Privacitat",
+      "privacyPolicyDesc": "Com el RapidRAW tracta les teves dades",
+      "sourceCode": "Codi Font",
+      "sourceCodeDesc": "El RapidRAW és de codi obert — les contribucions són benvingudes",
+      "title": "Quant al RapidRAW",
+      "userAgreement": "Acord d'Usuari",
+      "userAgreementDesc": "Termes d'ús del RapidRAW",
+      "view": "Visualitza"
+    },
     "categories": {
+      "about": "Quant a",
       "general": "General",
       "processing": "Processament",
       "shortcuts": "Controls"
@@ -2012,6 +2026,18 @@
     "whiteBalance": "Balanç de blancs"
   },
   "ui": {
+    "agreement": {
+      "agree": "Accepta i Continua",
+      "back": "Enrere",
+      "confirmExit": "Sortir",
+      "decline": "Rebutja",
+      "exitMessage": "Només pots utilitzar el RapidRAW després d'acceptar l'Acord d'Usuari i la Política de Privacitat.",
+      "exitTitle": "Sortir del RapidRAW?",
+      "privacyTab": "Política de Privacitat",
+      "subtitle": "Llegeix i accepta l'Acord d'Usuari i la Política de Privacitat per continuar",
+      "termsTab": "Acord d'Usuari",
+      "title": "Us donem la benvinguda al RapidRAW"
+    },
     "bottomBar": {
       "imagesSelected": "{{current}} de {{total}} imatges seleccionades",
       "tooltips": {

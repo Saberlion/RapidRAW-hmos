@@ -1558,7 +1558,21 @@
     }
   },
   "settings": {
+    "about": {
+      "agplNotice": "Cette application est un logiciel libre sous GNU AGPL-3.0. Le texte complet de la licence et le code source sont disponibles via les liens ci-dessus.",
+      "licenseDesc": "RapidRAW est sous licence AGPL-3.0",
+      "openSourceLicense": "Licence Open Source",
+      "privacyPolicy": "Politique de Confidentialité",
+      "privacyPolicyDesc": "Comment RapidRAW traite vos données",
+      "sourceCode": "Code Source",
+      "sourceCodeDesc": "RapidRAW est open source — contributions bienvenues",
+      "title": "À propos de RapidRAW",
+      "userAgreement": "Contrat d'Utilisation",
+      "userAgreementDesc": "Conditions d'utilisation de RapidRAW",
+      "view": "Voir"
+    },
     "categories": {
+      "about": "À propos",
       "general": "Général",
       "processing": "Traitement",
       "shortcuts": "Contrôles"
@@ -2013,6 +2027,18 @@
     "whiteBalance": "Balance des blancs"
   },
   "ui": {
+    "agreement": {
+      "agree": "Accepter et Continuer",
+      "back": "Retour",
+      "confirmExit": "Quitter",
+      "decline": "Refuser",
+      "exitMessage": "Vous ne pouvez utiliser RapidRAW qu'après avoir accepté le Contrat d'Utilisation et la Politique de Confidentialité.",
+      "exitTitle": "Quitter RapidRAW ?",
+      "privacyTab": "Politique de Confidentialité",
+      "subtitle": "Veuillez lire et accepter le Contrat d'Utilisation et la Politique de Confidentialité pour continuer",
+      "termsTab": "Contrat d'Utilisation",
+      "title": "Bienvenue dans RapidRAW"
+    },
     "bottomBar": {
       "imagesSelected": "{{current}} sur {{total}} images sélectionnées",
       "tooltips": {

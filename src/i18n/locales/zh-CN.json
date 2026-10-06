@@ -1518,7 +1518,21 @@
     }
   },
   "settings": {
+    "about": {
+      "agplNotice": "本应用是基于 GNU AGPL-3.0 许可证的自由软件,完整许可证文本与源代码可通过上方链接获取。",
+      "licenseDesc": "RapidRAW 基于 AGPL-3.0 许可证发布",
+      "openSourceLicense": "开源许可",
+      "privacyPolicy": "隐私政策",
+      "privacyPolicyDesc": "了解 RapidRAW 如何处理您的数据",
+      "sourceCode": "源代码",
+      "sourceCodeDesc": "RapidRAW 是开源软件,欢迎参与贡献",
+      "title": "关于 RapidRAW",
+      "userAgreement": "用户协议",
+      "userAgreementDesc": "RapidRAW 的使用条款",
+      "view": "查看"
+    },
     "categories": {
+      "about": "关于",
       "general": "通用",
       "processing": "处理",
       "shortcuts": "控制"
@@ -1970,6 +1984,18 @@
     "whiteBalance": "白平衡"
   },
   "ui": {
+    "agreement": {
+      "agree": "同意并继续",
+      "back": "返回",
+      "confirmExit": "退出",
+      "decline": "不同意",
+      "exitMessage": "同意《用户协议》与《隐私政策》后才能使用 RapidRAW。",
+      "exitTitle": "退出 RapidRAW?",
+      "privacyTab": "隐私政策",
+      "subtitle": "请阅读并同意《用户协议》与《隐私政策》后继续使用",
+      "termsTab": "用户协议",
+      "title": "欢迎使用 RapidRAW"
+    },
     "bottomBar": {
       "imagesSelected": "已选择 {{current}} / {{total}} 张图像",
       "tooltips": {

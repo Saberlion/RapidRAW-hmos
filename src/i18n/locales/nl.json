@@ -1521,7 +1521,21 @@
     }
   },
   "settings": {
+    "about": {
+      "agplNotice": "Deze applicatie is vrije software onder de GNU AGPL-3.0. De volledige licentietekst en broncode zijn beschikbaar via de bovenstaande links.",
+      "licenseDesc": "RapidRAW valt onder de AGPL-3.0-licentie",
+      "openSourceLicense": "Openbronlicentie",
+      "privacyPolicy": "Privacybeleid",
+      "privacyPolicyDesc": "Hoe RapidRAW met je gegevens omgaat",
+      "sourceCode": "Broncode",
+      "sourceCodeDesc": "RapidRAW is open source — bijdragen welkom",
+      "title": "Over RapidRAW",
+      "userAgreement": "Gebruikersovereenkomst",
+      "userAgreementDesc": "Gebruiksvoorwaarden van RapidRAW",
+      "view": "Bekijken"
+    },
     "categories": {
+      "about": "Over",
       "general": "Algemeen",
       "processing": "Verwerking",
       "shortcuts": "Besturing"
@@ -1969,6 +1983,18 @@
     "whiteBalance": "Witbalans"
   },
   "ui": {
+    "agreement": {
+      "agree": "Akkoord en Doorgaan",
+      "back": "Terug",
+      "confirmExit": "Afsluiten",
+      "decline": "Weigeren",
+      "exitMessage": "Je kunt RapidRAW pas gebruiken na het accepteren van de Gebruikersovereenkomst en het Privacybeleid.",
+      "exitTitle": "RapidRAW afsluiten?",
+      "privacyTab": "Privacybeleid",
+      "subtitle": "Lees en accepteer de Gebruikersovereenkomst en het Privacybeleid om door te gaan",
+      "termsTab": "Gebruikersovereenkomst",
+      "title": "Welkom bij RapidRAW"
+    },
     "bottomBar": {
       "imagesSelected": "{{current}} van {{total}} afbeeldingen geselecteerd",
       "tooltips": {

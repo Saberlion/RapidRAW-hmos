@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import {
   ArrowLeft,
   Cloud,
@@ -49,6 +49,7 @@ import { useCloudUsage } from '../../hooks/useCloudUsage';
 import { open } from '@tauri-apps/plugin-shell';
 import { RotateCcw } from 'lucide-react';
 import { useUIStore } from '../../store/useUIStore';
+import { getAgreementDocument, type AgreementDocKind } from '../AgreementGate';
 
 interface ConfirmModalState {
   confirmText: string;
@@ -480,7 +481,7 @@ export default function SettingsPanel({
   rootPaths,
 }: SettingsPanelProps) {
   const { user: _user } = useUser();
-  const { t } = useTranslation();
+  const { t, i18n } = useTranslation();
   const [isClearing, setIsClearing] = useState(false);
   const [clearMessage, setClearMessage] = useState('');
   const [isClearingCache, setIsClearingCache] = useState(false);
@@ -539,12 +540,21 @@ export default function SettingsPanel({
   const [logPathLoading, setLogPathLoading] = useState(true);
   const [logPathError, setLogPathError] = useState(false);
   const [dpr, setDpr] = useState(() => (typeof window !== 'undefined' ? window.devicePixelRatio : 1));
+  const [viewingDoc, setViewingDoc] = useState<AgreementDocKind | null>(null);
+  const docViewerRef = useRef<HTMLDivElement | null>(null);
+
+  // The doc viewer renders below the settings rows; without this, opening it
+  // from a "View" button is invisible (content grows below the fold).
+  useEffect(() => {
+    if (viewingDoc) docViewerRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+  }, [viewingDoc]);
 
   const settingCategories = useMemo(
     () => [
       { id: 'general', label: t('settings.categories.general'), icon: SlidersHorizontal },
       { id: 'processing', label: t('settings.categories.processing'), icon: Cpu },
       { id: 'shortcuts', label: t('settings.categories.shortcuts'), icon: Keyboard },
+      { id: 'about', label: t('settings.categories.about'), icon: Info },
     ],
     [t],
   );
@@ -2503,6 +2513,93 @@ export default function SettingsPanel({
                           {t('settings.controls.resetDefaults')}
                         </Button>
                       </div>
+                    </div>
+                  </div>
+                </motion.div>
+              )}
+              {activeCategory === 'about' && (
+                <motion.div
+                  key="about"
+                  initial={{ opacity: 0, x: 10 }}
+                  animate={{ opacity: 1, x: 0 }}
+                  exit={{ opacity: 0, x: -10 }}
+                  transition={{ duration: 0.2 }}
+                  className="space-y-10"
+                >
+                  <div className="p-6 bg-surface rounded-xl shadow-md">
+                    <Text variant={TextVariants.title} color={TextColors.accent} className="mb-8">
+                      {t('settings.about.title')}
+                    </Text>
+                    <div className="divide-y divide-border-color">
+                      <SettingItem
+                        label={t('settings.about.privacyPolicy')}
+                        description={t('settings.about.privacyPolicyDesc')}
+                      >
+                        <Button
+                          className="bg-surface"
+                          onClick={() => setViewingDoc(viewingDoc === 'privacy' ? null : 'privacy')}
+                        >
+                          {t('settings.about.view')}
+                        </Button>
+                      </SettingItem>
+                      <SettingItem
+                        label={t('settings.about.userAgreement')}
+                        description={t('settings.about.userAgreementDesc')}
+                      >
+                        <Button
+                          className="bg-surface"
+                          onClick={() => setViewingDoc(viewingDoc === 'terms' ? null : 'terms')}
+                        >
+                          {t('settings.about.view')}
+                        </Button>
+                      </SettingItem>
+                      <SettingItem
+                        label={t('settings.about.openSourceLicense')}
+                        description={t('settings.about.licenseDesc')}
+                      >
+                        <a
+                          href="https://www.gnu.org/licenses/agpl-3.0.en.html"
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          className="font-semibold text-accent hover:underline"
+                        >
+                          {t('settings.about.view')}
+                        </a>
+                      </SettingItem>
+                      <SettingItem
+                        label={t('settings.about.sourceCode')}
+                        description={t('settings.about.sourceCodeDesc')}
+                      >
+                        <a
+                          href="https://github.com/Saberlion/RapidRAW-hmos"
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          className="font-semibold text-accent hover:underline"
+                        >
+                          GitHub
+                        </a>
+                      </SettingItem>
+                    </div>
+                    {viewingDoc && (
+                      <div ref={docViewerRef} className="mt-6">
+                        <Text variant={TextVariants.heading} className="mb-2">
+                          {t(
+                            viewingDoc === 'privacy'
+                              ? 'settings.about.privacyPolicy'
+                              : 'settings.about.userAgreement',
+                          )}
+                        </Text>
+                        <div className="max-h-80 overflow-y-auto custom-scrollbar bg-bg-primary rounded-md p-4">
+                          <Text className="whitespace-pre-wrap leading-relaxed">
+                            {getAgreementDocument(viewingDoc, i18n.language)}
+                          </Text>
+                        </div>
+                      </div>
+                    )}
+                    <div className="mt-6">
+                      <Text variant={TextVariants.small} color={TextColors.secondary}>
+                        {t('settings.about.agplNotice')}
+                      </Text>
                     </div>
                   </div>
                 </motion.div>

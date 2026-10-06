@@ -1593,7 +1593,21 @@
     }
   },
   "settings": {
+    "about": {
+      "agplNotice": "Tato aplikace je svobodný software licencovaný pod GNU AGPL-3.0. Úplný text licence a zdrojový kód jsou k dispozici přes výše uvedené odkazy.",
+      "licenseDesc": "RapidRAW je licencován pod AGPL-3.0",
+      "openSourceLicense": "Licence open source",
+      "privacyPolicy": "Zásady soukromí",
+      "privacyPolicyDesc": "Jak RapidRAW zpracovává vaše údaje",
+      "sourceCode": "Zdrojový kód",
+      "sourceCodeDesc": "RapidRAW je open source — příspěvky jsou vítány",
+      "title": "O aplikaci RapidRAW",
+      "userAgreement": "Uživatelská smlouva",
+      "userAgreementDesc": "Podmínky používání aplikace RapidRAW",
+      "view": "Zobrazit"
+    },
     "categories": {
+      "about": "O aplikaci",
       "general": "Hlavní",
       "processing": "Zpracování",
       "shortcuts": "Ovládání"
@@ -2051,6 +2065,18 @@
     "whiteBalance": "Vyvážení bílé"
   },
   "ui": {
+    "agreement": {
+      "agree": "Souhlasím a pokračovat",
+      "back": "Zpět",
+      "confirmExit": "Ukončit",
+      "decline": "Nesouhlasím",
+      "exitMessage": "Aplikaci RapidRAW můžete používat až po přijetí Uživatelské smlouvy a Zásad soukromí.",
+      "exitTitle": "Ukončit aplikaci RapidRAW?",
+      "privacyTab": "Zásady soukromí",
+      "subtitle": "Chcete-li pokračovat, přečtěte si a přijměte Uživatelskou smlouvu a Zásady soukromí",
+      "termsTab": "Uživatelská smlouva",
+      "title": "Vítejte v RapidRAW"
+    },
     "bottomBar": {
       "imagesSelected": "{{current}} z {{total}} vybrané snímky",
       "tooltips": {
