@@ -144,11 +144,13 @@ function ImageDragOverlayNode({ activeItem }: { activeItem: { path: string; path
 function App() {
   const [activeImageDragItem, setActiveImageDragItem] = useState<{ path: string; paths: string[] } | null>(null);
 
-  const { appSettings, theme, osPlatform, handleSettingsChange } = useSettingsStore(
+  const { appSettings, theme, osPlatform, isOhos, isOhosKnown, handleSettingsChange } = useSettingsStore(
     useShallow((state) => ({
       appSettings: state.appSettings,
       theme: state.theme,
       osPlatform: state.osPlatform,
+      isOhos: state.isOhos,
+      isOhosKnown: state.isOhosKnown,
       handleSettingsChange: state.handleSettingsChange,
     })),
   );
@@ -847,11 +849,15 @@ function App() {
   // the current agreement version, render only the gate — managers, panels,
   // and the library (with all its effects) stay unmounted, so no file or
   // network activity happens before consent.
-  if (!appSettings) {
+  // On OpenHarmony, AppGallery's standardized privacy-statement hosting
+  // service already collects first-launch consent with its own platform
+  // dialog, so the in-app gate must never render a second consent dialog
+  // (AppGallery review feedback). Desktop and Android keep the gate.
+  if (!appSettings || !isOhosKnown) {
     return <div className="h-screen w-screen bg-bg-primary" />;
   }
 
-  if (appSettings.agreementAcceptedVersion !== AGREEMENT_VERSION) {
+  if (!isOhos && appSettings.agreementAcceptedVersion !== AGREEMENT_VERSION) {
     return <AgreementGate appSettings={appSettings} onAgree={handleSettingsChange} />;
   }
 

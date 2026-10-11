@@ -10,6 +10,8 @@ interface SettingsState {
   supportedTypes: SupportedTypes | null;
   osPlatform: string;
   isOhos: boolean;
+  /** Whether the IsOhosBuild probe has settled (true + false = known not OHOS). */
+  isOhosKnown: boolean;
   isSystemDark: boolean | null;
 
   // Actions
@@ -27,6 +29,7 @@ export const useSettingsStore = create<SettingsState>((set, get) => ({
   supportedTypes: null,
   osPlatform: '',
   isOhos: false,
+  isOhosKnown: false,
   isSystemDark: null,
 
   initPlatform: () => {
@@ -38,8 +41,8 @@ export const useSettingsStore = create<SettingsState>((set, get) => ({
     // plugin-os reports "linux" on OpenHarmony; detect OHOS through the Rust
     // bridge instead (same pattern as the TitleBar window controls).
     invoke<boolean>(Invokes.IsOhosBuild)
-      .then((ohos) => set({ isOhos: ohos }))
-      .catch(() => set({ isOhos: false }));
+      .then((ohos) => set({ isOhos: ohos, isOhosKnown: true }))
+      .catch(() => set({ isOhos: false, isOhosKnown: true }));
   },
 
   setAppSettings: (settings) => set({ appSettings: settings }),
