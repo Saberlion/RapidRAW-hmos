@@ -159,6 +159,18 @@ try {
     $foreign | ForEach-Object { $_.Delete() }
     Write-Host "purged foreign ABI entries from HAP libs/: $(($foreign | ForEach-Object { $_.FullName }) -join ', ')"
   }
+  # AGC "package contains debug information" rejection (2026-10-11): hvigor's
+  # ArkTS build packages ets/sourceMaps.map (EntryAbility sourcemap) into the
+  # HAP. Store submissions must not carry it - delete the entry when present
+  # (release buildMode usually omits it; this is the deterministic guarantee).
+  # Note: the machine-local libonnxruntime.so under src-tauri/libs/ohos/<abi>/
+  # must also be stripped (llvm-strip --strip-unneeded) - AGC scans .so files
+  # for DWARF sections; a backup of the unstripped original sits beside it.
+  $srcMap = $zip.GetEntry('ets/sourceMaps.map')
+  if ($srcMap) {
+    $srcMap.Delete()
+    Write-Host "removed ets/sourceMaps.map from HAP (AGC debug-info rule)"
+  }
   $ortSrc = "$repo\src-tauri\libs\ohos\$targetAbi\libonnxruntime.so"
   if (Test-Path $ortSrc) {
     $old = $zip.GetEntry("libs/$targetAbi/libonnxruntime.so")
