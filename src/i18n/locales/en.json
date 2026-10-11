@@ -1780,6 +1780,10 @@
         },
         "title": "Generative AI"
       },
+      "aiDenoiseBackend": "AI Denoise Backend",
+      "aiDenoiseBackendCpu": "CPU (ONNX Runtime)",
+      "aiDenoiseBackendDesc": "Selects the inference backend for AI denoise (NIND). NPU uses MindSpore Lite NNRT on HarmonyOS (~5x faster) and falls back to CPU (ONNX Runtime) automatically if the NPU or model is unavailable.",
+      "aiDenoiseBackendNpu": "NPU (MindSpore Lite)",
       "alwaysDecodeRaw": "Always Decode RAW",
       "alwaysDecodeRawDesc": "Force full RAW decoding for thumbnails instead of using embedded JPEG previews. Enable this if your thumbnails look different in color or contrast compared to the opened image.",
       "alwaysDecodeRawLabel": "Always decode RAW for thumbnails",

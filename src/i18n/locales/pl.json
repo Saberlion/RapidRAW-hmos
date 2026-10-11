@@ -1858,6 +1858,10 @@
         },
         "title": "Generatywne AI"
       },
+      "aiDenoiseBackend": "Backend odszumiania AI",
+      "aiDenoiseBackendCpu": "CPU (ONNX Runtime)",
+      "aiDenoiseBackendDesc": "Wybiera backend wnioskowania odszumiania AI (NIND). NPU korzysta z MindSpore Lite NNRT na HarmonyOS (~5x szybciej) i automatycznie powraca do CPU (ONNX Runtime), gdy NPU lub model są niedostępne.",
+      "aiDenoiseBackendNpu": "NPU (MindSpore Lite)",
       "alwaysDecodeRaw": "Zawsze dekoduj RAW",
       "alwaysDecodeRawDesc": "Wymusza pełne dekodowanie RAW dla miniatur zamiast korzystania z osadzonych podglądów JPEG. Włącz tę opcję, jeśli miniatury różnią się kolorami lub kontrastem od otwartego obrazu.",
       "alwaysDecodeRawLabel": "Zawsze dekoduj RAW dla miniatur",

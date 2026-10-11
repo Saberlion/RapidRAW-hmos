@@ -1777,6 +1777,10 @@
         },
         "title": "生成式 AI"
       },
+      "aiDenoiseBackend": "AI 降噪後端",
+      "aiDenoiseBackendCpu": "CPU（ONNX Runtime）",
+      "aiDenoiseBackendDesc": "選擇 AI 降噪（NIND）的推理後端。NPU 在 HarmonyOS 上透過 MindSpore Lite NNRT 執行（約快 5 倍）；NPU 或模型不可用時自動回退 CPU（ONNX Runtime）。",
+      "aiDenoiseBackendNpu": "NPU（MindSpore Lite）",
       "alwaysDecodeRaw": "始終解碼 RAW",
       "alwaysDecodeRawDesc": "強制對縮圖進行完整的 RAW 解碼，而不是使用內建的 JPEG 預覽。如果您的縮圖在顏色或對比度上與打開的影像不同，請啟用此選項。",
       "alwaysDecodeRawLabel": "始終為縮圖解碼 RAW",

@@ -1858,6 +1858,10 @@
         },
         "title": "Генеративный ИИ"
       },
+      "aiDenoiseBackend": "Бэкенд ИИ-шумоподавления",
+      "aiDenoiseBackendCpu": "CPU (ONNX Runtime)",
+      "aiDenoiseBackendDesc": "Выбирает бэкенд инференса ИИ-шумоподавления (NIND). NPU использует MindSpore Lite NNRT на HarmonyOS (~в 5 раз быстрее) и автоматически возвращается к CPU (ONNX Runtime), если NPU или модель недоступны.",
+      "aiDenoiseBackendNpu": "NPU (MindSpore Lite)",
       "alwaysDecodeRaw": "Всегда декодировать RAW",
       "alwaysDecodeRawDesc": "Принудительно использовать полное декодирование RAW для миниатюр вместо встроенных превью JPEG. Включите эту опцию, если цвета или контрастность миниатюр отличаются от открытого изображения.",
       "alwaysDecodeRawLabel": "Всегда декодировать RAW для миниатюр",

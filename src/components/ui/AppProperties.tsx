@@ -246,6 +246,7 @@ export interface AppSettings {
   waveformHeight?: number;
   activeWaveformChannel?: string;
   useWgpuRenderer?: boolean;
+  aiDenoiseBackend?: string;
   editorNeutralGreyBg?: boolean;
   canvasInputMode?: 'mouse' | 'trackpad';
   whiteBalanceMode?: WhiteBalanceMode;

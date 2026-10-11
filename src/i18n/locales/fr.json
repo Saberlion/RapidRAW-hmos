@@ -1820,6 +1820,10 @@
         },
         "title": "IA Générative"
       },
+      "aiDenoiseBackend": "Backend de débruitage IA",
+      "aiDenoiseBackendCpu": "CPU (ONNX Runtime)",
+      "aiDenoiseBackendDesc": "Sélectionne le backend d'inférence du débruitage IA (NIND). Le NPU utilise MindSpore Lite NNRT sur HarmonyOS (~5x plus rapide) et bascule automatiquement sur CPU (ONNX Runtime) si le NPU ou le modèle est indisponible.",
+      "aiDenoiseBackendNpu": "NPU (MindSpore Lite)",
       "alwaysDecodeRaw": "Toujours décoder le RAW",
       "alwaysDecodeRawDesc": "Force le décodage RAW complet pour les miniatures au lieu d'utiliser les aperçus JPEG intégrés. Activez cette option si vos miniatures ont des couleurs ou des contrastes différents de l'image ouverte.",
       "alwaysDecodeRawLabel": "Toujours décoder le RAW pour les miniatures",

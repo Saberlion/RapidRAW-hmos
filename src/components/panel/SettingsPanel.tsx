@@ -49,6 +49,7 @@ import { useCloudUsage } from '../../hooks/useCloudUsage';
 import { open } from '@tauri-apps/plugin-shell';
 import { RotateCcw } from 'lucide-react';
 import { useUIStore } from '../../store/useUIStore';
+import { useSettingsStore } from '../../store/useSettingsStore';
 import { getAgreementDocument, type AgreementDocKind } from '../AgreementGate';
 
 interface ConfirmModalState {
@@ -516,6 +517,7 @@ export default function SettingsPanel({
   const [layoutResetMessage, setLayoutResetMessage] = useState('');
 
   const osPlatform = useOsPlatform();
+  const isOhos = useSettingsStore((s) => s.isOhos);
   const [processingSettings, setProcessingSettings] = useState({
     editorPreviewResolution: appSettings?.editorPreviewResolution || 1920,
     smallThumbnailResolution: appSettings?.smallThumbnailResolution || 480,
@@ -533,6 +535,7 @@ export default function SettingsPanel({
     rawPreprocessingSharpening: appSettings?.rawPreprocessingSharpening ?? 0.35,
     applyPreprocessingToNonRaws: appSettings?.applyPreprocessingToNonRaws ?? false,
     useAppleRaw9: appSettings?.useAppleRaw9 ?? false,
+    aiDenoiseBackend: appSettings?.aiDenoiseBackend ?? 'cpu',
   });
   const [restartRequired, setRestartRequired] = useState(false);
   const [activeCategory, setActiveCategory] = useState('general');
@@ -582,6 +585,14 @@ export default function SettingsPanel({
       return true;
     });
   }, [t, osPlatform]);
+
+  const denoiseBackendOptions = useMemo<OptionItem<string>[]>(
+    () => [
+      { value: 'cpu', label: t('settings.processing.aiDenoiseBackendCpu') },
+      { value: 'npu', label: t('settings.processing.aiDenoiseBackendNpu') },
+    ],
+    [t],
+  );
 
   const linearRawOptions = useMemo<OptionItem<string>[]>(
     () => [
@@ -651,6 +662,7 @@ export default function SettingsPanel({
       rawPreprocessingSharpening: appSettings?.rawPreprocessingSharpening ?? 0.35,
       applyPreprocessingToNonRaws: appSettings?.applyPreprocessingToNonRaws ?? false,
       useAppleRaw9: appSettings?.useAppleRaw9 ?? false,
+      aiDenoiseBackend: appSettings?.aiDenoiseBackend ?? 'cpu',
     });
     setRestartRequired(false);
   }, [appSettings]);
@@ -1972,6 +1984,28 @@ export default function SettingsPanel({
                           triggerClassName="bg-bg-primary"
                         />
                       </SettingItem>
+
+                      {isOhos && (
+                        <SettingItem
+                          label={t('settings.processing.aiDenoiseBackend')}
+                          description={t('settings.processing.aiDenoiseBackendDesc')}
+                        >
+                          <Dropdown
+                            onChange={(value: any) =>
+                              handleProcessingSettingChange('aiDenoiseBackend', value)
+                            }
+                            options={denoiseBackendOptions}
+                            value={
+                              denoiseBackendOptions.some(
+                                (option) => option.value === processingSettings.aiDenoiseBackend,
+                              )
+                                ? processingSettings.aiDenoiseBackend
+                                : 'cpu'
+                            }
+                            triggerClassName="bg-bg-primary"
+                          />
+                        </SettingItem>
+                      )}
 
                       {osPlatform !== 'macos' && osPlatform !== 'windows' && (
                         <SettingItem

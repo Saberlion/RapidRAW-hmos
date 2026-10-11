@@ -1819,6 +1819,10 @@
         },
         "title": "IA Generativa"
       },
+      "aiDenoiseBackend": "Backend de reducció de soroll IA",
+      "aiDenoiseBackendCpu": "CPU (ONNX Runtime)",
+      "aiDenoiseBackendDesc": "Selecciona el backend d'inferència per a la reducció de soroll IA (NIND). La NPU usa MindSpore Lite NNRT a HarmonyOS (~5x més ràpid) i retrocedeix automàticament a CPU (ONNX Runtime) si la NPU o el model no estan disponibles.",
+      "aiDenoiseBackendNpu": "NPU (MindSpore Lite)",
       "alwaysDecodeRaw": "Descodificar sempre els RAW",
       "alwaysDecodeRawDesc": "Força la descodificació RAW completa per a les miniatures en lloc d'utilitzar les previsualitzacions JPEG incrustades. Activeu aquesta opció si les miniatures tenen colors o contrastos diferents respecte a la imatge oberta.",
       "alwaysDecodeRawLabel": "Descodificar sempre els RAW per a miniatures",

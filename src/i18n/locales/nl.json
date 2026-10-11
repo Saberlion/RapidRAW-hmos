@@ -1776,6 +1776,10 @@
         },
         "title": "Generatieve AI"
       },
+      "aiDenoiseBackend": "AI-ruisonderdrukking-backend",
+      "aiDenoiseBackendCpu": "CPU (ONNX Runtime)",
+      "aiDenoiseBackendDesc": "Kiest de inferentie-backend voor AI-ruisonderdrukking (NIND). NPU gebruikt MindSpore Lite NNRT op HarmonyOS (~5x sneller) en valt automatisch terug op CPU (ONNX Runtime) als NPU of model niet beschikbaar is.",
+      "aiDenoiseBackendNpu": "NPU (MindSpore Lite)",
       "alwaysDecodeRaw": "RAW altijd decoderen",
       "alwaysDecodeRawDesc": "Forceer volledige RAW-decodering voor miniaturen in plaats van gebruik te maken van ingesloten JPEG-voorbeelden. Schakel dit in als uw miniaturen er anders uitzien qua kleur of contrast vergeleken met de geopende afbeelding.",
       "alwaysDecodeRawLabel": "RAW altijd decoderen voor miniaturen",
