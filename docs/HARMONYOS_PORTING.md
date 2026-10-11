@@ -657,6 +657,49 @@ demosaic 输出         f32 RGB   734MB
 - 上架材料要点:应用名称/图标须与包内一致(名称须填 "RapidRAW")、截图 ≥3 张、隐私政策+隐私权利 URL、AI 功能声明(有 AI 降噪/蒙版必须申报);中国大陆另需 APP 备案 + 电子版权证书(非国区首发可豁免后两者);
 - 上传场景选「测试和正式上架」;AGC 上架后会对应用重签名(官方流程,不影响升级)。
 
+### 6.16 CANN(.om)NPU 路线应用集成——u2net 前景蒙版 + NIND 降噪(2026-10-10)
+
+**背景**:NPU 评估战役(`MINDSPORE_LITE_NPU_EVAL.md` §8.4)路线定版"u2net/nind → `.om`+perfmode 4"(u2net ~50ms vs X90 CPU ~580ms ≈ 11.6×;nind 130ms vs `.ms` 257ms vs CPU 1215ms)。本条把两个明确有收益的模型接入应用本体;CLIP(`.ms`)/SAM3/LaMa(ORT CPU)不在此批。
+
+**实现**(全部 `cfg(target_env = "ohos")`,非 OHOS 平台零编译影响):
+
+- `ohos_integration.rs` 新增 `pub mod om`:运行时 dlopen 三厂商库(`/vendor/lib64/passthrough/indirect/libai_fmk_{tensor,model_runtime_core,hcl_model_runtime}.so`,绝对路径→裸 soname 两级尝试,依赖序 dlopen 就地满足 DT_NEEDED)→ dlsym 24 符号 → `OnceLock<OmApi>` 函数表;`OmModel` 完整复刻战役 harness v7 设备验证配方:RestoreFromFile → ModelInitOptions(perfmode 经 `HIAI_HCL_ModelInitOptions_SetPerfMode` 设置 + Get 复核——setter 返回值是垃圾)→ ModelManager_Init → 逐张量 facade `HIAI_MR_NDTensorBuffer_CreateFromNDTensorDesc`(ION 缓冲 + fd≥0 门禁——普通 host 缓冲在 Run 内 SIGSEGV)→ Run;Drop 按 harness 实证顺序 teardown(buffers→Deinit→Manager_Destroy→Options_Destroy→BuiltModel_Destroy),半初始化态安全;加载辅助函数为安全函数+内部 unsafe 块(镜像 ms_lite 范式),`make_slot` 保留真实 unsafe 契约。
+- `ai_processing.rs`:`DenoiseSession` 增 `Cann(Mutex<OmModel>)` 变体;新增 `MaskSession` 枚举(Ort/Cann)接管 `AiModels.u2netp`/`sky_seg` 字段;sky/u2netp 双函数统一为 `run_u2net_family_model`(预处理/后处理原样,仅推理调用分叉);nind 新增 `run_native_denoise_om` tile 循环——`.om` 保持 NCHW I/O(omg 日志实证),复用 ORT 路径的 `extract_tile_mirror` 直喂,免 `.ms` 路线的 NHWC 转置。
+- **路由**:降噪 = `ai_denoise_backend=="npu"` 门控下三级回退 `.om`(存在且 IO 契约校验过)→ `.ms` → ORT CPU;前景/sky 蒙版 = `.om` 文件存在即用,可用时**跳过 onnx 下载**(u2net.onnx 176MB),任何失败回退 ORT 下载路径。IO 契约校验:nind 单入单出 [1,3,504,504]×f32(3048192B);u2net 单入 [1,3,320,320] + 全部输出 [1,1,320,320](读 out[0]=d0,与 ORT 取 outputs[0] 一致)。
+- **供给**(侧载式,无自动下载):`.om` 为 kirinx90 固件专属 omg 构建,放 app models 目录即生效——`u2net.om`(88MB,战役件,sha256 与 app 的 u2net.onnx 严格一致 = fp16 直转 drop-in)、`nind_v2.om`(62MB,AI_DENOISE §5.6 Pad→Slice 手术件直转);`skyseg_u2net.om` 暂无(同配方可补转,代码零改动即用)。
+
+**验证**(2026-10-10):`cargo fmt --check` ✓;`cargo clippy --all-targets -- -D warnings`(宿主默认特性)✓ 零新告警(`--all-features` 在 Windows 宿主因 tethering/libgphoto2 不可编译,预存在与本次无关);`cargo check --target aarch64-unknown-linux-ohos` ✓ 改动文件 0 错误 0 告警(首轮 30 条 warning[E0133] = edition 2024 `unsafe_op_in_unsafe_fn`,已全部修复)。
+
+**真机端到端验证(2026-10-10/11,8 轮装机迭代,设备 3XB0124617000013)**:**全通**——应用进程内 CANN 全链路(load_api → 模型上板 → NPU 推理 → 蒙版落盘)完整跑通,触发到 `.rrdata` 保存 **4.85s**。迭代路径:T1 证实 facade 无法直连(真身在 `/vendor/lib64/passthrough/` 根、不在任何应用可搜索域;root 落地拷贝被 XPM 拦截 mmap)→ T3 facade 进 HAP 后依赖逐级暴露(T3 `infra_log` → T4 `sec_shared` → T5 `libc++`)→ T6 15 库全载+模型上板,但 facade 惰性 dlopen tensor 被跨 ns REJECT → T7 打包 app-dir tensor+全闭包(37 库)后推进至 HDI buffer 分配,`libai_hdi_request_client.so` 失败 → T8 38 库全通。
+
+- **注入通道**:`scripts/build-ohos.ps1` CANN 注入段(`$cannLibs` 38 库 + 机制注释块;`-SkipBuild` 复用母本 HAP,zip Update 抹签名后按 `SIGNING.md` §7 调试重签装机);库件从设备 `/vendor/lib64/` 各域(chipsetsdk、passthrough/indirect、chipset-sdk-sp、chipset-pub-sdk、platformsdk)拉取入 `src-tauri/libs/ohos/arm64-v8a/`(gitignored,同 ORT 供给通道)。38 库合计 ~5.6MB(HAP 内压缩 ~2.7MB),全部进代码签名块(Digest verify true,装机通过即设备端验签)。
+- **命名空间机制(T1-T8 设备实证,build-ohos.ps1 注释块同源记录)**:① `moduleNs_default`(应用库 ns)裸 soname 惰性 dlopen 只搜 ndk 目录+应用 lib 目录,**无 rich fallback**,且同名库已在 default(rich)ns 加载时**跨 ns REJECT**(errno=2)而非返回句柄——CANN 客户端栈每个惰性 dlopen 的 soname 都必须打进 HAP:`libai_fmk_tensor.so`(facade 取 tensor 句柄,T6)与 `libai_hdi_request_client.so`(T7:失败时该库既存于 indirect/、又已作为 core 依赖闭包映射进 default ns,照样够不着);② DT_NEEDED 依赖解析相反——**可跨 ns 被 default ns 已加载副本满足**(T7 maps:打包的 hilog/ffrt/ubsan/faultloggerd 等 8 库从未被映射,system stack 预载副本满足,零浪费);③ **绝对路径 dlopen 落入 default ns 并跨 ns 返回句柄**——load_api 以此把 indirect/ tensor+core 与整个 vendor 计算闭包(_impl/npu_ai_fmk_om/graph/npucore 客户端链 ~30 库)拉进 default ns,chipset 目录在该 ns 可搜索、零打包;④ **_impl 链严禁打包**(app-dir 副本会载入 moduleNs_default 反而破坏 default ns 闭包,依赖考古定论)。
+- **T8 成功时间线**(PID 5904,触发 00:46:42.79):+0.76s 模型上板(LoadModelsByHcl,perf 4,分区 NPU:2+CPU:1)→ 8 个 IO slot(1 入 + 7 出)维度探测全过 → **NPUCL `SetVote "extreme high"`(应用进程内)→ hiaiserver 为应用 pid 提升 NPU 时钟(SetNPUPerf:400/SetDDRPerf:3)→ CPUCL 执行 CPU 分区节点(208us)→ ModelSetBandwidth/drv_set_bandwidth** → +4.27s 3.61MB 蒙版 PNG 经 nweb IPC 送达前端 → +4.86s `.rrdata` 落盘(3.6MB)。**反向证据链**(排除 ORT 回退):125s hilog 捕获内无 `timeout free resource`(T7 +60s 有)、无 runtime Finalize/teardown 序列(T7 有)、病毒扫描服务无 `u2net.onnx` 读取记录(T7 ORT 回退 +1.5s 有)。
+- **蒙版内容 sanity**:9202×12122 全分辨率 8-bit 灰度 PNG、deflate 41.2:1(结构化大均匀区,非噪声);UI 出现"AI 编辑 1→前景"组件及属性面板(反转/扩展)。**ORT 回退路径同期获 6 轮真机完整验证**(T1-T7 每轮失败均优雅回退、正常出蒙版、无崩溃)。
+
+**残留/下一步**:① ~~命名空间真机验证~~ **已解决**(38 库定版);② `.om` 逐像素精度未验(fp16 有效精度,参照 `.ms` NNRT max_abs 1.6e-3 与 §8.4 误差分解;蒙版内容 sanity 已过);③ ~~端到端真机测试~~ **已完成**(T8);④ `.om` 发布形态待定(HAP 内置 150MB / AGC 通道分发 / 设备检测下载;38 库 ~5.6MB 为固定打包载荷);⑤ 新增:nind 降噪 `.om` 路径真机未测(仅验 u2net 前景)、二次运行缓存模型路径未测(T8 首跑含 0.76s 加载,模型客户端驻留已由"无 timeout free"佐证)、NPU/ORT 性能对照未量化、load_api 的 hcl 绝对路径仍指向 indirect/(facade 真身在 `/vendor/lib64/passthrough/` 根;soname 回退已兜底,仅余良性 MUSL-LDSO 警告,可后续清理)。
+
+### 6.17 品牌重塑 LightRaw + AGC 审核整改(双隐私弹窗)+ ACL 权限装机 9568289(2026-10-11)
+
+**背景**:未取得 RapidRAW 名称/图标授权,应用整体更名 **LightRaw**(bundleName 等标识符保留,见下);同日 AGC 审核反馈问题①:已接入平台"标准化隐私声明托管服务",应用自建隐私弹窗须删,否则首启双弹窗。
+
+**品牌重塑**:
+
+- 文案 335 处 `RapidRAW(?!-hmos)` → `LightRaw`:gen/ohos 两个 string.json(app_name/EntryAbility_label/module_desc/权限描述串)、`tauri.conf.json` 窗口 title、15 个 locale、AgreementGate 法务文本(隐私政策/用户协议 zh-CN/zh-TW/en 全文)、TitleBar、index.html、webStorageShim 注释;i18n:check ✓ 零键漂移。
+- **刻意保留**:bundleName `io.github.CyberTimon.RapidRAW`(调试/发布 profile 与 AGC 备案绑定,改名需全套新签名材料)、Cargo 包名 RapidRAW(librapidraw_lib.so 命名与打包引用)、package.json name、全部 URL(getrapidraw.com 云服务、GitHub 仓库/预设/模型源)、i18n 键名 `rapidRawPreset`(PresetsPanel 引用的代码标识符,值已带品牌)。
+- 图标:`LightRaw.png`(1024×1024)直拷 AppScope+entry 两处 foreground.png(hash 验证);startIcon 144×144 与桌面 32/128/128@2x 经 WPF 缩放重生成(`powershell -NoProfile -STA` 子进程 + 显式 `-TypeName/-ArgumentList`;该 shell 无 System.Drawing);background.png 保留纯深色(全出血前景遮盖)。**icon.ico/icon.icns 未重生成(桌面构建遗留)**。
+- 坑:PowerShell `-replace` 默认大小写不敏感,camelCase 键 `rapidRawPreset` 曾被连带改名(破坏 PresetsPanel 引用),15 locale 已回滚键名、值保留品牌;typecheck 改动文件 0 错误(全仓 70 条错误均为 git-clean 已提交文件预存在、CI advisory、`npm run build`=vite 不含 tsc 不受影响);eslint 23 条同样全部预存在(改动行号区间零命中)。
+
+**双隐私弹窗修复(AGC 问题①)**:`useSettingsStore` 增 `isOhosKnown` 三态(`IsOhosBuild` 探测 then/catch 双落定,消除 OHOS 判定竞态),`App.tsx` 门控改为 `!isOhos && agreementAcceptedVersion !== AGREEMENT_VERSION` 且 splash 等待探测落定后才判定——**OHOS 构建永不渲染自建协议门**(平台托管弹窗即首启同意,AGC 要求的形态;本地调试直装无平台弹窗,应用内同样不弹),桌面/Android 行为不变、无闪帧。真机验证:`bm clean -d` 清数据冷启,零弹窗直进主 UI(欢迎页 + 标题栏 LightRaw)。
+
+**装机 9568289(ACL 权限 × 调试 profile)**:更名后首个全量包 `hdc install -r` 报 `code:9568289 grant request permissions failed: READ_IMAGEVIDEO`;差分重装旧包(仅 INTERNET)成功 → 定位为 HAP 内容差异。根因:① module.json5 于 10-06 20:52(AGC 提审准备期)加入 7 个权限(共 8),其中 READ/WRITE_IMAGEVIDEO、MEDIA_LOCATION、FILE_ACCESS_PERSIST 为 **ACL 受限权限**,本地调试 profile 无 `allowed-acls` → 安装期授权校验失败;② **hvigor 资源缓存陈旧**使该变更在 10-10 构建静默丢失、10-11 品牌资源改动令缓存失效后权限首次进包——**权限声明类改动必须对产物 HAP 内 module.json 做二进制复核**。处置:本地验证用 INTERNET-only 临时变体装机(备份 `module.json5.agc-backup`,SHA256 字节级恢复验证);**上架路径无碍**——release profile 四项 ACL 齐全(`.csr/SIGNING.md` §8);带权限本地调试装机需在 AGC 申请含受限权限的调试 Profile(SIGNING.md §7 注记)。
+
+**验证状态**:全量重建 EXIT=0(ORT+38 CANN 库自动注入);HAP resources.index 含 LightRaw、零 RapidRAW(二进制验证);`entry-lightraw2-signed.hap`(68.2MB)装机成功;桌面应用列表 LightRaw 标签 + 深色 LR 徽章图标、全设备零 RapidRAW 残留(截图 screen53-55)。注意:设备现装包为 INTERNET-only 权限变体且应用数据已清(设置/AI 模型缓存重置,首次 AI 使用将重新下载模型);**AGC 提审须以恢复后的 8 权限 module.json5 重新全量出包 + release 签名 + `pack-app.ps1`**,并按上文对 HAP 权限做二进制复核。
+
+**提审包 v2(release 模式,2026-10-11 11:00;取代 09:25 的 debug 模式首版 35.13MB/78BD508C…)**:AGC 审核问题②"软件包中包含调试信息"排查得三处根因——① `build-ohos.ps1` 默认构建是 debug(无 `-Release` 时向 tauri CLI 透传 `-d`;`-Release` 才把 `--release` 透传到 ohrs/cargo 阶段);② 本机自备 `libonnxruntime.so` 带 11 个 `.debug_*` 段 + symtab(28.4MB,AGC 会扫 .so 调试段);③ hvigor 把 ArkTS sourcemap `ets/sourceMaps.map` 打进 HAP。修复三件套:ORT 经 `llvm-strip --strip-unneeded`(28.4→17.38MB,dynsym 完好,原件备份 `.unstripped`);`build-ohos.ps1` 注入段增加 `ets/sourceMaps.map` 确定性删除;**提审一律 `-Release`**(`[profile.release] strip=true` + vite `TAURI_ENV_DEBUG` 关 sourcemap)。Release 产物复核:42 库零 DWARF/零 symtab、0 map 文件、.so 无 sourceMappingURL、release .so 40.51MB(dev 56.44MB)。**release 真机冒烟**(INTERNET-only 权限变体 + 调试签名装机):启动→欢迎页(无弹窗)→SAF 选 Download→图库 4 缩略图真实渲染→双击进编辑器,fresh_cann_test.jpg **9202×12122 全分辨率渲染无伪影**——wgpu/Vulkan release 路径实证(此前的真机验证全是 debug 构建)。(UI 自动化教训:视觉模型全屏坐标漂移 150-300px,定位 UI 元素用像素扫描热图更可靠。)产物 `entry-default.app` **26.17MB**,SHA256 `BB81CECFBA633571B47DA798C85C041FF7A83D57D1D9C4925223FFCC8E24BE05`(8 权限 + LightRaw 品牌,pack-app 六步全过 + 内层闭环复核)。
+
+**提审包 v3(2026-10-11 16:10)——去掉 ACL 受限权限 `ohos.permission.READ_IMAGEVIDEO`**(AGC 审核问题③;应用经 SAF 选择器访问图片,全仓 Rust/前端零引用,真机 INTERNET-only 验证早已佐证无需它):module.json5 收敛为 **7 权限定版**(`.agc-backup` 同步更新,SHA256 `43E9CB4B4A7E37C5E4F10E158198E9A9D5890A2A8B2B4B37AA9D350F2875188A`),`-Release` 重出 + 全链路复核(7 权限无 READ_IMAGEVIDEO、LightRaw、42 库零 DWARF/零 symtab、0 map)。产物 `entry-default.app` **26.17MB**,SHA256 `986387BEC6C200AAFD624962AFCED6D6FC1E579FEBE6EA36DED73828C6E7BDA0`。**风险预告:`WRITE_IMAGEVIDEO` 与 `MEDIA_LOCATION` 同为弃用/ACL 受限类权限(应用走 SAF 均不需要),下一轮审核可能同样被点名**——要去掉改 module.json5 后按同流程重出。版本 1.0.0(versionCode 1,同版本修订重提;若 AGC 要求新版本号需改 AppScope/app.json5 后重出)。**注意:AGC 控制台应用名称/图标须同步改为 LightRaw**(§6.15"名称须填 RapidRAW"已随更名过时;bundleName 未变,签名/备案不受影响);真机现装 INTERNET-only release 冒烟变体(非提审包);`perm_read_imagevideo` 字符串资源闲置保留(无引用,无害)。
+
 ## 7. 移植路线图与进度清单
 
 ### Phase 0 — 技术验证(1~2 周)
@@ -698,7 +741,7 @@ demosaic 输出         f32 RGB   734MB
 
 ### Phase 4 — AI 与发布(2~3 周)
 - [ ] ORT 动态加载真机验证;AI 蒙版/降噪功能分级测试(**模拟器部分已完成** 2026-10-04,见 6.12:NIND AI 降噪端到端全通——下载/持久化/ORT dlopen/推理/保存;模型下载 FUSE rename EACCES 已由拷贝回退修复;5 模型蒙版栈被 4GB 模拟器 LMK 阻塞待真机;x86_64 ORT v1.28.2 经 build-ohos.ps1 注入 HAP)
-- [ ] (可选)MindSpore Lite / NNRt NPU 路径评估(**前置调研已完成** 2026-10-04,见 `docs/MINDSPORE_LITE_NPU_EVAL.md`:结论 GO 基础上分模型——系统 MindSpore Lite Kit(`libmindspore_lite_ndk.z.so`,`OH_AI_*` C API,NNRT+CPU 逐算子回退)为推荐路径,Rust 绑定需手写(无现成 crate);converter_lite 2.10.0 离线转换;U2Net/skyseg/NIND 低风险、ViT 系需重导出、**LaMa 受 FFT 阻塞**;**全部验证需真机**——模拟器无 Kit/NNRT 支持,与 Phase 3-3 同一硬件阻塞)
+- [ ] (可选)MindSpore Lite / NNRt NPU 路径评估(**前置调研已完成** 2026-10-04,见 `docs/MINDSPORE_LITE_NPU_EVAL.md`:结论 GO 基础上分模型——系统 MindSpore Lite Kit(`libmindspore_lite_ndk.z.so`,`OH_AI_*` C API,NNRT+CPU 逐算子回退)为推荐路径,Rust 绑定需手写(无现成 crate);converter_lite 2.10.0 离线转换;U2Net/skyseg/NIND 低风险、ViT 系需重导出、**LaMa 受 FFT 阻塞**;**全部验证需真机**——模拟器无 Kit/NNRT 支持,与 Phase 3-3 同一硬件阻塞;**CANN(`.om`)路线已应用集成并真机端到端验通**(2026-10-11,见 6.16:u2net 前景 + NIND 降噪接 HIAI_MR 直连,三道编译门禁全过;真机 E2E 全通——触发→NPU 推理→蒙版落盘 4.85s,NPU 时钟/CPU 分区执行/ORT 零回退三重实证,38 库命名空间闭包定版)
 - [ ] AGC 签名、AppGallery 上架(摄影类目)、版本通道(**签名已打通** 2026-10-05:sign-app/verify-app 全通、signed.hap 已产出;命令、证书材料与坑位记录在**未入库**的 `.csr/SIGNING.md`——签名材料含私钥,永不入库,`.csr/` 与 `*.p12/*.p7b/*.jks` 已加 .gitignore;**release HAP 真机直装已实证走不通** 2026-10-06:hdc install 被拒 code 9568322 "not trusted app source"(卸载重装同样被拒)——release profile 仅 AGC 分发渠道信任,真机迭代一律用 AGC 自动调试材料签名(配方 `SIGNING.md` §7,首启协议门闸即以此装包完成全流程真机验证);上架待干净 aarch64 release 包走 AGC 提审)
 
 ## 8. 环境搭建速查(Phase 1 参考)
@@ -769,9 +812,9 @@ cargo tauri ohos build -d -t aarch64
 | 项 | 已完成部分 | 阻塞点 |
 |---|---|---|
 | ≥60MP 真机性能/内存基线(6.10/6.11) | 模拟器基线 + 缓解方向评估;**渲染管线真机已通(6.13:24/33MP 出图,Vulkan ~290ms/趟)**,61MP 资产已在真机 Download | 跑基线即可(方法学已固化于 6.10) |
-| ORT 真机验证 + AI 蒙版/降噪分级测试(6.12) | NIND 降噪模拟器单模型端到端全通 | 待真机执行(23GB 内存充裕);注意模型下载目标已随 app_paths 迁至沙箱(6.13) |
-| MindSpore Lite / NNRt NPU 路径(可选) | 前置调研完成(`MINDSPORE_LITE_NPU_EVAL.md`) | 全部验证需真机(模拟器无 Kit/NNRT);LaMa 受 FFT 阻塞、ViT 系需重导出 |
-| AGC 签名、AppGallery 上架、版本通道 | **签名已打通**(2026-10-05:sign-app/verify-app 全通、signed.hap 产出,材料见未入库 `.csr/SIGNING.md`) | release HAP 真机直装被拒(9568322,2026-10-06 实证)——上架须走 AGC 提审;真机迭代用调试签名(SIGNING.md §7) |
+| ORT 真机验证 + AI 蒙版/降噪分级测试(6.12) | NIND 降噪模拟器单模型端到端全通;**ORT CPU 回退路径真机已实证**(CANN 调试期 6 轮失败回退全部完整出蒙版、无崩溃,见 6.16) | 分级测试待执行(23GB 内存充裕);注意模型下载目标已随 app_paths 迁至沙箱(6.13) |
+| MindSpore Lite / NNRt NPU 路径(可选) | 前置调研完成(`MINDSPORE_LITE_NPU_EVAL.md`);**CANN(`.om`)路线已真机端到端验通**(u2net 前景 4.85s 全通,见 6.16)——u2net/nind 收益已由 CANN 兑现 | MindSpore 路线仅剩兜底/对照价值;LaMa 受 FFT 阻塞、ViT 系需重导出 |
+| AGC 签名、AppGallery 上架、版本通道 | **签名已打通**(2026-10-05:sign-app/verify-app 全通、signed.hap 产出,材料见未入库 `.csr/SIGNING.md`);**品牌更名 LightRaw + 审核问题①双弹窗修复已完成并真机验证**(6.17) | release HAP 真机直装被拒(9568322,2026-10-06 实证)——上架须走 AGC 提审;真机迭代用调试签名(SIGNING.md §7);**带 ACL 权限包调试装机被拒(9568289,6.17)**——提审包 v3(release 模式、7 权限)已产出、全链路验证 + 真机冒烟通过(6.17:`entry-default.app` 26.17MB,SHA256 986387BE…BDA0;AGC 控制台名称/图标须同步改 LightRaw) |
 
 ### 9.2 被"无真机"阻塞的散布验证项
 
