@@ -721,7 +721,7 @@
         "importPresetsTitle": "プリセットをインポート",
         "legacyPreset": "レガシープリセット",
         "presetFile": "プリセットファイル",
-        "rapidRawPreset": "RapidRAWプリセット"
+        "rapidRawPreset": "LightRawプリセット"
       },
       "menu": {
         "configurePreset": "プリセットを構成",
@@ -1120,7 +1120,7 @@
     },
     "splash": {
       "addFolder": "フォルダを追加",
-      "brand": "RapidRAW",
+      "brand": "LightRaw",
       "continueSession": "セッションを続行",
       "contribute": "GitHubで貢献する",
       "descriptionAndroid": "圧倒的に高速な、GPUアクセラレーション対応RAW画像エディタ。ライブラリを開いて始めましょう。",
@@ -1522,15 +1522,15 @@
   "settings": {
     "about": {
       "agplNotice": "本アプリケーションは GNU AGPL-3.0 のフリーソフトウェアです。ライセンスの全文とソースコードは上記リンクから入手できます。",
-      "licenseDesc": "RapidRAW は AGPL-3.0 ライセンスで提供されています",
+      "licenseDesc": "LightRaw は AGPL-3.0 ライセンスで提供されています",
       "openSourceLicense": "オープンソースライセンス",
       "privacyPolicy": "プライバシーポリシー",
-      "privacyPolicyDesc": "RapidRAW でのデータの取り扱いについて",
+      "privacyPolicyDesc": "LightRaw でのデータの取り扱いについて",
       "sourceCode": "ソースコード",
-      "sourceCodeDesc": "RapidRAW はオープンソースです。貢献を歓迎します",
-      "title": "RapidRAW について",
+      "sourceCodeDesc": "LightRaw はオープンソースです。貢献を歓迎します",
+      "title": "LightRaw について",
       "userAgreement": "利用規約",
-      "userAgreementDesc": "RapidRAW の利用条件",
+      "userAgreementDesc": "LightRaw の利用条件",
       "view": "表示"
     },
     "categories": {
@@ -1631,7 +1631,7 @@
       "font": "フォント",
       "fontDesc": "アプリケーションのフォントを変更します。",
       "nativeTitlebar": "OS標準のタイトルバー",
-      "nativeTitlebarDesc": "RapidRAWカスタムのもの代わりに、システムのデフォルトのウィンドウタイトルバーを使用します。",
+      "nativeTitlebarDesc": "LightRawカスタムのもの代わりに、システムのデフォルトのウィンドウタイトルバーを使用します。",
       "neutralGreyCanvas": "ニュートラルグレーのキャンバス",
       "neutralGreyCanvasDesc": "アプリのテーマを変更せずに、より正確な色と露出のグレーディングを行うために、ニュートラルグレーのキャンバスを使用します。",
       "poppins": "Poppins",
@@ -1752,7 +1752,7 @@
         "connector": {
           "address": "AI Connectorのアドレス",
           "addressDesc": "起動中の AI Connector インスタンスのアドレスとポートを入力してください。生成AI機能に必要です。",
-          "description": "十分なスペックのGPUを搭載し、フルコントロールを行いたいユーザー向けの機能です。RapidRAWをご自身の Connector サーバーに接続します。",
+          "description": "十分なスペックのGPUを搭載し、フルコントロールを行いたいユーザー向けの機能です。LightRawをご自身の Connector サーバーに接続します。",
           "failed": "接続に失敗しました。",
           "feature1": "自身の ComfyUI インスタンスを使用可能",
           "feature2": "追加コスト不要の高度な生成編集",
@@ -1760,16 +1760,16 @@
           "success": "接続に成功しました！",
           "test": "テスト",
           "testing": "テスト中...",
-          "title": "セルフホスト (RapidRAW AI Connector)"
+          "title": "セルフホスト (LightRaw AI Connector)"
         },
         "cpu": {
-          "description": "RapidRAWに直接内蔵されており、お使いのコンピューター上のみで動作します。高速かつ無料でセットアップも不要です。",
+          "description": "LightRawに直接内蔵されており、お使いのコンピューター上のみで動作します。高速かつ無料でセットアップも不要です。",
           "feature1": "AIマスク機能 (被写体、空、手前)",
           "feature2": "自動画像タグ付け機能",
           "feature3": "CPUベースの簡易生成塗りつぶし",
           "title": "内蔵AI (CPU)"
         },
-        "description": "RapidRAWのAIは、優れた柔軟性を備えています。高速なローカル処理から本格的なセルフホストまで、最適なワークフローを選択してください。",
+        "description": "LightRawのAIは、優れた柔軟性を備えています。高速なローカル処理から本格的なセルフホストまで、最適なワークフローを選択してください。",
         "providers": {
           "aiConnector": "AI Connector",
           "cloud": "クラウド",
@@ -1895,7 +1895,7 @@
       "clearCustomTooltip": "AIタグリストをクリア",
       "clearShortcutsTooltip": "ショートカットリストをクリア",
       "customList": "カスタムAIタグリスト",
-      "customListDesc": "タグを指定した場合、AIはリスト内のタグのみを使用し、RapidRAWの内蔵リストは使用されません。タグ付け機能は英語のみ対応しています。",
+      "customListDesc": "タグを指定した場合、AIはリスト内のタグのみを使用し、LightRawの内蔵リストは使用されません。タグ付け機能は英語のみ対応しています。",
       "maxAiTags": "最大AIタグ数",
       "maxAiTagsDesc": "画像ごとに生成されるAIタグの最大数。",
       "noCustomTags": "カスタムAIタグなし（内蔵リストを使用中）",
@@ -1907,20 +1907,20 @@
       "title": "タグ付け"
     },
     "thanks": {
-      "description": "RapidRAWの開発において、非常に重要な役割を果たしてくれた以下のプロジェクトに心より感謝いたします:",
+      "description": "LightRawの開発において、非常に重要な役割を果たしてくれた以下のプロジェクトに心より感謝いたします:",
       "list": {
         "darktable": "一部の実装において参考にさせていただきました。",
         "depth": "AI奥行きマスクを可能にする、単眼深度推定モデルを提供しています。",
         "lama": "コンテンツに応じた塗りつぶしやオブジェクト削除を実現する、シンプルかつ強力な画像インペインティングモデルを提供しています。",
         "lensfun": "自動レンズ補正に不可欠な、オープンソースライブラリと膨大なデータベースを提供しています。",
-        "libgphoto2": "RapidRAW のテザリングおよびリモート撮影機能を支える、包括的なカメラ通信ライブラリを提供してくださったことに。",
+        "libgphoto2": "LightRaw のテザリングおよびリモート撮影機能を支える、包括的なカメラ通信ライブラリを提供してくださったことに。",
         "negpy": "ネガ反転アルゴリズムのヒントとなりました。",
         "nind": "AIノイズ低減機能を支えるAIモデルを提供しています。",
         "rawler": "RAWファイル処理の基盤となる優れたRustライブラリを提供しています。",
         "sam2": "AI被写体検出機能の基盤となるモデルを提供しています。",
-        "spektrafilm": "RapidRAW の内蔵フィルムエミュレーションを支える、Andrea Volpato 氏によるスペクトルベースのフィルムエミュレーション LUT を提供してくださったことに。ライセンスは CC BY-SA 4.0 です。",
+        "spektrafilm": "LightRaw の内蔵フィルムエミュレーションを支える、Andrea Volpato 氏によるスペクトルベースのフィルムエミュレーション LUT を提供してくださったことに。ライセンスは CC BY-SA 4.0 です。",
         "u2net": "AIによる空や手前の自動検出に用いる、堅牢なアーキテクチャを提供しています。",
-        "you": "RapidRAWをご利用、ご支援いただきありがとうございます。皆様のご関心こそが、プロジェクトの存続と発展の支えです。",
+        "you": "LightRawをご利用、ご支援いただきありがとうございます。皆様のご関心こそが、プロジェクトの存続と発展の支えです。",
         "youLabel": "皆様"
       },
       "title": "特別な謝辞"
@@ -1995,12 +1995,12 @@
       "back": "戻る",
       "confirmExit": "終了",
       "decline": "同意しない",
-      "exitMessage": "利用規約とプライバシーポリシーに同意すると RapidRAW をご利用いただけます。",
-      "exitTitle": "RapidRAW を終了しますか?",
+      "exitMessage": "利用規約とプライバシーポリシーに同意すると LightRaw をご利用いただけます。",
+      "exitTitle": "LightRaw を終了しますか?",
       "privacyTab": "プライバシーポリシー",
       "subtitle": "続行する前に、利用規約とプライバシーポリシーをお読みのうえ同意してください",
       "termsTab": "利用規約",
-      "title": "RapidRAW へようこそ"
+      "title": "LightRaw へようこそ"
     },
     "bottomBar": {
       "imagesSelected": "{{total}}枚中 {{current}}枚の画像を選択中",

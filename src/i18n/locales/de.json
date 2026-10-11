@@ -724,7 +724,7 @@
         "importPresetsTitle": "Vorgaben importieren",
         "legacyPreset": "Alte Vorgabe",
         "presetFile": "Vorgabendatei",
-        "rapidRawPreset": "RapidRAW Vorgabe"
+        "rapidRawPreset": "LightRaw Vorgabe"
       },
       "menu": {
         "configurePreset": "Vorgabe konfigurieren",
@@ -1123,7 +1123,7 @@
     },
     "splash": {
       "addFolder": "Ordner hinzufügen",
-      "brand": "RapidRAW",
+      "brand": "LightRaw",
       "continueSession": "Sitzung fortsetzen",
       "contribute": "Auf GitHub beitragen",
       "descriptionAndroid": "Ein blitzschneller, GPU-beschleunigter RAW-Bildeditor. Öffnen Sie die Bibliothek, um zu beginnen.",
@@ -1525,15 +1525,15 @@
   "settings": {
     "about": {
       "agplNotice": "Diese Anwendung ist freie Software unter der GNU AGPL-3.0. Der vollständige Lizenztext und der Quellcode sind über die obigen Links verfügbar.",
-      "licenseDesc": "RapidRAW ist unter AGPL-3.0 lizenziert",
+      "licenseDesc": "LightRaw ist unter AGPL-3.0 lizenziert",
       "openSourceLicense": "Open-Source-Lizenz",
       "privacyPolicy": "Datenschutzerklärung",
-      "privacyPolicyDesc": "Wie RapidRAW mit deinen Daten umgeht",
+      "privacyPolicyDesc": "Wie LightRaw mit deinen Daten umgeht",
       "sourceCode": "Quellcode",
-      "sourceCodeDesc": "RapidRAW ist Open Source — Beiträge willkommen",
-      "title": "Über RapidRAW",
+      "sourceCodeDesc": "LightRaw ist Open Source — Beiträge willkommen",
+      "title": "Über LightRaw",
       "userAgreement": "Nutzungsvereinbarung",
-      "userAgreementDesc": "Nutzungsbedingungen für RapidRAW",
+      "userAgreementDesc": "Nutzungsbedingungen für LightRaw",
       "view": "Ansehen"
     },
     "categories": {
@@ -1634,7 +1634,7 @@
       "font": "Schriftart",
       "fontDesc": "Ändern Sie die Schriftart der Anwendung.",
       "nativeTitlebar": "Native Titelleiste",
-      "nativeTitlebarDesc": "Verwenden Sie die Standard-Fenstertitelleiste Ihres Systems anstelle der benutzerdefinierten von RapidRAW.",
+      "nativeTitlebarDesc": "Verwenden Sie die Standard-Fenstertitelleiste Ihres Systems anstelle der benutzerdefinierten von LightRaw.",
       "neutralGreyCanvas": "Neutralgraue Arbeitsfläche",
       "neutralGreyCanvasDesc": "Verwenden Sie eine neutralgraue Arbeitsfläche für eine genauere Farb- und Belichtungskorrektur, ohne das App-Design zu ändern.",
       "poppins": "Poppins",
@@ -1755,7 +1755,7 @@
         "connector": {
           "address": "AI Connector Adresse",
           "addressDesc": "Geben Sie die Adresse und den Port Ihrer laufenden AI Connector Instanz ein. Erforderlich für generative KI-Funktionen.",
-          "description": "Für Benutzer mit einer fähigen GPU, die maximale Kontrolle wünschen. Verbinden Sie RapidRAW mit Ihrem eigenen Connector-Server.",
+          "description": "Für Benutzer mit einer fähigen GPU, die maximale Kontrolle wünschen. Verbinden Sie LightRaw mit Ihrem eigenen Connector-Server.",
           "failed": "Verbindung fehlgeschlagen.",
           "feature1": "Verwenden Sie Ihre eigene ComfyUI Instanz",
           "feature2": "Kostenlose erweiterte generative Bearbeitungen",
@@ -1763,16 +1763,16 @@
           "success": "Verbindung erfolgreich!",
           "test": "Testen",
           "testing": "Wird getestet...",
-          "title": "Selbstgehostet (RapidRAW AI Connector)"
+          "title": "Selbstgehostet (LightRaw AI Connector)"
         },
         "cpu": {
-          "description": "Diese Funktionen sind direkt in RapidRAW integriert und laufen vollständig auf Ihrem Computer. Sie sind schnell, kostenlos und erfordern keine Einrichtung.",
+          "description": "Diese Funktionen sind direkt in LightRaw integriert und laufen vollständig auf Ihrem Computer. Sie sind schnell, kostenlos und erfordern keine Einrichtung.",
           "feature1": "KI-Maskierung (Motiv, Himmel, Vordergrund)",
           "feature2": "Automatisches Bild-Tagging",
           "feature3": "Einfaches CPU-basiertes generatives Ersetzen",
           "title": "Integrierte KI (CPU)"
         },
-        "description": "Die KI von RapidRAW ist auf Flexibilität ausgelegt. Wählen Sie Ihren idealen Workflow.",
+        "description": "Die KI von LightRaw ist auf Flexibilität ausgelegt. Wählen Sie Ihren idealen Workflow.",
         "providers": {
           "aiConnector": "AI Connector",
           "cloud": "Cloud",
@@ -1910,20 +1910,20 @@
       "title": "Tagging"
     },
     "thanks": {
-      "description": "Ein großes Dankeschön an die folgenden Projekte, die für die Entwicklung von RapidRAW sehr wichtig waren:",
+      "description": "Ein großes Dankeschön an die folgenden Projekte, die für die Entwicklung von LightRaw sehr wichtig waren:",
       "list": {
         "darktable": "Für Referenzimplementierungen, die Teile dieser Arbeit leiteten.",
         "depth": "Für das Modell zur monokularen Tiefenschätzung (Tiefenmasken).",
         "lama": "Für das leistungsstarke Bild-Inpainting-Modell.",
         "lensfun": "Für die unschätzbare Open-Source-Bibliothek für Objektivkorrektur.",
-        "libgphoto2": "Für die umfassende Kamera-Kommunikationsbibliothek, die RapidRAWs Tethering und Fernauslösung ermöglicht.",
+        "libgphoto2": "Für die umfassende Kamera-Kommunikationsbibliothek, die LightRaws Tethering und Fernauslösung ermöglicht.",
         "negpy": "Für die Inspiration hinter der Negativumwandlungslogik.",
         "nind": "Für die Bereitstellung von KI-Modellen für die Rauschreduzierung.",
         "rawler": "Für die hervorragende Rust-Crate zur RAW-Bildverarbeitung.",
         "sam2": "Für das grundlegende Modell der KI-Motiverkennung.",
-        "spektrafilm": "Für die spektralbasierten Filmemulations-LUTs von Andrea Volpato, die RapidRAWs integrierte Filmemulationen ermöglichen. Lizenziert unter CC BY-SA 4.0.",
+        "spektrafilm": "Für die spektralbasierten Filmemulations-LUTs von Andrea Volpato, die LightRaws integrierte Filmemulationen ermöglichen. Lizenziert unter CC BY-SA 4.0.",
         "u2net": "Für die Architektur zur Erkennung von Himmel und Vordergrund.",
-        "you": "Dafür, dass Sie RapidRAW nutzen. Ihr Interesse hält dieses Projekt am Leben.",
+        "you": "Dafür, dass Sie LightRaw nutzen. Ihr Interesse hält dieses Projekt am Leben.",
         "youLabel": "Ihnen"
       },
       "title": "Besonderer Dank"
@@ -1998,12 +1998,12 @@
       "back": "Zurück",
       "confirmExit": "Beenden",
       "decline": "Ablehnen",
-      "exitMessage": "RapidRAW kann erst nach Annahme der Nutzungsvereinbarung und Datenschutzerklärung genutzt werden.",
-      "exitTitle": "RapidRAW beenden?",
+      "exitMessage": "LightRaw kann erst nach Annahme der Nutzungsvereinbarung und Datenschutzerklärung genutzt werden.",
+      "exitTitle": "LightRaw beenden?",
       "privacyTab": "Datenschutzerklärung",
       "subtitle": "Bitte lies und akzeptiere die Nutzungsvereinbarung und Datenschutzerklärung, um fortzufahren",
       "termsTab": "Nutzungsvereinbarung",
-      "title": "Willkommen bei RapidRAW"
+      "title": "Willkommen bei LightRaw"
     },
     "bottomBar": {
       "imagesSelected": "{{current}} von {{total}} Bildern ausgewählt",

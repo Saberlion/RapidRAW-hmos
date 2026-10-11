@@ -772,7 +772,7 @@
         "importPresetsTitle": "Importuj presety",
         "legacyPreset": "Przestarzały preset",
         "presetFile": "Plik presetu",
-        "rapidRawPreset": "Preset RapidRAW"
+        "rapidRawPreset": "Preset LightRaw"
       },
       "menu": {
         "configurePreset": "Konfiguruj preset",
@@ -1181,7 +1181,7 @@
     },
     "splash": {
       "addFolder": "Dodaj folder",
-      "brand": "RapidRAW",
+      "brand": "LightRaw",
       "continueSession": "Kontynuuj sesję",
       "contribute": "Współtwórz na GitHubie",
       "descriptionAndroid": "Niewiarygodnie szybki, akcelerowany przez GPU edytor obrazów RAW. Otwórz bibliotekę, aby rozpocząć.",
@@ -1597,15 +1597,15 @@
   "settings": {
     "about": {
       "agplNotice": "Ta aplikacja to wolne oprogramowanie na licencji GNU AGPL-3.0. Pełny tekst licencji i kod źródłowy są dostępne pod powyższymi linkami.",
-      "licenseDesc": "RapidRAW jest objęty licencją AGPL-3.0",
+      "licenseDesc": "LightRaw jest objęty licencją AGPL-3.0",
       "openSourceLicense": "Licencja open source",
       "privacyPolicy": "Polityka prywatności",
-      "privacyPolicyDesc": "Jak RapidRAW przetwarza Twoje dane",
+      "privacyPolicyDesc": "Jak LightRaw przetwarza Twoje dane",
       "sourceCode": "Kod źródłowy",
-      "sourceCodeDesc": "RapidRAW jest open source — wkład mile widziany",
-      "title": "O RapidRAW",
+      "sourceCodeDesc": "LightRaw jest open source — wkład mile widziany",
+      "title": "O LightRaw",
       "userAgreement": "Umowa użytkownika",
-      "userAgreementDesc": "Warunki korzystania z RapidRAW",
+      "userAgreementDesc": "Warunki korzystania z LightRaw",
       "view": "Wyświetl"
     },
     "categories": {
@@ -1712,7 +1712,7 @@
       "font": "Czcionka",
       "fontDesc": "Zmień czcionkę aplikacji.",
       "nativeTitlebar": "Natywny pasek tytułu",
-      "nativeTitlebarDesc": "Użyj domyślnego paska tytułu okna twojego systemu zamiast niestandardowego w RapidRAW.",
+      "nativeTitlebarDesc": "Użyj domyślnego paska tytułu okna twojego systemu zamiast niestandardowego w LightRaw.",
       "neutralGreyCanvas": "Neutralne szare płótno",
       "neutralGreyCanvasDesc": "Użyj neutralnego, szarego płótna do dokładniejszej korekcji kolorów i ekspozycji bez zmiany motywu aplikacji.",
       "poppins": "Poppins",
@@ -1833,7 +1833,7 @@
         "connector": {
           "address": "Adres Złącza AI",
           "addressDesc": "Wprowadź adres i port swojej uruchomionej instancji Złącza AI. Wymagane dla funkcji generatywnego AI.",
-          "description": "Dla użytkowników z odpowiednią kartą graficzną, którzy pragną pełnej kontroli: połącz RapidRAW z własnym serwerem Connector. Zapewnia to całkowitą kontrolę nad przepływem pracy.",
+          "description": "Dla użytkowników z odpowiednią kartą graficzną, którzy pragną pełnej kontroli: połącz LightRaw z własnym serwerem Connector. Zapewnia to całkowitą kontrolę nad przepływem pracy.",
           "failed": "Połączenie nie powiodło się.",
           "feature1": "Użyj własnej instancji ComfyUI",
           "feature2": "Darmowe, zaawansowane edycje generatywne",
@@ -1841,16 +1841,16 @@
           "success": "Połączenie powiodło się!",
           "test": "Testuj",
           "testing": "Testowanie...",
-          "title": "Własny serwer (RapidRAW AI Connector)"
+          "title": "Własny serwer (LightRaw AI Connector)"
         },
         "cpu": {
-          "description": "Zintegrowane bezpośrednio z RapidRAW, te funkcje działają całkowicie na Twoim komputerze. Są szybkie, bezpłatne i nie wymagają konfiguracji, stanowiąc idealne usprawnienie dla codziennej pracy.",
+          "description": "Zintegrowane bezpośrednio z LightRaw, te funkcje działają całkowicie na Twoim komputerze. Są szybkie, bezpłatne i nie wymagają konfiguracji, stanowiąc idealne usprawnienie dla codziennej pracy.",
           "feature1": "Maskowanie AI (Temat, Niebo, Pierwszy plan)",
           "feature2": "Automatyczne tagowanie obrazów",
           "feature3": "Proste zastępowanie generatywne oparte na CPU",
           "title": "Wbudowane AI (CPU)"
         },
-        "description": "AI w RapidRAW została zbudowana z myślą o elastyczności. Wybierz swój idealny przepływ pracy, od szybkich lokalnych narzędzi po potężne rozwiązania serwerowe.",
+        "description": "AI w LightRaw została zbudowana z myślą o elastyczności. Wybierz swój idealny przepływ pracy, od szybkich lokalnych narzędzi po potężne rozwiązania serwerowe.",
         "providers": {
           "aiConnector": "Złącze AI",
           "cloud": "Chmura",
@@ -1976,7 +1976,7 @@
       "clearCustomTooltip": "Wyczyść listę tagów AI",
       "clearShortcutsTooltip": "Wyczyść listę skrótów do tagów",
       "customList": "Niestandardowa lista tagów AI",
-      "customListDesc": "Jeżeli ją podasz, sztuczna inteligencja wygeneruje TYLKO tagi obecne na tej liście, omijając domyślną listę RapidRAW. Tagowanie działa jedynie w języku angielskim.",
+      "customListDesc": "Jeżeli ją podasz, sztuczna inteligencja wygeneruje TYLKO tagi obecne na tej liście, omijając domyślną listę LightRaw. Tagowanie działa jedynie w języku angielskim.",
       "maxAiTags": "Maksymalna liczba tagów AI",
       "maxAiTagsDesc": "Maksymalna liczba wygenerowanych tagów na jeden obraz.",
       "noCustomTags": "Brak własnych tagów (używana domyślna lista)",
@@ -1988,20 +1988,20 @@
       "title": "Tagowanie"
     },
     "thanks": {
-      "description": "Ogromne podziękowania dla następujących projektów, które były niezwykle ważne przy tworzeniu RapidRAW:",
+      "description": "Ogromne podziękowania dla następujących projektów, które były niezwykle ważne przy tworzeniu LightRaw:",
       "list": {
         "darktable": "Za kilka referencyjnych implementacji, które posłużyły za wskazówki.",
         "depth": "Za zaawansowany model szacowania głębi, który włącza maskowanie oparte na głębi za pomocą AI.",
         "lama": "Za niesamowity model do inpaintingu obrazu, umożliwiający usuwanie obiektów z uwzględnieniem kontekstu.",
         "lensfun": "Za nieocenioną bibliotekę open-source z bogatą bazą obiektywów do automatycznej korekcji.",
-        "libgphoto2": "Za kompleksową bibliotekę komunikacji z aparatami, napędzającą tethering i zdalne wyzwalanie w RapidRAW.",
+        "libgphoto2": "Za kompleksową bibliotekę komunikacji z aparatami, napędzającą tethering i zdalne wyzwalanie w LightRaw.",
         "negpy": "Za inspirację stojącą za rozwiązaniem do inwersji negatywów.",
-        "nind": "Za dostarczenie modeli AI, które stanowią silnik odszumiający RapidRAW.",
+        "nind": "Za dostarczenie modeli AI, które stanowią silnik odszumiający LightRaw.",
         "rawler": "Za świetną bibliotekę w Rust, dostarczającą fundament dla przetwarzania plików RAW w tym projekcie.",
         "sam2": "Za dostarczenie bazowego modelu do wykrywania i wycinania obiektów za pomocą AI.",
-        "spektrafilm": "Za oparte na danych spektralnych LUT-y emulacji filmu autorstwa Andrei Volpato, napędzające wbudowane emulacje filmowe RapidRAW. Licencja CC BY-SA 4.0.",
+        "spektrafilm": "Za oparte na danych spektralnych LUT-y emulacji filmu autorstwa Andrei Volpato, napędzające wbudowane emulacje filmowe LightRaw. Licencja CC BY-SA 4.0.",
         "u2net": "Za świetną architekturę używaną przez nasze modele wykrywania nieba i pierwszego planu.",
-        "you": "Za to, że używasz i wspierasz RapidRAW. Twoje zainteresowanie sprawia, że ten projekt nadal ewoluuje.",
+        "you": "Za to, że używasz i wspierasz LightRaw. Twoje zainteresowanie sprawia, że ten projekt nadal ewoluuje.",
         "youLabel": "Ty"
       },
       "title": "Szczególne podziękowania"
@@ -2076,12 +2076,12 @@
       "back": "Wstecz",
       "confirmExit": "Wyjdź",
       "decline": "Odrzuć",
-      "exitMessage": "Możesz korzystać z RapidRAW dopiero po zaakceptowaniu Umowy użytkownika i Polityki prywatności.",
-      "exitTitle": "Wyjść z RapidRAW?",
+      "exitMessage": "Możesz korzystać z LightRaw dopiero po zaakceptowaniu Umowy użytkownika i Polityki prywatności.",
+      "exitTitle": "Wyjść z LightRaw?",
       "privacyTab": "Polityka prywatności",
       "subtitle": "Przeczytaj i zaakceptuj Umowę użytkownika oraz Politykę prywatności, aby kontynuować",
       "termsTab": "Umowa użytkownika",
-      "title": "Witamy w RapidRAW"
+      "title": "Witamy w LightRaw"
     },
     "bottomBar": {
       "imagesSelected": "Zaznaczono {{current}} z {{total}} obrazów",

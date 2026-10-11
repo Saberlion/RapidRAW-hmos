@@ -772,7 +772,7 @@
         "importPresetsTitle": "Importovat presety",
         "legacyPreset": "Starší preset",
         "presetFile": "Soubor s presetem",
-        "rapidRawPreset": "Preset RapidRAW"
+        "rapidRawPreset": "Preset LightRaw"
       },
       "menu": {
         "configurePreset": "Nakonfigurovat preset",
@@ -1181,7 +1181,7 @@
     },
     "splash": {
       "addFolder": "Přidat složku",
-      "brand": "RapidRAW",
+      "brand": "LightRaw",
       "continueSession": "Pokračovat v relaci",
       "contribute": "Přispějte na GitHubu",
       "descriptionAndroid": "Ohromně rychlý editor snímků RAW s akcelerací GPU. Otevřete knihovnu a začněte.",
@@ -1597,15 +1597,15 @@
   "settings": {
     "about": {
       "agplNotice": "Tato aplikace je svobodný software licencovaný pod GNU AGPL-3.0. Úplný text licence a zdrojový kód jsou k dispozici přes výše uvedené odkazy.",
-      "licenseDesc": "RapidRAW je licencován pod AGPL-3.0",
+      "licenseDesc": "LightRaw je licencován pod AGPL-3.0",
       "openSourceLicense": "Licence open source",
       "privacyPolicy": "Zásady soukromí",
-      "privacyPolicyDesc": "Jak RapidRAW zpracovává vaše údaje",
+      "privacyPolicyDesc": "Jak LightRaw zpracovává vaše údaje",
       "sourceCode": "Zdrojový kód",
-      "sourceCodeDesc": "RapidRAW je open source — příspěvky jsou vítány",
-      "title": "O aplikaci RapidRAW",
+      "sourceCodeDesc": "LightRaw je open source — příspěvky jsou vítány",
+      "title": "O aplikaci LightRaw",
       "userAgreement": "Uživatelská smlouva",
-      "userAgreementDesc": "Podmínky používání aplikace RapidRAW",
+      "userAgreementDesc": "Podmínky používání aplikace LightRaw",
       "view": "Zobrazit"
     },
     "categories": {
@@ -1712,7 +1712,7 @@
       "font": "Písmo",
       "fontDesc": "Změňte písmo aplikace.",
       "nativeTitlebar": "Nativní záhlaví",
-      "nativeTitlebarDesc": "Použijte výchozí záhlaví okna vašeho systému namísto vlastního okna RapidRAW.",
+      "nativeTitlebarDesc": "Použijte výchozí záhlaví okna vašeho systému namísto vlastního okna LightRaw.",
       "neutralGreyCanvas": "Neutrální šedé plátno",
       "neutralGreyCanvasDesc": "Použít neutrální šedé plátno pro přesnější hodnocení barev a expozice beze změny motivu aplikace.",
       "poppins": "Poppins",
@@ -1833,7 +1833,7 @@
         "connector": {
           "address": "Adresa konektoru AI",
           "addressDesc": "Zadejte adresu a port vaší spuštěné instance AI Connectoru. Vyžadováno pro generativní funkce AI.",
-          "description": "Pro uživatele s výkonným GPU, kteří chtějí maximální kontrolu: připojte RapidRAW k vlastnímu serveru Connector. Získáte plnou kontrolu pro technické pracovní postupy.",
+          "description": "Pro uživatele s výkonným GPU, kteří chtějí maximální kontrolu: připojte LightRaw k vlastnímu serveru Connector. Získáte plnou kontrolu pro technické pracovní postupy.",
           "failed": "Připojení se nezdařilo.",
           "feature1": "Použijte svou vlastní instanci ComfyUI",
           "feature2": "Bezplatné pokročilé generativní úpravy",
@@ -1841,16 +1841,16 @@
           "success": "Připojení úspěšné!",
           "test": "Test",
           "testing": "Testování...",
-          "title": "Vlastní (konektor RapidRAW AI)"
+          "title": "Vlastní (konektor LightRaw AI)"
         },
         "cpu": {
-          "description": "Tyto funkce jsou integrovány přímo do RapidRAW a běží výhradně na vašem počítači. Jsou rychlé, zdarma a nevyžadují žádné nastavení, takže jsou ideální pro každodenní zrychlení práce.",
+          "description": "Tyto funkce jsou integrovány přímo do LightRaw a běží výhradně na vašem počítači. Jsou rychlé, zdarma a nevyžadují žádné nastavení, takže jsou ideální pro každodenní zrychlení práce.",
           "feature1": "Maskování AI (předmět, obloha, popředí)",
           "feature2": "Automatické označování snímků",
           "feature3": "Jednoduchá generativní výměna založená na CPU",
           "title": "Vestavěná AI (CPU)"
         },
-        "description": "AI v RapidRAW je vytvořena pro flexibilitu. Vyberte si ideální pracovní postup, od rychlých místních nástrojů po výkonný vlastní hosting.",
+        "description": "AI v LightRaw je vytvořena pro flexibilitu. Vyberte si ideální pracovní postup, od rychlých místních nástrojů po výkonný vlastní hosting.",
         "providers": {
           "aiConnector": "AI konektor",
           "cloud": "Cloud",
@@ -1976,7 +1976,7 @@
       "clearCustomTooltip": "Vymazat seznam značek AI",
       "clearShortcutsTooltip": "Vymazat seznam značek zkratek",
       "customList": "Vlastní seznam značek AI",
-      "customListDesc": "Pokud je k dispozici, AI použije POUZE značky z tohoto seznamu a přepíše vestavěný seznam RapidRAW. Značkování funguje pouze v angličtině.",
+      "customListDesc": "Pokud je k dispozici, AI použije POUZE značky z tohoto seznamu a přepíše vestavěný seznam LightRaw. Značkování funguje pouze v angličtině.",
       "maxAiTags": "Maximální počet značek AI",
       "maxAiTagsDesc": "Maximální počet značek vygenerovaných na snímek.",
       "noCustomTags": "Žádné vlastní značky AI (pomocí vestavěného seznamu)",
@@ -1988,20 +1988,20 @@
       "title": "Označování"
     },
     "thanks": {
-      "description": "Velké poděkování patří následujícím projektům, které byly velmi důležité při vývoji RapidRAW:",
+      "description": "Velké poděkování patří následujícím projektům, které byly velmi důležité při vývoji LightRaw:",
       "list": {
         "darktable": "Pro některé referenční implementace, které vedly části této práce.",
         "depth": "Pro výkonný monokulární model odhadu hloubky, který umožňuje AI hloubkové maskování.",
         "lama": "Pro výkonný a jednoduchý model malování snímků, který umožňuje výplň a odstraňování objektů s ohledem na obsah.",
         "lensfun": "Pro svou neocenitelnou open-source knihovnu a komplexní databázi pro automatickou korekci objektivů.",
-        "libgphoto2": "Pro komplexní knihovnu pro komunikaci s fotoaparátem, která pohání tethering a vzdálené snímání v RapidRAW.",
+        "libgphoto2": "Pro komplexní knihovnu pro komunikaci s fotoaparátem, která pohání tethering a vzdálené snímání v LightRaw.",
         "negpy": "Pro inspiraci negativní konverzní logiky.",
-        "nind": "Za poskytování modelů AI, které pohánějí funkce redukce šumu AI v RapidRAW.",
+        "nind": "Za poskytování modelů AI, které pohánějí funkce redukce šumu AI v LightRaw.",
         "rawler": "Za vynikající přepravku Rust, která poskytuje základ pro zpracování souborů RAW v tomto projektu.",
         "sam2": "Za poskytnutí základního modelu používaného pro schopnosti detekce předmětů AI.",
-        "spektrafilm": "Pro spektrálně založené filmové emulační LUT od Andrey Volpata, použité pro vestavěné filmové emulace v RapidRAW. Licence CC BY-SA 4.0.",
+        "spektrafilm": "Pro spektrálně založené filmové emulační LUT od Andrey Volpata, použité pro vestavěné filmové emulace v LightRaw. Licence CC BY-SA 4.0.",
         "u2net": "Pro zajištění robustní architektury používané pro schopnosti detekce oblohy a popředí AI.",
-        "you": "Za používání a podporu RapidRAW. Váš zájem udržuje tento projekt živý a rozvíjející se.",
+        "you": "Za používání a podporu LightRaw. Váš zájem udržuje tento projekt živý a rozvíjející se.",
         "youLabel": "Vy"
       },
       "title": "Zvláštní poděkování"
@@ -2076,12 +2076,12 @@
       "back": "Zpět",
       "confirmExit": "Ukončit",
       "decline": "Nesouhlasím",
-      "exitMessage": "Aplikaci RapidRAW můžete používat až po přijetí Uživatelské smlouvy a Zásad soukromí.",
-      "exitTitle": "Ukončit aplikaci RapidRAW?",
+      "exitMessage": "Aplikaci LightRaw můžete používat až po přijetí Uživatelské smlouvy a Zásad soukromí.",
+      "exitTitle": "Ukončit aplikaci LightRaw?",
       "privacyTab": "Zásady soukromí",
       "subtitle": "Chcete-li pokračovat, přečtěte si a přijměte Uživatelskou smlouvu a Zásady soukromí",
       "termsTab": "Uživatelská smlouva",
-      "title": "Vítejte v RapidRAW"
+      "title": "Vítejte v LightRaw"
     },
     "bottomBar": {
       "imagesSelected": "{{current}} z {{total}} vybrané snímky",

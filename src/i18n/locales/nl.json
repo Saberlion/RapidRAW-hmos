@@ -724,7 +724,7 @@
         "importPresetsTitle": "Voorinstellingen importeren",
         "legacyPreset": "Verouderde voorinstelling",
         "presetFile": "Voorinstellingsbestand",
-        "rapidRawPreset": "RapidRAW-voorinstelling"
+        "rapidRawPreset": "LightRaw-voorinstelling"
       },
       "menu": {
         "configurePreset": "Voorinstelling configureren",
@@ -1123,7 +1123,7 @@
     },
     "splash": {
       "addFolder": "Map toevoegen",
-      "brand": "RapidRAW",
+      "brand": "LightRaw",
       "continueSession": "Sessie voortzetten",
       "contribute": "Bijdragen op GitHub",
       "descriptionAndroid": "Een razendsnelle, GPU-versnelde RAW-beeldeditor. Open de bibliotheek om te beginnen.",
@@ -1525,15 +1525,15 @@
   "settings": {
     "about": {
       "agplNotice": "Deze applicatie is vrije software onder de GNU AGPL-3.0. De volledige licentietekst en broncode zijn beschikbaar via de bovenstaande links.",
-      "licenseDesc": "RapidRAW valt onder de AGPL-3.0-licentie",
+      "licenseDesc": "LightRaw valt onder de AGPL-3.0-licentie",
       "openSourceLicense": "Openbronlicentie",
       "privacyPolicy": "Privacybeleid",
-      "privacyPolicyDesc": "Hoe RapidRAW met je gegevens omgaat",
+      "privacyPolicyDesc": "Hoe LightRaw met je gegevens omgaat",
       "sourceCode": "Broncode",
-      "sourceCodeDesc": "RapidRAW is open source — bijdragen welkom",
-      "title": "Over RapidRAW",
+      "sourceCodeDesc": "LightRaw is open source — bijdragen welkom",
+      "title": "Over LightRaw",
       "userAgreement": "Gebruikersovereenkomst",
-      "userAgreementDesc": "Gebruiksvoorwaarden van RapidRAW",
+      "userAgreementDesc": "Gebruiksvoorwaarden van LightRaw",
       "view": "Bekijken"
     },
     "categories": {
@@ -1634,7 +1634,7 @@
       "font": "Lettertype",
       "fontDesc": "Het toepassingslettertype wijzigen.",
       "nativeTitlebar": "Systeemeigen titelbalk",
-      "nativeTitlebarDesc": "Gebruik de standaard venstertitelbalk van uw systeem in plaats van de aangepaste titelbalk van RapidRAW.",
+      "nativeTitlebarDesc": "Gebruik de standaard venstertitelbalk van uw systeem in plaats van de aangepaste titelbalk van LightRaw.",
       "neutralGreyCanvas": "Neutraal grijs canvas",
       "neutralGreyCanvasDesc": "Gebruik een neutraal grijs canvas voor nauwkeurigere kleur- en belichtingsgradering zonder het thema van de app te wijzigen.",
       "poppins": "Poppins",
@@ -1751,7 +1751,7 @@
         "connector": {
           "address": "AI-verbindingsadres",
           "addressDesc": "Voer het adres en poort in van uw actieve AI-verbindingsinstantie. Vereist voor generatieve AI-functies.",
-          "description": "Voor gebruikers met een krachtige GPU die maximale controle willen, verbindt u RapidRAW met uw eigen Connector-server. Dit geeft u volledige controle voor technische workflows.",
+          "description": "Voor gebruikers met een krachtige GPU die maximale controle willen, verbindt u LightRaw met uw eigen Connector-server. Dit geeft u volledige controle voor technische workflows.",
           "failed": "Verbinding mislukt.",
           "feature1": "Gebruik uw eigen ComfyUI-instantie",
           "feature2": "Kostenloze geavanceerde generatieve bewerkingen",
@@ -1759,16 +1759,16 @@
           "success": "Verbinding geslaagd!",
           "test": "Testen",
           "testing": "Testen...",
-          "title": "Zelfgehost (RapidRAW AI Connector)"
+          "title": "Zelfgehost (LightRaw AI Connector)"
         },
         "cpu": {
-          "description": "Rechtstreeks geïntegreerd in RapidRAW, draaien deze functies volledig op uw computer. Ze zijn snel, gratis en vereisen geen installatie, waardoor ze ideaal zijn voor dagelijkse workflowversnelling.",
+          "description": "Rechtstreeks geïntegreerd in LightRaw, draaien deze functies volledig op uw computer. Ze zijn snel, gratis en vereisen geen installatie, waardoor ze ideaal zijn voor dagelijkse workflowversnelling.",
           "feature1": "AI-maskering (onderwerp, lucht, voorgrond)",
           "feature2": "Automatische afbeeldingstagging",
           "feature3": "Eenvoudige CPU-gebaseerde generatieve vervanging",
           "title": "Ingebouwde AI (CPU)"
         },
-        "description": "De AI van RapidRAW is gebouwd voor flexibiliteit. Kies uw ideale workflow, van snelle lokale tools tot krachtige zelfhosting.",
+        "description": "De AI van LightRaw is gebouwd voor flexibiliteit. Kies uw ideale workflow, van snelle lokale tools tot krachtige zelfhosting.",
         "providers": {
           "aiConnector": "AI-verbinding",
           "cloud": "Cloud",
@@ -1894,7 +1894,7 @@
       "clearCustomTooltip": "Aangepaste AI-taglijst wissen",
       "clearShortcutsTooltip": "Snelkoppelingstaglijst wissen",
       "customList": "Aangepaste AI-taglijst",
-      "customListDesc": "Als opgegeven, gebruikt de AI ALLEEN tags uit deze lijst, waardoor de ingebouwde lijst van RapidRAW wordt overschreven. Tagging werkt alleen in het Engels.",
+      "customListDesc": "Als opgegeven, gebruikt de AI ALLEEN tags uit deze lijst, waardoor de ingebouwde lijst van LightRaw wordt overschreven. Tagging werkt alleen in het Engels.",
       "maxAiTags": "Maximum AI-tags",
       "maxAiTagsDesc": "Het maximale aantal tags dat per afbeelding wordt gegenereerd.",
       "noCustomTags": "Geen aangepaste AI-tags (ingebouwde lijst gebruiken)",
@@ -1906,20 +1906,20 @@
       "title": "Tagging"
     },
     "thanks": {
-      "description": "Veel dank aan de volgende projecten die zeer belangrijk waren bij de ontwikkeling van RapidRAW:",
+      "description": "Veel dank aan de volgende projecten die zeer belangrijk waren bij de ontwikkeling van LightRaw:",
       "list": {
         "darktable": "Voor enkele referentie-implementaties die delen van dit werk hebben geleid.",
         "depth": "Voor het krachtige monoculaire diepteschattingsmodel dat de AI-dieptemaskering mogelijk maakt.",
         "lama": "Voor het krachtige en eenvoudige afbeeldingsinpainting-model dat inhoudsgebaseerde opvulling en objectverwijdering mogelijk maakt.",
         "lensfun": "Voor de onschatbare open-source bibliotheek en uitgebreide database voor automatische lenscorrectie.",
-        "libgphoto2": "Voor de uitgebreide cameracommuicatiebibliotheek die het tethering- en afstandsbedieningssysteem van RapidRAW aandrijft.",
+        "libgphoto2": "Voor de uitgebreide cameracommuicatiebibliotheek die het tethering- en afstandsbedieningssysteem van LightRaw aandrijft.",
         "negpy": "Voor de inspiratie achter de negatief-omzetlogica.",
-        "nind": "Voor het leveren van AI-modellen die de AI-ruisonderdrukkingmogelijkheden in RapidRAW aandrijven.",
+        "nind": "Voor het leveren van AI-modellen die de AI-ruisonderdrukkingmogelijkheden in LightRaw aandrijven.",
         "rawler": "Voor de uitstekende Rust-crate die de basis vormt voor RAW-bestandsverwerking in dit project.",
         "sam2": "Voor het leveren van het basismodel dat wordt gebruikt voor de AI-onderwerpdetectiemogelijkheden.",
-        "spektrafilm": "Voor de spectraalgebaseerde filmemulatie-LUT's door Andrea Volpato, gebruikt voor de ingebouwde filmemulaties van RapidRAW. Gelicenseerd onder CC BY-SA 4.0.",
+        "spektrafilm": "Voor de spectraalgebaseerde filmemulatie-LUT's door Andrea Volpato, gebruikt voor de ingebouwde filmemulaties van LightRaw. Gelicenseerd onder CC BY-SA 4.0.",
         "u2net": "Voor het leveren van de robuuste architectuur die wordt gebruikt voor de AI-lucht- en voorgronddetectiemogelijkheden.",
-        "you": "Voor het gebruiken en ondersteunen van RapidRAW. Uw interesse houdt dit project levend en evoluerend.",
+        "you": "Voor het gebruiken en ondersteunen van LightRaw. Uw interesse houdt dit project levend en evoluerend.",
         "youLabel": "U"
       },
       "title": "Speciale dank"
@@ -1994,12 +1994,12 @@
       "back": "Terug",
       "confirmExit": "Afsluiten",
       "decline": "Weigeren",
-      "exitMessage": "Je kunt RapidRAW pas gebruiken na het accepteren van de Gebruikersovereenkomst en het Privacybeleid.",
-      "exitTitle": "RapidRAW afsluiten?",
+      "exitMessage": "Je kunt LightRaw pas gebruiken na het accepteren van de Gebruikersovereenkomst en het Privacybeleid.",
+      "exitTitle": "LightRaw afsluiten?",
       "privacyTab": "Privacybeleid",
       "subtitle": "Lees en accepteer de Gebruikersovereenkomst en het Privacybeleid om door te gaan",
       "termsTab": "Gebruikersovereenkomst",
-      "title": "Welkom bij RapidRAW"
+      "title": "Welkom bij LightRaw"
     },
     "bottomBar": {
       "imagesSelected": "{{current}} van {{total}} afbeeldingen geselecteerd",

@@ -748,7 +748,7 @@
         "importPresetsTitle": "Importa Predefiniti",
         "legacyPreset": "Predefinito Obsoleto",
         "presetFile": "File Predefinito",
-        "rapidRawPreset": "Predefinito RapidRAW"
+        "rapidRawPreset": "Predefinito LightRaw"
       },
       "menu": {
         "configurePreset": "Configura Predefinito",
@@ -1152,7 +1152,7 @@
     },
     "splash": {
       "addFolder": "Aggiungi Cartella",
-      "brand": "RapidRAW",
+      "brand": "LightRaw",
       "continueSession": "Continua Sessione",
       "contribute": "Contribuisci su GitHub",
       "descriptionAndroid": "Un editor di immagini RAW velocissimo e con accelerazione GPU. Apri la libreria per iniziare.",
@@ -1561,15 +1561,15 @@
   "settings": {
     "about": {
       "agplNotice": "Questa applicazione è software libero sotto GNU AGPL-3.0. Il testo completo della licenza e il codice sorgente sono disponibili tramite i link sopra.",
-      "licenseDesc": "RapidRAW è concesso in licenza AGPL-3.0",
+      "licenseDesc": "LightRaw è concesso in licenza AGPL-3.0",
       "openSourceLicense": "Licenza Open Source",
       "privacyPolicy": "Informativa sulla Privacy",
-      "privacyPolicyDesc": "Come RapidRAW tratta i tuoi dati",
+      "privacyPolicyDesc": "Come LightRaw tratta i tuoi dati",
       "sourceCode": "Codice Sorgente",
-      "sourceCodeDesc": "RapidRAW è open source — contributi benvenuti",
-      "title": "Informazioni su RapidRAW",
+      "sourceCodeDesc": "LightRaw è open source — contributi benvenuti",
+      "title": "Informazioni su LightRaw",
       "userAgreement": "Contratto d'Uso",
-      "userAgreementDesc": "Termini d'uso di RapidRAW",
+      "userAgreementDesc": "Termini d'uso di LightRaw",
       "view": "Visualizza"
     },
     "categories": {
@@ -1673,7 +1673,7 @@
       "font": "Carattere",
       "fontDesc": "Cambia il tipo di carattere dell'applicazione.",
       "nativeTitlebar": "Barra del Titolo Nativa",
-      "nativeTitlebarDesc": "Usa la barra del titolo della finestra predefinita del tuo sistema invece di quella personalizzata di RapidRAW.",
+      "nativeTitlebarDesc": "Usa la barra del titolo della finestra predefinita del tuo sistema invece di quella personalizzata di LightRaw.",
       "neutralGreyCanvas": "Tela grigio neutro",
       "neutralGreyCanvasDesc": "Usa una tela grigio neutro per una correzione del colore e dell'esposizione più precisa senza cambiare il tema dell'app.",
       "poppins": "Poppins",
@@ -1794,7 +1794,7 @@
         "connector": {
           "address": "Indirizzo Connettore AI",
           "addressDesc": "Inserisci l'indirizzo e la porta della tua istanza del Connettore AI in esecuzione. Richiesto per le funzionalità di AI generativa.",
-          "description": "Per gli utenti con una GPU in grado di offrire il massimo controllo, collega RapidRAW al tuo server Connettore personale. Questo ti offre il controllo completo per i flussi di lavoro tecnici.",
+          "description": "Per gli utenti con una GPU in grado di offrire il massimo controllo, collega LightRaw al tuo server Connettore personale. Questo ti offre il controllo completo per i flussi di lavoro tecnici.",
           "failed": "Connessione fallita.",
           "feature1": "Usa la tua istanza ComfyUI",
           "feature2": "Modifiche generative avanzate gratuite",
@@ -1802,16 +1802,16 @@
           "success": "Connessione riuscita!",
           "test": "Testa",
           "testing": "Test in corso...",
-          "title": "Self-Hosted (Connettore AI RapidRAW)"
+          "title": "Self-Hosted (Connettore AI LightRaw)"
         },
         "cpu": {
-          "description": "Integrate direttamente in RapidRAW, queste funzionalità funzionano interamente sul tuo computer. Sono veloci, gratuite e non richiedono alcuna configurazione, rendendole ideali per accelerare il flusso di lavoro quotidiano.",
+          "description": "Integrate direttamente in LightRaw, queste funzionalità funzionano interamente sul tuo computer. Sono veloci, gratuite e non richiedono alcuna configurazione, rendendole ideali per accelerare il flusso di lavoro quotidiano.",
           "feature1": "Mascheratura AI (Soggetto, Cielo, Primo Piano)",
           "feature2": "Tagging Automatico Immagini",
           "feature3": "Sostituzione Generativa semplice basata su CPU",
           "title": "AI Integrata (CPU)"
         },
-        "description": "L'AI di RapidRAW è concepita per essere flessibile. Scegli il tuo flusso di lavoro ideale, da strumenti locali veloci a un potente self-hosting.",
+        "description": "L'AI di LightRaw è concepita per essere flessibile. Scegli il tuo flusso di lavoro ideale, da strumenti locali veloci a un potente self-hosting.",
         "providers": {
           "aiConnector": "Connettore AI",
           "cloud": "Cloud",
@@ -1937,7 +1937,7 @@
       "clearCustomTooltip": "Cancella Lista Tag AI",
       "clearShortcutsTooltip": "Cancella Lista Tag Scorciatoie",
       "customList": "Lista Tag AI Personalizzata",
-      "customListDesc": "Se fornito, l'AI utilizzerà SOLO i tag da questa lista, ignorando la lista predefinita di RapidRAW. Il tagging funziona solo in inglese.",
+      "customListDesc": "Se fornito, l'AI utilizzerà SOLO i tag da questa lista, ignorando la lista predefinita di LightRaw. Il tagging funziona solo in inglese.",
       "maxAiTags": "Tag AI Massimi",
       "maxAiTagsDesc": "Il numero massimo di tag da generare per immagine.",
       "noCustomTags": "Nessun tag AI personalizzato (Usando la lista integrata)",
@@ -1949,20 +1949,20 @@
       "title": "Tagging"
     },
     "thanks": {
-      "description": "Un enorme grazie ai seguenti progetti che sono stati molto importanti nello sviluppo di RapidRAW:",
+      "description": "Un enorme grazie ai seguenti progetti che sono stati molto importanti nello sviluppo di LightRaw:",
       "list": {
         "darktable": "Per alcune implementazioni di riferimento che hanno guidato parti di questo lavoro.",
         "depth": "Per il potente modello di stima della profondità monoculare che abilita le funzionalità di mascheratura di profondità AI.",
         "lama": "Per il potente e semplice modello di inpainting delle immagini, che permette il riempimento in base al contenuto e la rimozione di oggetti.",
         "lensfun": "Per la sua inestimabile libreria open source e il database completo per la correzione automatica dell'obiettivo.",
-        "libgphoto2": "Per la completa libreria di comunicazione con le fotocamere che alimenta il tethering e lo scatto remoto di RapidRAW.",
+        "libgphoto2": "Per la completa libreria di comunicazione con le fotocamere che alimenta il tethering e lo scatto remoto di LightRaw.",
         "negpy": "Per l'ispirazione dietro alla logica di conversione dei negativi.",
-        "nind": "Per aver fornito i modelli AI che alimentano le capacità di riduzione del rumore AI in RapidRAW.",
+        "nind": "Per aver fornito i modelli AI che alimentano le capacità di riduzione del rumore AI in LightRaw.",
         "rawler": "Per l'eccellente crate Rust che fornisce le basi per l'elaborazione dei file RAW in questo progetto.",
         "sam2": "Per aver fornito il modello fondamentale usato per le funzionalità di rilevamento del soggetto tramite AI.",
-        "spektrafilm": "Per le LUT di emulazione pellicola su base spettrale di Andrea Volpato, che alimentano le emulazioni integrate di RapidRAW. Concesse in licenza CC BY-SA 4.0.",
+        "spektrafilm": "Per le LUT di emulazione pellicola su base spettrale di Andrea Volpato, che alimentano le emulazioni integrate di LightRaw. Concesse in licenza CC BY-SA 4.0.",
         "u2net": "Per aver fornito la robusta architettura usata per le funzionalità di rilevamento AI del cielo e del primo piano.",
-        "you": "Per utilizzare e supportare RapidRAW. Il tuo interesse mantiene questo progetto vivo e in evoluzione.",
+        "you": "Per utilizzare e supportare LightRaw. Il tuo interesse mantiene questo progetto vivo e in evoluzione.",
         "youLabel": "Te"
       },
       "title": "Ringraziamenti Speciali"
@@ -2037,12 +2037,12 @@
       "back": "Indietro",
       "confirmExit": "Esci",
       "decline": "Rifiuta",
-      "exitMessage": "Puoi usare RapidRAW solo dopo aver accettato il Contratto d'Uso e l'Informativa sulla Privacy.",
-      "exitTitle": "Uscire da RapidRAW?",
+      "exitMessage": "Puoi usare LightRaw solo dopo aver accettato il Contratto d'Uso e l'Informativa sulla Privacy.",
+      "exitTitle": "Uscire da LightRaw?",
       "privacyTab": "Informativa sulla Privacy",
       "subtitle": "Per continuare, leggi e accetta il Contratto d'Uso e l'Informativa sulla Privacy",
       "termsTab": "Contratto d'Uso",
-      "title": "Benvenuto in RapidRAW"
+      "title": "Benvenuto in LightRaw"
     },
     "bottomBar": {
       "imagesSelected": "{{current}} di {{total}} immagini selezionate",
