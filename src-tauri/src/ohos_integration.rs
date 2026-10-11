@@ -562,3 +562,868 @@ pub fn ohos_window_control(operation: String) -> Result<(), String> {
         ))
     }
 }
+
+// ---------------------------------------------------------------------------
+// MindSpore Lite NNRT (NPU) backend for AI denoise (Phase 4)
+// ---------------------------------------------------------------------------
+//
+// Ports the device-proven FFI + tile loop from the nindfull POC
+// (`mslite-poc/nindfull/src/main.rs` ohos_backend mod). The safe wrapper
+// `MsModel` holds the raw model/context pointers and the cached input/output
+// tensor-handle arrays; `DenoiseSession::Nnrt(Mutex<MsModel>)` in
+// ai_processing.rs enforces sequential predict calls.
+//
+// Device-proven MS Lite rules: ModelPredict inputs BY VALUE (the
+// TensorHandleArray struct is passed by value); output tensor handles are
+// reused across Predict calls and NEVER destroyed (destroying them
+// segfaults); teardown = ModelDestroy + ContextDestroy only — and we omit
+// even that (leak-until-exit; process exit reclaims). See POC comments and
+// `docs/HARMONYOS_PORTING.md`.
+
+#[cfg(target_env = "ohos")]
+pub mod ms_lite {
+    use std::cell::UnsafeCell;
+    use std::ffi::{CString, c_char, c_void};
+    use std::path::Path;
+
+    use anyhow::Result;
+
+    const OH_AI_MODELTYPE_MINDIR: i32 = 0;
+    const OH_AI_DEVICETYPE_CPU: i32 = 0;
+    const OH_AI_NNRTDEVICE_ACCELERATOR: i32 = 3;
+    const OH_AI_PERFORMANCE_HIGH: i32 = 3;
+    const OH_AI_PRIORITY_HIGH: i32 = 3;
+    const OH_AI_STATUS_SUCCESS: i32 = 0;
+
+    /// C-ABI tensor handle array — passed BY VALUE to `OH_AI_ModelPredict`
+    /// (passing a pointer empirically segfaults; the Kit copies the struct).
+    #[repr(C)]
+    #[derive(Clone, Copy)]
+    pub struct TensorHandleArray {
+        pub handle_num: usize,
+        pub handle_list: *mut *mut c_void,
+    }
+
+    #[link(name = "mindspore_lite_ndk")]
+    unsafe extern "C" {
+        fn OH_AI_ContextCreate() -> *mut c_void;
+        fn OH_AI_ContextSetThreadNum(context: *mut c_void, thread_num: i32);
+        fn OH_AI_ContextAddDeviceInfo(context: *mut c_void, device_info: *mut c_void);
+        fn OH_AI_DeviceInfoCreate(device_type: i32) -> *mut c_void;
+        fn OH_AI_DeviceInfoSetPerformanceMode(device_info: *mut c_void, mode: i32);
+        fn OH_AI_DeviceInfoSetPriority(device_info: *mut c_void, priority: i32);
+        fn OH_AI_CreateNNRTDeviceInfoByType(device_type: i32) -> *mut c_void;
+        fn OH_AI_ModelCreate() -> *mut c_void;
+        fn OH_AI_ModelBuildFromFile(
+            model: *mut c_void,
+            model_path: *const c_char,
+            model_type: i32,
+            model_context: *mut c_void,
+        ) -> i32;
+        fn OH_AI_ModelPredict(
+            model: *mut c_void,
+            inputs: TensorHandleArray,
+            outputs: *mut TensorHandleArray,
+            before: *const c_void,
+            after: *const c_void,
+        ) -> i32;
+        fn OH_AI_ModelGetInputs(model: *const c_void) -> TensorHandleArray;
+        fn OH_AI_TensorGetShape(tensor: *const c_void, shape_num: *mut usize) -> *const i64;
+        fn OH_AI_TensorGetData(tensor: *const c_void) -> *const c_void;
+        fn OH_AI_TensorGetMutableData(tensor: *mut c_void) -> *mut c_void;
+    }
+
+    /// Safe wrapper around a built MindSpore Lite model. Holds the raw model
+    /// pointer, the cached input tensor-handle array (reused across Predict),
+    /// and the output tensor-handle array (reused across Predict, never
+    /// destroyed).
+    ///
+    /// The context pointer is intentionally NOT stored: after
+    /// `ModelBuildFromFile` the model holds an internal reference to it, and
+    /// the leak-until-exit design (no Drop) means the context allocation
+    /// persists for the process lifetime regardless. Storing it would only be
+    /// needed for a future safe Drop (ModelDestroy + ContextDestroy).
+    pub struct MsModel {
+        model: *mut c_void,
+        inputs: TensorHandleArray,
+        // Reused across Predict calls — the Kit fills this in and reuses the
+        // handles. Accessed via UnsafeCell because predict takes &self (the
+        // struct lives behind a Mutex; only one predict runs at a time).
+        outputs: UnsafeCell<TensorHandleArray>,
+        cs: usize,
+    }
+
+    // SAFETY: MsModel is always accessed behind `Mutex<MsModel>` (via
+    // `DenoiseSession::Nnrt`). Predict calls are strictly sequential — the
+    // app serializes denoise jobs. The MindSpore Lite C API is not
+    // thread-safe; the Mutex enforces mutual exclusion. The UnsafeCell
+    // <outputs> is only mutated inside `predict`, which requires holding the
+    // Mutex guard, so there is no concurrent &mut access.
+    unsafe impl Send for MsModel {}
+    unsafe impl Sync for MsModel {}
+
+    impl MsModel {
+        /// Build a model from a `.ms` file with NNRT (NPU accelerator, HIGH
+        /// perf/priority) + CPU fallback. Validates the input shape is
+        /// `[1, 504, 504, 3]` (NHWC).
+        pub fn new(model_path: &Path) -> Result<Self> {
+            let context = unsafe { OH_AI_ContextCreate() };
+            if context.is_null() {
+                anyhow::bail!("OH_AI_ContextCreate returned null");
+            }
+            unsafe { OH_AI_ContextSetThreadNum(context, 4) };
+
+            // NNRT (NPU accelerator) device + CPU device as fallback.
+            unsafe {
+                let nnrt_dev = OH_AI_CreateNNRTDeviceInfoByType(OH_AI_NNRTDEVICE_ACCELERATOR);
+                if nnrt_dev.is_null() {
+                    anyhow::bail!("OH_AI_CreateNNRTDeviceInfoByType returned null");
+                }
+                OH_AI_DeviceInfoSetPerformanceMode(nnrt_dev, OH_AI_PERFORMANCE_HIGH);
+                OH_AI_DeviceInfoSetPriority(nnrt_dev, OH_AI_PRIORITY_HIGH);
+                OH_AI_ContextAddDeviceInfo(context, nnrt_dev);
+                let cpu_dev = OH_AI_DeviceInfoCreate(OH_AI_DEVICETYPE_CPU);
+                if !cpu_dev.is_null() {
+                    OH_AI_ContextAddDeviceInfo(context, cpu_dev);
+                }
+            }
+
+            let model = unsafe { OH_AI_ModelCreate() };
+            if model.is_null() {
+                anyhow::bail!("OH_AI_ModelCreate returned null");
+            }
+
+            let c_path = CString::new(model_path.to_string_lossy().into_owned())
+                .map_err(|e| anyhow::anyhow!("CString conversion failed: {e}"))?;
+
+            // SAFETY: c_path is a valid null-terminated C string; context was
+            // created above and is consumed by the model build.
+            let status = unsafe {
+                OH_AI_ModelBuildFromFile(model, c_path.as_ptr(), OH_AI_MODELTYPE_MINDIR, context)
+            };
+            if status != OH_AI_STATUS_SUCCESS {
+                anyhow::bail!("ModelBuildFromFile status={status}");
+            }
+
+            let inputs = unsafe { OH_AI_ModelGetInputs(model) };
+            if inputs.handle_num == 0 || inputs.handle_list.is_null() {
+                anyhow::bail!("ModelGetInputs returned no input tensors");
+            }
+
+            // Validate input shape == [1, 504, 504, 3] (NHWC).
+            let cs = 504usize;
+            // SAFETY: in_tensor is the first handle from ModelGetInputs; the
+            // model owns the tensor memory for its lifetime.
+            unsafe {
+                let in_tensor = *inputs.handle_list;
+                let mut sn: usize = 0;
+                let shape = OH_AI_TensorGetShape(in_tensor, &mut sn);
+                let dims: Vec<i64> = if shape.is_null() || sn == 0 {
+                    Vec::new()
+                } else {
+                    std::slice::from_raw_parts(shape, sn).to_vec()
+                };
+                if dims != [1i64, 504, 504, 3] {
+                    anyhow::bail!("unexpected input shape {dims:?} (want NHWC [1,504,504,3])");
+                }
+            }
+
+            log::info!("MindSpore Lite model loaded (NNRT + CPU fallback, cs={cs})");
+
+            Ok(Self {
+                model,
+                inputs,
+                outputs: UnsafeCell::new(TensorHandleArray {
+                    handle_num: 0,
+                    handle_list: std::ptr::null_mut(),
+                }),
+                cs,
+            })
+        }
+
+        /// Run a single tile prediction. `input_nhwc` is flat NHWC
+        /// `[cs*cs*3]`; returns flat NCHW `[3*cs*cs]`.
+        ///
+        /// The output `TensorHandleArray` is reused across calls (never
+        /// destroyed — POC-proven that destroying Predict outputs segfaults).
+        pub fn predict(&self, input_nhwc: &[f32]) -> Result<Vec<f32>> {
+            let expected_len = 3 * self.cs * self.cs;
+            if input_nhwc.len() != expected_len {
+                anyhow::bail!(
+                    "input length {} != expected {}",
+                    input_nhwc.len(),
+                    expected_len
+                );
+            }
+
+            // SAFETY: outputs is only accessed here, behind the Mutex.
+            let outputs = unsafe { &mut *self.outputs.get() };
+
+            // Fill input tensor data.
+            // SAFETY: in_tensor was validated in new(); GetMutableData returns
+            // a mutable pointer to the tensor's data buffer (expected_len f32).
+            let data_ptr = unsafe {
+                let in_tensor = *self.inputs.handle_list;
+                OH_AI_TensorGetMutableData(in_tensor)
+            } as *mut f32;
+            if data_ptr.is_null() {
+                anyhow::bail!("GetMutableData returned null");
+            }
+            unsafe {
+                std::ptr::copy_nonoverlapping(input_nhwc.as_ptr(), data_ptr, expected_len);
+            }
+
+            // SAFETY: model was built in new(); inputs passed BY VALUE (the
+            // Kit copies the TensorHandleArray struct — passing a pointer
+            // segfaults, POC-proven); outputs reused across calls.
+            let status = unsafe {
+                OH_AI_ModelPredict(
+                    self.model,
+                    self.inputs,
+                    outputs,
+                    std::ptr::null(),
+                    std::ptr::null(),
+                )
+            };
+            if status != OH_AI_STATUS_SUCCESS {
+                anyhow::bail!("ModelPredict status={status}");
+            }
+
+            if outputs.handle_num == 0 || outputs.handle_list.is_null() {
+                anyhow::bail!("no output tensors after Predict");
+            }
+
+            // Read NCHW output. NEVER destroy the output handle.
+            // SAFETY: outputs was filled by Predict; handle_list[0] is the
+            // output tensor. GetData returns a const pointer to output data.
+            let out_data = unsafe {
+                let out_tensor = *outputs.handle_list;
+                OH_AI_TensorGetData(out_tensor)
+            } as *const f32;
+            if out_data.is_null() {
+                anyhow::bail!("output data null");
+            }
+
+            let mut result = vec![0f32; expected_len];
+            unsafe {
+                std::ptr::copy_nonoverlapping(out_data, result.as_mut_ptr(), expected_len);
+            }
+            Ok(result)
+        }
+
+        pub fn cs(&self) -> usize {
+            self.cs
+        }
+    }
+
+    // No Drop impl — leak-until-exit design. The POC proved that destroying
+    // Predict outputs segfaults; safe teardown would be ModelDestroy +
+    // ContextDestroy only (a future TODO if per-toggle leaks become
+    // problematic). Process exit reclaims all allocations.
+}
+
+// ---------------------------------------------------------------------------
+// CANN (.om / HIAI_MR) NPU backend for u2net-family masks + AI denoise
+// ---------------------------------------------------------------------------
+//
+// Runs omg-built `.om` models through the HiAI Foundation Model Runtime
+// (HIAI_MR_*) C API. Unlike ms_lite (an NDK library linked at build time),
+// this runtime lives in on-device vendor libraries that are not part of the
+// NDK, so the three facades are dlopen'd lazily at runtime, in dependency
+// order so each lib's DT_NEEDED sons resolve against the already-loaded
+// handles:
+//   /vendor/lib64/passthrough/indirect/libai_fmk_tensor.so
+//   /vendor/lib64/passthrough/indirect/libai_fmk_model_runtime_core.so
+//   /vendor/lib64/passthrough/indirect/libai_fmk_hcl_model_runtime.so
+// (each is also tried by bare soname in case the app's linker namespace
+// already resolves it). Any load failure degrades to the caller's ORT
+// fallback — dlopen is only attempted when a sideloaded `.om` exists.
+//
+// The full lifecycle is device-proven by the campaign harness (reference C
+// implementation: hiai_mr_test7.c; recipes and measurements:
+// docs/MINDSPORE_LITE_NPU_EVAL.md §8.4). Device-proven rules baked in:
+// - Buffers MUST be created through the HCL facade's
+//   `HIAI_MR_NDTensorBuffer_CreateFromNDTensorDesc` — ION/DMA-backed, with
+//   every buffer's fd validated >= 0. Plain tensor.so host-memory buffers
+//   SIGSEGV inside Run (RunV3 requires ION backing).
+// - `HIAI_HCL_ModelInitOptions_SetPerfMode`'s return value is garbage —
+//   the applied mode is verified through the Get accessor instead. Mode 4
+//   is the measured optimum for small-op-dense CNN graphs (u2net 1.9×,
+//   nind 1.8× vs default; transformers/FFC graphs keep the default 2).
+// - Destroy entry points take the ADDRESS of the handle pointer.
+// - Teardown order: buffers → ModelManager_Deinit → ModelManager_Destroy
+//   → ModelInitOptions_Destroy → BuiltModel_Destroy.
+// - omg input order = topological first-use order; callers validate
+//   dims/byte sizes instead of trusting tensor names.
+#[cfg(target_env = "ohos")]
+pub mod om {
+    use std::ffi::{CStr, CString, c_char, c_int, c_void};
+    use std::path::Path;
+    use std::sync::OnceLock;
+
+    use anyhow::Result;
+
+    const VENDOR_LIB_DIR: &str = "/vendor/lib64/passthrough/indirect";
+    const RTLD_NOW: c_int = 0x2;
+    const RTLD_LOCAL: c_int = 0x0;
+    /// Harness parity: refuse absurd tensor counts.
+    const MAX_TENSORS: usize = 16;
+
+    // OHOS libc (musl-based, like bionic: dlopen/dlsym live in libc itself).
+    unsafe extern "C" {
+        fn dlopen(filename: *const c_char, flag: c_int) -> *mut c_void;
+        fn dlsym(handle: *mut c_void, symbol: *const c_char) -> *mut c_void;
+        fn dlerror() -> *const c_char;
+    }
+
+    /// Function-pointer table for the three vendor facades. Signatures were
+    /// decoded during the campaign (see module docs); `*mut c_void` stands
+    /// for the corresponding opaque HIAI handle.
+    struct OmApi {
+        // libai_fmk_model_runtime_core.so
+        restore_from_file: unsafe extern "C" fn(*const c_char) -> *mut c_void,
+        built_model_destroy: unsafe extern "C" fn(*mut c_void),
+        get_input_tensor_num: unsafe extern "C" fn(*mut c_void) -> c_int,
+        get_input_tensor_desc: unsafe extern "C" fn(*mut c_void, usize) -> *mut c_void,
+        get_input_tensor_name:
+            unsafe extern "C" fn(*mut c_void, usize, *mut c_char, usize) -> c_int,
+        get_output_tensor_num: unsafe extern "C" fn(*mut c_void) -> c_int,
+        get_output_tensor_desc: unsafe extern "C" fn(*mut c_void, usize) -> *mut c_void,
+        get_output_tensor_name:
+            unsafe extern "C" fn(*mut c_void, usize, *mut c_char, usize) -> c_int,
+        options_create: unsafe extern "C" fn() -> *mut c_void,
+        options_destroy: unsafe extern "C" fn(*mut *mut c_void),
+        manager_create: unsafe extern "C" fn() -> *mut c_void,
+        manager_destroy: unsafe extern "C" fn(*mut c_void),
+        manager_init:
+            unsafe extern "C" fn(*mut c_void, *mut c_void, *mut c_void, *const c_void) -> c_int,
+        manager_run: unsafe extern "C" fn(
+            *mut c_void,
+            *mut *mut c_void,
+            usize,
+            *mut *mut c_void,
+            usize,
+        ) -> c_int,
+        manager_deinit: unsafe extern "C" fn(*mut c_void) -> c_int,
+        // libai_fmk_tensor.so
+        desc_get_dim: unsafe extern "C" fn(*mut c_void, usize) -> i32,
+        desc_get_byte_size: unsafe extern "C" fn(*mut c_void) -> u64,
+        // libai_fmk_hcl_model_runtime.so (facade)
+        mr_buffer_create: unsafe extern "C" fn(*mut c_void) -> *mut c_void,
+        mr_buffer_get_data: unsafe extern "C" fn(*mut c_void) -> *mut c_void,
+        mr_buffer_get_size: unsafe extern "C" fn(*mut c_void) -> u64,
+        mr_buffer_get_fd: unsafe extern "C" fn(*mut c_void) -> c_int,
+        mr_buffer_destroy: unsafe extern "C" fn(*mut *mut c_void),
+        set_perf_mode: unsafe extern "C" fn(*mut c_void, c_int) -> c_int,
+        get_perf_mode: unsafe extern "C" fn(*mut c_void) -> c_int,
+    }
+
+    static API: OnceLock<OmApi> = OnceLock::new();
+
+    fn api() -> Result<&'static OmApi> {
+        if let Some(loaded) = API.get() {
+            return Ok(loaded);
+        }
+        // Single-threaded by construction: only reached through this
+        // `OnceLock` gate, so at most one caller performs the dlopen/dlsym
+        // dance.
+        let loaded = load_api()?;
+        let _ = API.set(loaded);
+        Ok(API.get().expect("OmApi was just installed"))
+    }
+
+    /// Resolve the vendor function table once per process.
+    fn load_api() -> Result<OmApi> {
+        // Dependency order: tensor → core → HCL facade (each dlopen
+        // registers its soname, satisfying the next lib's DT_NEEDED
+        // without the vendor dir having to be on the default search path).
+        let tensor = dlopen_lib("libai_fmk_tensor.so")?;
+        let core = dlopen_lib("libai_fmk_model_runtime_core.so")?;
+        let hcl = dlopen_lib("libai_fmk_hcl_model_runtime.so")?;
+
+        Ok(OmApi {
+            restore_from_file: sym_fn(core, "HIAI_MR_BuiltModel_RestoreFromFile")?,
+            built_model_destroy: sym_fn(core, "HIAI_MR_BuiltModel_Destroy")?,
+            get_input_tensor_num: sym_fn(core, "HIAI_MR_BuiltModel_GetInputTensorNum")?,
+            get_input_tensor_desc: sym_fn(core, "HIAI_MR_BuiltModel_GetInputTensorDesc")?,
+            get_input_tensor_name: sym_fn(core, "HIAI_MR_BuiltModel_GetInputTensorName")?,
+            get_output_tensor_num: sym_fn(core, "HIAI_MR_BuiltModel_GetOutputTensorNum")?,
+            get_output_tensor_desc: sym_fn(core, "HIAI_MR_BuiltModel_GetOutputTensorDesc")?,
+            get_output_tensor_name: sym_fn(core, "HIAI_MR_BuiltModel_GetOutputTensorName")?,
+            options_create: sym_fn(core, "HIAI_MR_ModelInitOptions_Create")?,
+            options_destroy: sym_fn(core, "HIAI_MR_ModelInitOptions_Destroy")?,
+            manager_create: sym_fn(core, "HIAI_MR_ModelManager_Create")?,
+            manager_destroy: sym_fn(core, "HIAI_MR_ModelManager_Destroy")?,
+            manager_init: sym_fn(core, "HIAI_MR_ModelManager_Init")?,
+            manager_run: sym_fn(core, "HIAI_MR_ModelManager_Run")?,
+            manager_deinit: sym_fn(core, "HIAI_MR_ModelManager_Deinit")?,
+            desc_get_dim: sym_fn(tensor, "HIAI_NDTensorDesc_GetDim")?,
+            desc_get_byte_size: sym_fn(tensor, "HIAI_NDTensorDesc_GetByteSize")?,
+            mr_buffer_create: sym_fn(hcl, "HIAI_MR_NDTensorBuffer_CreateFromNDTensorDesc")?,
+            mr_buffer_get_data: sym_fn(hcl, "HIAI_MR_NDTensorBuffer_GetData")?,
+            mr_buffer_get_size: sym_fn(hcl, "HIAI_MR_NDTensorBuffer_GetSize")?,
+            mr_buffer_get_fd: sym_fn(hcl, "HIAI_MR_NDTensorBuffer_GetFd")?,
+            mr_buffer_destroy: sym_fn(hcl, "HIAI_MR_NDTensorBuffer_Destroy")?,
+            set_perf_mode: sym_fn(hcl, "HIAI_HCL_ModelInitOptions_SetPerfMode")?,
+            get_perf_mode: sym_fn(hcl, "HIAI_HCL_ModelInitOptions_GetPerfMode")?,
+        })
+    }
+
+    /// dlopen a vendor library by absolute path first, bare soname second.
+    fn dlopen_lib(soname: &str) -> Result<*mut c_void> {
+        let candidates = [format!("{VENDOR_LIB_DIR}/{soname}"), soname.to_string()];
+        let mut last_error = String::new();
+        for candidate in &candidates {
+            let c_name = CString::new(candidate.as_str())
+                .map_err(|e| anyhow::anyhow!("library name CString conversion failed: {e}"))?;
+            // SAFETY: c_name is a valid NUL-terminated string; the flags are
+            // plain integer constants.
+            let handle = unsafe { dlopen(c_name.as_ptr(), RTLD_NOW | RTLD_LOCAL) };
+            if !handle.is_null() {
+                return Ok(handle);
+            }
+            last_error = dl_error_message();
+        }
+        anyhow::bail!("dlopen {soname} failed: {last_error}")
+    }
+
+    /// Resolve a symbol address, failing with the pending dlerror message.
+    fn sym(handle: *mut c_void, name: &str) -> Result<*mut c_void> {
+        let c_name = CString::new(name)
+            .map_err(|e| anyhow::anyhow!("symbol name CString conversion failed: {e}"))?;
+        // SAFETY: handle came from a successful dlopen; c_name is a valid
+        // NUL-terminated symbol name.
+        let address = unsafe { dlsym(handle, c_name.as_ptr()) };
+        if address.is_null() {
+            anyhow::bail!("dlsym {name} failed: {}", dl_error_message());
+        }
+        Ok(address)
+    }
+
+    /// Resolve a typed function pointer by symbol name. Private on
+    /// purpose: `T` is always inferred from an `OmApi` field, whose types
+    /// mirror the decoded vendor signatures (see the campaign harness).
+    fn sym_fn<T>(handle: *mut c_void, name: &str) -> Result<T> {
+        let address = sym(handle, name)?;
+        // SAFETY: dlsym returned the function's address; T is a fn pointer
+        // of pointer size matching the documented ABI (pinned by the
+        // private OmApi-field call sites).
+        Ok(unsafe { std::mem::transmute_copy(&address) })
+    }
+
+    fn dl_error_message() -> String {
+        // SAFETY: dlerror returns a thread-local NUL-terminated string (or
+        // null when no error is pending).
+        let err = unsafe { dlerror() };
+        if err.is_null() {
+            "unknown dlopen/dlsym error".to_string()
+        } else {
+            // SAFETY: err is a valid NUL-terminated C string.
+            unsafe { CStr::from_ptr(err) }
+                .to_string_lossy()
+                .into_owned()
+        }
+    }
+
+    /// One model input or output: its ION-backed facade buffer, the cached
+    /// data pointer, and the declared shape.
+    struct IoSlot {
+        buf: *mut c_void,
+        data: *mut u8,
+        byte_size: usize,
+        dims: Vec<i32>,
+        name: String,
+    }
+
+    /// Shape metadata of one model input/output, for contract validation at
+    /// the model-construction sites.
+    #[derive(Debug, Clone)]
+    pub struct IoInfo {
+        pub name: String,
+        pub dims: Vec<i32>,
+        pub byte_size: usize,
+    }
+
+    /// Safe wrapper around a restored HIAI_MR model. Holds the raw handles
+    /// plus the cached ION buffer slots; `write_input_f32` → `run` →
+    /// `read_output_f32` reuses the same buffers across calls.
+    ///
+    /// Like `ms_lite::MsModel`, instances live behind a `Mutex` (the vendor
+    /// API is not thread-safe per handle). `Drop` performs the
+    /// harness-proven teardown; a partially-initialized model (constructor
+    /// failure) drops cleanly because every teardown step is guarded.
+    pub struct OmModel {
+        api: &'static OmApi,
+        model: *mut c_void,
+        mgr: *mut c_void,
+        opts: *mut c_void,
+        input_slots: Vec<IoSlot>,
+        output_slots: Vec<IoSlot>,
+    }
+
+    // SAFETY: OmModel is only accessed behind `Mutex<OmModel>` (via
+    // `DenoiseSession::Cann` / `MaskSession::Cann` in ai_processing.rs);
+    // predict calls are strictly serialized by the owning Mutex.
+    unsafe impl Send for OmModel {}
+    unsafe impl Sync for OmModel {}
+
+    impl OmModel {
+        /// Restore an `.om` model and prepare it for NPU execution.
+        ///
+        /// `perf_mode` follows the HIAI_HCL perf-mode domain (0-4, vendor
+        /// default 2); pass 4 for small-op-dense CNN graphs (the §8.4
+        /// measured optimum for u2net/nind) or a negative value to keep the
+        /// default.
+        pub fn new(model_path: &Path, perf_mode: i32) -> Result<Self> {
+            let api = api()?;
+            let c_path = CString::new(model_path.to_string_lossy().into_owned())
+                .map_err(|e| anyhow::anyhow!("model path CString conversion failed: {e}"))?;
+
+            // SAFETY: c_path is a valid NUL-terminated path string.
+            let model = unsafe { (api.restore_from_file)(c_path.as_ptr()) };
+            if model.is_null() {
+                anyhow::bail!(
+                    "BuiltModel_RestoreFromFile returned null (corrupt .om or unsupported platform?)"
+                );
+            }
+
+            // Partially initialized on purpose: every subsequent step can
+            // fail via `?` and Drop tears down whatever was created.
+            let mut m = OmModel {
+                api,
+                model,
+                mgr: std::ptr::null_mut(),
+                opts: std::ptr::null_mut(),
+                input_slots: Vec::new(),
+                output_slots: Vec::new(),
+            };
+            m.init_options(perf_mode)?;
+            m.init_manager()?;
+            m.create_io_slots()?;
+            log::info!(
+                "CANN .om model ready ({} input(s), {} output(s), perf_mode requested {perf_mode})",
+                m.input_slots.len(),
+                m.output_slots.len()
+            );
+            Ok(m)
+        }
+
+        fn init_options(&mut self, perf_mode: i32) -> Result<()> {
+            // SAFETY: plain allocator call.
+            let opts = unsafe { (self.api.options_create)() };
+            if opts.is_null() {
+                anyhow::bail!("ModelInitOptions_Create returned null");
+            }
+            self.opts = opts;
+
+            if perf_mode >= 0 {
+                // SAFETY: opts was just created. The setter's return value
+                // is garbage (harness-proven) — the applied mode is verified
+                // through the Get accessor instead.
+                unsafe {
+                    let _ = (self.api.set_perf_mode)(self.opts, perf_mode);
+                    let applied = (self.api.get_perf_mode)(self.opts);
+                    if applied != perf_mode {
+                        log::warn!(
+                            "perf mode {perf_mode} requested, {applied} reported — continuing"
+                        );
+                    }
+                }
+            }
+            Ok(())
+        }
+
+        fn init_manager(&mut self) -> Result<()> {
+            // SAFETY: plain allocator call.
+            let mgr = unsafe { (self.api.manager_create)() };
+            if mgr.is_null() {
+                anyhow::bail!("ModelManager_Create returned null");
+            }
+            self.mgr = mgr;
+
+            // SAFETY: mgr/opts/model were all created above; extra=NULL is
+            // the harness-proven call shape.
+            let rc = unsafe {
+                (self.api.manager_init)(self.mgr, self.opts, self.model, std::ptr::null())
+            };
+            if rc != 0 {
+                anyhow::bail!("ModelManager_Init rc={rc}");
+            }
+            Ok(())
+        }
+
+        fn create_io_slots(&mut self) -> Result<()> {
+            // SAFETY: model handle was validated in new().
+            let (n_in, n_out) = unsafe {
+                (
+                    (self.api.get_input_tensor_num)(self.model),
+                    (self.api.get_output_tensor_num)(self.model),
+                )
+            };
+            if n_in <= 0
+                || n_out <= 0
+                || n_in as usize > MAX_TENSORS
+                || n_out as usize > MAX_TENSORS
+            {
+                anyhow::bail!("unexpected IO tensor counts (in={n_in}, out={n_out})");
+            }
+            for idx in 0..n_in as usize {
+                // SAFETY: idx < n_in <= MAX_TENSORS, as returned by the
+                // model; self.model is a restored BuiltModel.
+                let slot = unsafe { self.make_slot(true, idx)? };
+                self.input_slots.push(slot);
+            }
+            for idx in 0..n_out as usize {
+                // SAFETY: idx < n_out <= MAX_TENSORS, as returned by the
+                // model; self.model is a restored BuiltModel.
+                let slot = unsafe { self.make_slot(false, idx)? };
+                self.output_slots.push(slot);
+            }
+            Ok(())
+        }
+
+        /// Create the ION-backed facade buffer for one input/output.
+        ///
+        /// # Safety
+        /// `idx` must be below the model's declared tensor count for the
+        /// chosen side, and `self.model` must be a restored BuiltModel.
+        unsafe fn make_slot(&self, is_input: bool, idx: usize) -> Result<IoSlot> {
+            let api = self.api;
+            // SAFETY: caller guarantees idx is in range and the model handle
+            // is valid.
+            let (desc, name) = unsafe {
+                let desc = if is_input {
+                    (api.get_input_tensor_desc)(self.model, idx)
+                } else {
+                    (api.get_output_tensor_desc)(self.model, idx)
+                };
+                if desc.is_null() {
+                    anyhow::bail!(
+                        "Get{}TensorDesc({idx}) returned null",
+                        if is_input { "Input" } else { "Output" }
+                    );
+                }
+
+                let mut name_buf = [0u8; 256];
+                let name_rc = if is_input {
+                    (api.get_input_tensor_name)(
+                        self.model,
+                        idx,
+                        name_buf.as_mut_ptr().cast::<c_char>(),
+                        name_buf.len(),
+                    )
+                } else {
+                    (api.get_output_tensor_name)(
+                        self.model,
+                        idx,
+                        name_buf.as_mut_ptr().cast::<c_char>(),
+                        name_buf.len(),
+                    )
+                };
+                let name = if name_rc == 0 {
+                    // SAFETY: on rc==0 the API wrote a NUL-terminated name
+                    // into name_buf.
+                    CStr::from_bytes_until_nul(&name_buf)
+                        .map(|s| s.to_string_lossy().into_owned())
+                        .unwrap_or_else(|_| format!("io{idx}"))
+                } else {
+                    format!("<name rc={name_rc}>")
+                };
+                (desc, name)
+            };
+
+            // SAFETY: desc is a valid tensor descriptor owned by the model.
+            let (dims, byte_size) = unsafe {
+                let dims: Vec<i32> = (0..8)
+                    .map(|k| (api.desc_get_dim)(desc, k))
+                    .take_while(|&d| d >= 0)
+                    .collect();
+                let byte_size = (api.desc_get_byte_size)(desc) as usize;
+                (dims, byte_size)
+            };
+
+            // ION-backed facade buffer — plain tensor.so buffers SIGSEGV
+            // inside Run (RunV3 requires ION/DMA backing).
+            // SAFETY: desc is valid; the returned buffer is owned by us.
+            let buf = unsafe { (api.mr_buffer_create)(desc) };
+            if buf.is_null() {
+                anyhow::bail!("NDTensorBuffer_CreateFromNDTensorDesc('{name}') returned null");
+            }
+
+            // fd sanity gate (harness-proven): fd < 0 means the buffer is
+            // not ION-backed and Run would SIGSEGV — refuse it.
+            // SAFETY: buf was just created.
+            let fd = unsafe { (api.mr_buffer_get_fd)(buf) };
+            if fd < 0 {
+                // SAFETY: buf is a live buffer; destroy takes the address of
+                // the handle.
+                let mut b = buf;
+                unsafe { (api.mr_buffer_destroy)(&mut b) };
+                anyhow::bail!("buffer '{name}' is not ION-backed (fd={fd}) — refusing to Run");
+            }
+
+            // SAFETY: buf is a live ION-backed buffer.
+            let (data, buffer_bytes) = unsafe {
+                (
+                    (api.mr_buffer_get_data)(buf) as *mut u8,
+                    (api.mr_buffer_get_size)(buf) as usize,
+                )
+            };
+            if data.is_null() || byte_size == 0 || buffer_bytes < byte_size {
+                // SAFETY: buf is a live buffer; destroy takes the address of
+                // the handle.
+                let mut b = buf;
+                unsafe { (api.mr_buffer_destroy)(&mut b) };
+                anyhow::bail!(
+                    "bad buffer '{name}' (data={data:?}, desc_bytes={byte_size}, buffer_bytes={buffer_bytes})"
+                );
+            }
+
+            log::debug!(
+                "om {}[{}] '{}' dims={dims:?} bytes={byte_size} fd={fd}",
+                if is_input { "in" } else { "out" },
+                idx,
+                name
+            );
+
+            Ok(IoSlot {
+                buf,
+                data,
+                byte_size,
+                dims,
+                name,
+            })
+        }
+
+        pub fn input_count(&self) -> usize {
+            self.input_slots.len()
+        }
+
+        pub fn output_count(&self) -> usize {
+            self.output_slots.len()
+        }
+
+        pub fn input_info(&self, idx: usize) -> Option<IoInfo> {
+            self.input_slots.get(idx).map(|s| IoInfo {
+                name: s.name.clone(),
+                dims: s.dims.clone(),
+                byte_size: s.byte_size,
+            })
+        }
+
+        pub fn output_info(&self, idx: usize) -> Option<IoInfo> {
+            self.output_slots.get(idx).map(|s| IoInfo {
+                name: s.name.clone(),
+                dims: s.dims.clone(),
+                byte_size: s.byte_size,
+            })
+        }
+
+        /// Copy f32 values into input `idx`'s ION buffer.
+        pub fn write_input_f32(&self, idx: usize, values: &[f32]) -> Result<()> {
+            let Some(slot) = self.input_slots.get(idx) else {
+                anyhow::bail!(
+                    "no input tensor {idx} (model has {})",
+                    self.input_slots.len()
+                );
+            };
+            let expected = slot.byte_size / std::mem::size_of::<f32>();
+            if values.len() != expected {
+                anyhow::bail!(
+                    "input {idx} ('{}'): got {} f32 values, expected {expected}",
+                    slot.name,
+                    values.len()
+                );
+            }
+            // SAFETY: slot.data points at the buffer's writable data region
+            // of byte_size bytes (validated at init); the owning Mutex
+            // serializes access.
+            unsafe {
+                std::ptr::copy_nonoverlapping(values.as_ptr(), slot.data.cast::<f32>(), expected);
+            };
+            Ok(())
+        }
+
+        /// Execute the model. Inputs must have been filled via
+        /// `write_input_f32`; afterwards outputs are read with
+        /// `read_output_f32`.
+        pub fn run(&self) -> Result<()> {
+            let mut in_ptrs: Vec<*mut c_void> = self.input_slots.iter().map(|s| s.buf).collect();
+            let mut out_ptrs: Vec<*mut c_void> = self.output_slots.iter().map(|s| s.buf).collect();
+            // SAFETY: mgr was Init'ed; the pointer arrays match the slot
+            // buffers and counts (harness-proven call shape).
+            let rc = unsafe {
+                (self.api.manager_run)(
+                    self.mgr,
+                    in_ptrs.as_mut_ptr(),
+                    in_ptrs.len(),
+                    out_ptrs.as_mut_ptr(),
+                    out_ptrs.len(),
+                )
+            };
+            if rc != 0 {
+                anyhow::bail!("ModelManager_Run rc={rc}");
+            }
+            Ok(())
+        }
+
+        /// Copy f32 values out of output `idx`'s ION buffer.
+        pub fn read_output_f32(&self, idx: usize) -> Result<Vec<f32>> {
+            let Some(slot) = self.output_slots.get(idx) else {
+                anyhow::bail!(
+                    "no output tensor {idx} (model has {})",
+                    self.output_slots.len()
+                );
+            };
+            let n = slot.byte_size / std::mem::size_of::<f32>();
+            let mut out = vec![0f32; n];
+            // SAFETY: slot.data points at the buffer's readable data region
+            // filled by the last successful run().
+            unsafe {
+                std::ptr::copy_nonoverlapping(slot.data.cast::<f32>(), out.as_mut_ptr(), n);
+            };
+            Ok(out)
+        }
+    }
+
+    impl Drop for OmModel {
+        fn drop(&mut self) {
+            // Harness-proven teardown order, guarded so a
+            // partially-initialized model also drops cleanly: buffers →
+            // ModelManager_Deinit/Destroy → ModelInitOptions_Destroy →
+            // BuiltModel_Destroy.
+            for slot in self.input_slots.drain(..) {
+                // SAFETY: slot.buf is a live facade buffer created by
+                // make_slot; destroy takes the address of the handle.
+                let mut b = slot.buf;
+                unsafe { (self.api.mr_buffer_destroy)(&mut b) };
+            }
+            for slot in self.output_slots.drain(..) {
+                // SAFETY: see above.
+                let mut b = slot.buf;
+                unsafe { (self.api.mr_buffer_destroy)(&mut b) };
+            }
+            if !self.mgr.is_null() {
+                // SAFETY: mgr was Init'ed (or at least created); the
+                // harness-proven sequence is Deinit before Destroy.
+                unsafe {
+                    let _ = (self.api.manager_deinit)(self.mgr);
+                    (self.api.manager_destroy)(self.mgr);
+                }
+                self.mgr = std::ptr::null_mut();
+            }
+            if !self.opts.is_null() {
+                // SAFETY: opts was created in init_options; destroy takes
+                // the address of the handle.
+                let mut o = self.opts;
+                unsafe { (self.api.options_destroy)(&mut o) };
+                self.opts = std::ptr::null_mut();
+            }
+            if !self.model.is_null() {
+                // SAFETY: model is a restored BuiltModel.
+                unsafe { (self.api.built_model_destroy)(self.model) };
+                self.model = std::ptr::null_mut();
+            }
+        }
+    }
+}

@@ -537,6 +537,8 @@ pub struct AppSettings {
     #[serde(default)]
     pub use_wgpu_renderer: Option<bool>,
     #[serde(default)]
+    pub ai_denoise_backend: Option<String>,
+    #[serde(default)]
     pub editor_neutral_grey_bg: Option<bool>,
     #[serde(default)]
     pub canvas_input_mode: Option<String>,
@@ -664,6 +666,7 @@ impl Default for AppSettings {
             use_wgpu_renderer: Some(false),
             #[cfg(not(any(target_os = "linux", target_os = "android")))]
             use_wgpu_renderer: Some(true),
+            ai_denoise_backend: Some("cpu".to_string()),
             editor_neutral_grey_bg: Some(false),
             canvas_input_mode: Some("mouse".to_string()),
             white_balance_mode: None,
@@ -790,6 +793,9 @@ pub fn load_settings(app_handle: AppHandle) -> Result<AppSettings, String> {
 
 #[tauri::command]
 pub fn save_settings(settings: AppSettings, app_handle: AppHandle) -> Result<(), String> {
+    let old = load_settings(app_handle.clone()).unwrap_or_default();
+    let denoise_backend_changed = old.ai_denoise_backend != settings.ai_denoise_backend;
+
     let path = get_settings_path(&app_handle)?;
     let json_string = serde_json::to_string_pretty(&settings).map_err(|e| e.to_string())?;
     fs::write(path, json_string).map_err(|e| e.to_string())?;
@@ -801,5 +807,10 @@ pub fn save_settings(settings: AppSettings, app_handle: AppHandle) -> Result<(),
         .lock()
         .unwrap()
         .set_capacity(cache_size);
+
+    if denoise_backend_changed && let Some(ai) = state.ai_state.lock().unwrap().as_mut() {
+        ai.denoise_model = None;
+    }
+
     Ok(())
 }

@@ -51,6 +51,33 @@ const DENOISE_URL: &str = "https://hf-mirror.com/CyberTimon/RapidRAW-Models/reso
 const DENOISE_FILENAME: &str = "nind_denoise_utnet_684.onnx";
 const DENOISE_SHA256: &str = "ee3586279d514df557ff3f7dec6df37fafc51ba5d3a3435b2cc9ac2d9017e7fe";
 
+// MindSpore Lite (.ms) model for NPU denoise on OHOS. PLACEHOLDER URL —
+// fork-hosted repo pending. Reproduce/sideload the .ms via
+// scripts/convert-nind-ms.ps1 (ONNX -> Pad surgery -> converter_lite 2.7.0);
+// full recipe + pinned hashes: docs/AI_DENOISE_HW_ACCELERATION.md section 5.6.
+#[cfg(target_env = "ohos")]
+const DENOISE_MS_URL: &str = "https://hf-mirror.com/CyberTimon/RapidRAW-Models/resolve/main/nind_denoise_utnet_684.ms?download=true";
+#[cfg(target_env = "ohos")]
+const DENOISE_MS_FILENAME: &str = "nind_denoise_utnet_684.ms";
+#[cfg(target_env = "ohos")]
+const DENOISE_MS_SHA256: &str = "05d7580e5a6e3c18bd286705f7524090cd69abe4b78067c2a173b322ef151b3b";
+
+// CANN (.om) model for the fastest OHOS NPU denoise route. Sideload-only
+// like the .ms above (no runtime download): it is a firmware-specific omg
+// build (`--platform=kirinx90`, fp16 weights) derived from this app's own
+// nind_denoise_utnet_684.onnx (Pad→Slice surgery → omg — the §5.6
+// surgery piece, ORT byte-identical). Recipe + measurements:
+// docs/MINDSPORE_LITE_NPU_EVAL.md §8.4, docs/AI_DENOISE_HW_ACCELERATION.md
+// §5.6: ~130ms/tile @perfmode 4 vs 257ms (.ms NNRT) / 1215ms (X90 CPU),
+// NCHW I/O (no NHWC conversion). The u2net-family .om filenames are
+// inlined at their construction sites (see build_mask_session).
+#[cfg(target_env = "ohos")]
+const DENOISE_OM_FILENAME: &str = "nind_v2.om";
+/// HIAI_HCL perf-mode optimum for small-op-dense CNN graphs (§8.4: u2net
+/// 1.9×, nind 1.8× over the default 2; transformer/FFC graphs keep 2).
+#[cfg(target_env = "ohos")]
+const OM_PERF_MODE_CNN: i32 = 4;
+
 const LAMA_URL: &str =
     "https://hf-mirror.com/CyberTimon/RapidRAW-Models/resolve/main/lama_fp16.onnx?download=true";
 const LAMA_FILENAME: &str = "lama_fp16.onnx";
@@ -64,8 +91,8 @@ const DEPTH_SHA256: &str = "d2b11a11c1d4a12b47608fa65a17ee9a4c605b55ee1730c8e3b5
 pub struct AiModels {
     pub sam_encoder: Mutex<Session>,
     pub sam_decoder: Mutex<Session>,
-    pub u2netp: Mutex<Session>,
-    pub sky_seg: Mutex<Session>,
+    pub u2netp: MaskSession,
+    pub sky_seg: MaskSession,
     pub depth_anything: Mutex<Session>,
 }
 
@@ -88,9 +115,29 @@ pub struct CachedDepthMap {
     pub original_size: (u32, u32),
 }
 
+/// Backend session for AI denoise. Dispatches between ORT CPU and (on
+/// OHOS) the NPU backends: CANN (.om, fastest) or MindSpore Lite NNRT.
+pub enum DenoiseSession {
+    Ort(Mutex<Session>),
+    #[cfg(target_env = "ohos")]
+    Cann(Mutex<crate::ohos_integration::om::OmModel>),
+    #[cfg(target_env = "ohos")]
+    Nnrt(Mutex<crate::ohos_integration::ms_lite::MsModel>),
+}
+
+/// Backend session for the 320² u2net-family mask models (foreground +
+/// sky). On OHOS a CANN (.om) session replaces ORT when the sideloaded
+/// omg build is present (§8.4: ~50ms vs ~580ms CPU per inference);
+/// otherwise the ORT session (model downloaded as before).
+pub enum MaskSession {
+    Ort(Mutex<Session>),
+    #[cfg(target_env = "ohos")]
+    Cann(Mutex<crate::ohos_integration::om::OmModel>),
+}
+
 pub struct AiState {
     pub models: Option<Arc<AiModels>>,
-    pub denoise_model: Option<Arc<Mutex<Session>>>,
+    pub denoise_model: Option<Arc<DenoiseSession>>,
     pub clip_models: Option<Arc<ClipModels>>,
     pub lama_model: Option<Arc<Mutex<Session>>>,
     pub embeddings: Option<ImageEmbeddings>,
@@ -441,7 +488,7 @@ async fn download_and_verify_model(
 
     if !is_valid {
         if dest_path.exists() {
-            println!("Model {} has incorrect hash. Re-downloading.", model_name);
+            log::warn!("Model {} has incorrect hash. Re-downloading.", model_name);
             fs::remove_file(&dest_path)?;
         }
         let _ = app_handle.emit("ai-model-download-start", model_name);
@@ -457,6 +504,142 @@ async fn download_and_verify_model(
         }
     }
     Ok(())
+}
+
+/// Soft-provision the `.ms` model for NPU denoise on OHOS. Never returns
+/// `Err` — any failure (bad hash, download error, IO error) results in
+/// `Ok(None)`, causing the caller to fall back to the ORT CPU path.
+#[cfg(target_env = "ohos")]
+async fn try_provision_ms_model(
+    app_handle: &tauri::AppHandle,
+    models_dir: &Path,
+) -> Result<Option<PathBuf>> {
+    let dest_path = models_dir.join(DENOISE_MS_FILENAME);
+
+    match verify_sha256(&dest_path, DENOISE_MS_SHA256) {
+        Ok(true) => return Ok(Some(dest_path)),
+        Ok(false) => {
+            if dest_path.exists() {
+                log::warn!(
+                    "NPU model {} has incorrect hash. Re-downloading.",
+                    DENOISE_MS_FILENAME
+                );
+                let _ = fs::remove_file(&dest_path);
+            }
+        }
+        Err(e) => {
+            log::warn!("NPU model hash verification failed ({e}), falling back to ORT.");
+            return Ok(None);
+        }
+    }
+
+    let _ = app_handle.emit("ai-model-download-start", "NIND Denoise .ms");
+    let download_result = download_model(DENOISE_MS_URL, &dest_path).await;
+    let _ = app_handle.emit("ai-model-download-finish", "NIND Denoise .ms");
+
+    match download_result {
+        Ok(()) => match verify_sha256(&dest_path, DENOISE_MS_SHA256) {
+            Ok(true) => Ok(Some(dest_path)),
+            _ => {
+                log::warn!("NPU model hash mismatch after download, falling back to ORT.");
+                Ok(None)
+            }
+        },
+        Err(e) => {
+            log::warn!("NPU model download failed ({e}), falling back to ORT.");
+            Ok(None)
+        }
+    }
+}
+
+/// Validate the CANN (.om) denoise model's IO contract: one f32 input
+/// `[1,3,504,504]` and one f32 output `[1,3,504,504]` (the app's
+/// nind_denoise_utnet_684 lineage after Pad→Slice surgery → omg; 504 is
+/// the fixed tile size all TileParams variants use).
+#[cfg(target_env = "ohos")]
+fn denoise_om_contract_matches(model: &crate::ohos_integration::om::OmModel) -> bool {
+    let expected_bytes = 3 * 504 * 504 * std::mem::size_of::<f32>();
+    model.input_count() == 1
+        && model.output_count() == 1
+        && model
+            .input_info(0)
+            .is_some_and(|i| i.dims == [1, 3, 504, 504] && i.byte_size == expected_bytes)
+        && model
+            .output_info(0)
+            .is_some_and(|o| o.dims == [1, 3, 504, 504] && o.byte_size == expected_bytes)
+}
+
+/// Validate a u2net-family .om against the ORT model's contract: one f32
+/// input `[1,3,S,S]` and only `[1,1,S,S]` f32 outputs (the app reads
+/// output 0, the d0 head).
+#[cfg(target_env = "ohos")]
+fn u2net_om_contract_matches(
+    model: &crate::ohos_integration::om::OmModel,
+    input_size: u32,
+) -> bool {
+    let s = input_size as i32;
+    let expected_in = 3 * input_size as usize * input_size as usize * std::mem::size_of::<f32>();
+    let expected_out = input_size as usize * input_size as usize * std::mem::size_of::<f32>();
+    model.input_count() == 1
+        && model
+            .input_info(0)
+            .is_some_and(|i| i.dims == [1, 3, s, s] && i.byte_size == expected_in)
+        && (0..model.output_count()).all(|i| {
+            model
+                .output_info(i)
+                .is_some_and(|o| o.dims == [1, 1, s, s] && o.byte_size == expected_out)
+        })
+}
+
+/// Build a u2net-family mask session (foreground/sky). On OHOS a
+/// sideloaded CANN (.om) build takes priority — it also skips the onnx
+/// download entirely. Any .om problem (absent file, init failure,
+/// unexpected IO contract) falls back to the ORT download path.
+#[allow(clippy::too_many_arguments)]
+async fn build_mask_session(
+    app_handle: &tauri::AppHandle,
+    models_dir: &Path,
+    onnx_filename: &str,
+    onnx_url: &str,
+    onnx_sha256: &str,
+    input_size: u32,
+    om_filename: &str,
+    model_name: &str,
+) -> Result<MaskSession> {
+    #[cfg(target_env = "ohos")]
+    {
+        let om_path = models_dir.join(om_filename);
+        if om_path.exists() {
+            match crate::ohos_integration::om::OmModel::new(&om_path, OM_PERF_MODE_CNN) {
+                Ok(m) if u2net_om_contract_matches(&m, input_size) => {
+                    log::info!("{model_name}: using CANN .om model ({om_filename}).");
+                    return Ok(MaskSession::Cann(Mutex::new(m)));
+                }
+                Ok(_) => {
+                    log::warn!(
+                        "{model_name}: {om_filename} has an unexpected IO contract, falling back to ORT."
+                    );
+                }
+                Err(e) => {
+                    log::warn!("{model_name}: .om init failed ({e}), falling back to ORT.");
+                }
+            }
+        }
+    }
+    #[cfg(not(target_env = "ohos"))]
+    let _ = (om_filename, input_size);
+
+    download_and_verify_model(
+        app_handle,
+        models_dir,
+        onnx_filename,
+        onnx_url,
+        onnx_sha256,
+        model_name,
+    )
+    .await?;
+    let session = Session::builder()?.commit_from_file(models_dir.join(onnx_filename))?;
+    Ok(MaskSession::Ort(Mutex::new(session)))
 }
 
 pub async fn get_or_init_ai_models(
@@ -507,24 +690,6 @@ pub async fn get_or_init_ai_models(
     download_and_verify_model(
         app_handle,
         &models_dir,
-        U2NETP_FILENAME,
-        U2NETP_URL,
-        U2NETP_SHA256,
-        "Foreground Model",
-    )
-    .await?;
-    download_and_verify_model(
-        app_handle,
-        &models_dir,
-        SKYSEG_FILENAME,
-        SKYSEG_URL,
-        SKYSEG_SHA256,
-        "Sky Model",
-    )
-    .await?;
-    download_and_verify_model(
-        app_handle,
-        &models_dir,
         DEPTH_FILENAME,
         DEPTH_URL,
         DEPTH_SHA256,
@@ -536,23 +701,44 @@ pub async fn get_or_init_ai_models(
 
     let encoder_path = models_dir.join(ENCODER_FILENAME);
     let decoder_path = models_dir.join(DECODER_FILENAME);
-    let u2netp_path = models_dir.join(U2NETP_FILENAME);
-    let sky_seg_path = models_dir.join(SKYSEG_FILENAME);
     let depth_path = models_dir.join(DEPTH_FILENAME);
 
     let sam_encoder = Session::builder()?.commit_from_file(encoder_path)?;
     let sam_decoder = Session::builder()?.commit_from_file(decoder_path)?;
-    let u2netp = Session::builder()?.commit_from_file(u2netp_path)?;
-    let sky_seg = Session::builder()?.commit_from_file(sky_seg_path)?;
     let depth_anything = Session::builder()?.commit_from_file(depth_path)?;
+
+    // u2net-family mask models: on OHOS a sideloaded CANN (.om) build takes
+    // priority (skipping the onnx download when usable); ORT otherwise.
+    let u2netp = build_mask_session(
+        app_handle,
+        &models_dir,
+        U2NETP_FILENAME,
+        U2NETP_URL,
+        U2NETP_SHA256,
+        U2NETP_INPUT_SIZE,
+        "u2net.om",
+        "Foreground Model",
+    )
+    .await?;
+    let sky_seg = build_mask_session(
+        app_handle,
+        &models_dir,
+        SKYSEG_FILENAME,
+        SKYSEG_URL,
+        SKYSEG_SHA256,
+        SKYSEG_INPUT_SIZE,
+        "skyseg_u2net.om",
+        "Sky Model",
+    )
+    .await?;
 
     crate::register_exit_handler();
 
     let models = Arc::new(AiModels {
         sam_encoder: Mutex::new(sam_encoder),
         sam_decoder: Mutex::new(sam_decoder),
-        u2netp: Mutex::new(u2netp),
-        sky_seg: Mutex::new(sky_seg),
+        u2netp,
+        sky_seg,
         depth_anything: Mutex::new(depth_anything),
     });
 
@@ -577,7 +763,7 @@ pub async fn get_or_init_denoise_model(
     app_handle: &tauri::AppHandle,
     ai_state_mutex: &Mutex<Option<AiState>>,
     ai_init_lock: &TokioMutex<()>,
-) -> Result<Arc<Mutex<Session>>> {
+) -> Result<Arc<DenoiseSession>> {
     if let Some(denoise_model) = ai_state_mutex
         .lock()
         .unwrap()
@@ -599,6 +785,92 @@ pub async fn get_or_init_denoise_model(
     }
 
     let models_dir = get_models_dir(app_handle)?;
+
+    // Try NPU (MindSpore Lite NNRT) path first if enabled and on OHOS.
+    #[cfg(target_env = "ohos")]
+    {
+        let npu_selected = crate::app_settings::load_settings(app_handle.clone())
+            .unwrap_or_default()
+            .ai_denoise_backend
+            .as_deref()
+            .is_some_and(|backend| backend == "npu");
+        if npu_selected {
+            // CANN (.om) route first — the fastest NPU path when the
+            // sideloaded omg build is present (§8.4: ~2× the .ms route per
+            // tile, ~9× X90 CPU; NCHW I/O, no NHWC conversion).
+            let om_path = models_dir.join(DENOISE_OM_FILENAME);
+            if om_path.exists() {
+                match crate::ohos_integration::om::OmModel::new(&om_path, OM_PERF_MODE_CNN) {
+                    Ok(m) if denoise_om_contract_matches(&m) => {
+                        log::info!("NPU mode: using CANN .om denoise model.");
+                        let denoise_model = Arc::new(DenoiseSession::Cann(Mutex::new(m)));
+                        crate::register_exit_handler();
+                        let mut ai_state_lock = ai_state_mutex.lock().unwrap();
+                        if let Some(state) = ai_state_lock.as_mut() {
+                            state.denoise_model = Some(denoise_model.clone());
+                        } else {
+                            *ai_state_lock = Some(AiState {
+                                models: None,
+                                denoise_model: Some(denoise_model.clone()),
+                                clip_models: None,
+                                lama_model: None,
+                                embeddings: None,
+                                depth_map: None,
+                            });
+                        }
+                        return Ok(denoise_model);
+                    }
+                    Ok(_) => {
+                        log::warn!(
+                            "NPU mode: {} IO contract mismatch, trying .ms/ORT fallback.",
+                            DENOISE_OM_FILENAME
+                        );
+                    }
+                    Err(e) => {
+                        log::warn!(
+                            "NPU mode: .om denoise init failed ({e}), trying .ms/ORT fallback."
+                        );
+                    }
+                }
+            }
+
+            match try_provision_ms_model(app_handle, &models_dir).await {
+                Ok(Some(ms_path)) => {
+                    match crate::ohos_integration::ms_lite::MsModel::new(&ms_path) {
+                        Ok(ms_model) => {
+                            let denoise_model =
+                                Arc::new(DenoiseSession::Nnrt(Mutex::new(ms_model)));
+                            crate::register_exit_handler();
+                            let mut ai_state_lock = ai_state_mutex.lock().unwrap();
+                            if let Some(state) = ai_state_lock.as_mut() {
+                                state.denoise_model = Some(denoise_model.clone());
+                            } else {
+                                *ai_state_lock = Some(AiState {
+                                    models: None,
+                                    denoise_model: Some(denoise_model.clone()),
+                                    clip_models: None,
+                                    lama_model: None,
+                                    embeddings: None,
+                                    depth_map: None,
+                                });
+                            }
+                            return Ok(denoise_model);
+                        }
+                        Err(e) => {
+                            log::warn!(
+                                "NPU mode: MsModel build failed ({e}), falling back to ORT CPU."
+                            );
+                        }
+                    }
+                }
+                _ => {
+                    log::warn!("NPU mode: .ms model not available, falling back to ORT CPU.");
+                }
+            }
+        }
+    }
+
+    // ORT CPU fallback (default path on all platforms).
     download_and_verify_model(
         app_handle,
         &models_dir,
@@ -612,7 +884,7 @@ pub async fn get_or_init_denoise_model(
     let _ = ort::init().with_name("AI-Denoise").commit();
     let model_path = models_dir.join(DENOISE_FILENAME);
     let session = Session::builder()?.commit_from_file(model_path)?;
-    let denoise_model = Arc::new(Mutex::new(session));
+    let denoise_model = Arc::new(DenoiseSession::Ort(Mutex::new(session)));
 
     crate::register_exit_handler();
 
@@ -891,6 +1163,68 @@ fn apply_seamless(tile: &mut Array4<f32>, blend: &SeamlessBlend) {
     }
 }
 
+/// Compute the seamless-blend parameters for a tile at `(x0, y0)` within an
+/// image of `(width, height)`. Extracted from `run_native_denoise` — shared
+/// by the ORT and MS paths. Behavior-identical to the previous inline code.
+fn compute_blend_params(
+    params: TileParams,
+    x0: i32,
+    y0: i32,
+    width: usize,
+    height: usize,
+) -> SeamlessBlend {
+    let w = width as i32;
+    let h = height as i32;
+    let x1pad = (0i32).max(x0 + params.cs as i32 - w) as usize;
+    let y1pad = (0i32).max(y0 + params.cs as i32 - h) as usize;
+    let ud0 = params.pad;
+    let ud1 = params.pad;
+    let ud2 = params.cs - params.pad.max(x1pad);
+    let ud3 = params.cs - params.pad.max(y1pad);
+    let absx0 = (x0 + params.pad as i32).max(0) as usize;
+    let absy0 = (y0 + params.pad as i32).max(0) as usize;
+    SeamlessBlend {
+        ud0,
+        ud1,
+        ud2,
+        ud3,
+        absx0,
+        absy0,
+        fswidth: width,
+        fsheight: height,
+        overlap: params.overlap,
+    }
+}
+
+/// Accumulate a processed tile into the output accumulator with seamless
+/// blending. Extracted from `run_native_denoise` — shared by the ORT and MS
+/// paths. Behavior-identical to the previous inline code.
+fn accumulate_tile(accumulator: &mut [f32], tile: &Array4<f32>, blend: &SeamlessBlend) {
+    let SeamlessBlend {
+        ud0,
+        ud1,
+        ud2,
+        ud3,
+        absx0,
+        absy0,
+        fswidth,
+        fsheight,
+        overlap: _,
+    } = *blend;
+    for cy in 0..(ud3 - ud1) {
+        for cx in 0..(ud2 - ud0) {
+            let gx = absx0 + cx;
+            let gy = absy0 + cy;
+            if gx < fswidth && gy < fsheight {
+                let base = (gy * fswidth + gx) * 3;
+                accumulator[base] += tile[[0, 0, ud1 + cy, ud0 + cx]].clamp(0.0, 1.0);
+                accumulator[base + 1] += tile[[0, 1, ud1 + cy, ud0 + cx]].clamp(0.0, 1.0);
+                accumulator[base + 2] += tile[[0, 2, ud1 + cy, ud0 + cx]].clamp(0.0, 1.0);
+            }
+        }
+    }
+}
+
 fn run_native_denoise(
     img: &Rgb32FImage,
     session: &Mutex<Session>,
@@ -900,8 +1234,6 @@ fn run_native_denoise(
     app_handle: &tauri::AppHandle,
     params: TileParams,
 ) -> Result<()> {
-    let w = width as i32;
-    let h = height as i32;
     let step = params.ucs.saturating_sub(params.overlap).max(1);
     let iperhl = (width.saturating_sub(params.ucs) as f64 / step as f64).ceil() as usize;
     let ipervl = (height.saturating_sub(params.ucs) as f64 / step as f64).ceil() as usize;
@@ -932,43 +1264,10 @@ fn run_native_denoise(
                 .map_err(|e| anyhow::anyhow!("Unexpected output shape: {}", e))?
         };
 
-        let x1pad = (0i32).max(x0 + params.cs as i32 - w) as usize;
-        let y1pad = (0i32).max(y0 + params.cs as i32 - h) as usize;
-        let ud0 = params.pad;
-        let ud1 = params.pad;
-        let ud2 = params.cs - params.pad.max(x1pad);
-        let ud3 = params.cs - params.pad.max(y1pad);
-        let absx0 = (x0 + params.pad as i32).max(0) as usize;
-        let absy0 = (y0 + params.pad as i32).max(0) as usize;
-
+        let blend = compute_blend_params(params, x0, y0, width, height);
         let mut tile = out;
-        apply_seamless(
-            &mut tile,
-            &SeamlessBlend {
-                ud0,
-                ud1,
-                ud2,
-                ud3,
-                absx0,
-                absy0,
-                fswidth: width,
-                fsheight: height,
-                overlap: params.overlap,
-            },
-        );
-
-        for cy in 0..(ud3 - ud1) {
-            for cx in 0..(ud2 - ud0) {
-                let gx = absx0 + cx;
-                let gy = absy0 + cy;
-                if gx < width && gy < height {
-                    let base = (gy * width + gx) * 3;
-                    accumulator[base] += tile[[0, 0, ud1 + cy, ud0 + cx]].clamp(0.0, 1.0);
-                    accumulator[base + 1] += tile[[0, 1, ud1 + cy, ud0 + cx]].clamp(0.0, 1.0);
-                    accumulator[base + 2] += tile[[0, 2, ud1 + cy, ud0 + cx]].clamp(0.0, 1.0);
-                }
-            }
-        }
+        apply_seamless(&mut tile, &blend);
+        accumulate_tile(accumulator, &tile, &blend);
     }
     Ok(())
 }
@@ -989,7 +1288,7 @@ fn accumulator_to_rgb32f(acc: &[f32], width: u32, height: u32) -> Rgb32FImage {
 pub fn run_ai_denoise(
     rgb_img: &Rgb32FImage,
     intensity: f32,
-    session: &Mutex<Session>,
+    session: &DenoiseSession,
     app_handle: &tauri::AppHandle,
 ) -> Result<DynamicImage> {
     let (width, height) = rgb_img.dimensions();
@@ -997,18 +1296,161 @@ pub fn run_ai_denoise(
 
     let _ = app_handle.emit("denoise-progress", "Denoising (AI NIND)...");
     let mut accumulator = vec![0.0f32; width as usize * height as usize * 3];
-    run_native_denoise(
-        rgb_img,
-        session,
-        &mut accumulator,
-        width as usize,
-        height as usize,
-        app_handle,
-        params,
-    )?;
+
+    match session {
+        DenoiseSession::Ort(m) => run_native_denoise(
+            rgb_img,
+            m,
+            &mut accumulator,
+            width as usize,
+            height as usize,
+            app_handle,
+            params,
+        )?,
+        #[cfg(target_env = "ohos")]
+        DenoiseSession::Nnrt(m) => run_native_denoise_ms(
+            rgb_img,
+            m,
+            &mut accumulator,
+            width as usize,
+            height as usize,
+            app_handle,
+            params,
+        )?,
+        #[cfg(target_env = "ohos")]
+        DenoiseSession::Cann(m) => run_native_denoise_om(
+            rgb_img,
+            m,
+            &mut accumulator,
+            width as usize,
+            height as usize,
+            app_handle,
+            params,
+        )?,
+    }
 
     let out_img_buffer = accumulator_to_rgb32f(&accumulator, width, height);
     Ok(DynamicImage::ImageRgb32F(out_img_buffer))
+}
+
+/// Fill a flat NHWC `[cs*cs*3]` tile from the image with mirror padding.
+/// Ported from the nindfull POC `fill_tile_nhwc`, adapted to `&Rgb32FImage`.
+#[cfg(target_env = "ohos")]
+fn fill_tile_nhwc(img: &Rgb32FImage, x0: i32, y0: i32, cs: usize) -> Vec<f32> {
+    let (w, h) = (img.width() as i32, img.height() as i32);
+    let mut buf = vec![0f32; cs * cs * 3];
+    for dy in 0..cs as i32 {
+        for dx in 0..cs as i32 {
+            let sx = mirror_coord(x0 + dx, w);
+            let sy = mirror_coord(y0 + dy, h);
+            let px = img.get_pixel(sx as u32, sy as u32);
+            let d = (dy as usize * cs + dx as usize) * 3;
+            buf[d] = px[0];
+            buf[d + 1] = px[1];
+            buf[d + 2] = px[2];
+        }
+    }
+    buf
+}
+
+/// MS (MindSpore Lite NNRT) tile loop — mirrors `run_native_denoise` structure
+/// exactly (same step/iperhl/ipervl/total, same x0/y0, same i%10 progress).
+/// Ported from the nindfull POC `run_ms` tile loop. Reuses the shared
+/// `compute_blend_params` / `apply_seamless` / `accumulate_tile` via a flat
+/// NCHW → Array4 conversion.
+#[cfg(target_env = "ohos")]
+fn run_native_denoise_ms(
+    img: &Rgb32FImage,
+    session: &Mutex<crate::ohos_integration::ms_lite::MsModel>,
+    accumulator: &mut [f32],
+    width: usize,
+    height: usize,
+    app_handle: &tauri::AppHandle,
+    params: TileParams,
+) -> Result<()> {
+    let step = params.ucs.saturating_sub(params.overlap).max(1);
+    let iperhl = (width.saturating_sub(params.ucs) as f64 / step as f64).ceil() as usize;
+    let ipervl = (height.saturating_sub(params.ucs) as f64 / step as f64).ceil() as usize;
+    let total = (iperhl + 1) * (ipervl + 1);
+
+    let cs = params.cs;
+    for i in 0..total {
+        let yi = i / (iperhl + 1);
+        let xi = i % (iperhl + 1);
+        let x0 =
+            params.ucs as i32 * xi as i32 - params.overlap as i32 * xi as i32 - params.pad as i32;
+        let y0 =
+            params.ucs as i32 * yi as i32 - params.overlap as i32 * yi as i32 - params.pad as i32;
+
+        if i % 10 == 0 {
+            let pct = (i as f32 / total as f32) * 100.0;
+            let _ = app_handle.emit("denoise-progress", format!("Denoising… {:.0}%", pct));
+        }
+
+        let input_nhwc = fill_tile_nhwc(img, x0, y0, cs);
+        let out_flat = session.lock().unwrap().predict(&input_nhwc)?;
+        let mut tile = Array4::from_shape_vec((1, 3, cs, cs), out_flat)?;
+
+        let blend = compute_blend_params(params, x0, y0, width, height);
+        apply_seamless(&mut tile, &blend);
+        accumulate_tile(accumulator, &tile, &blend);
+    }
+    Ok(())
+}
+
+/// CANN (.om / HIAI_MR) tile loop — mirrors `run_native_denoise` structure
+/// exactly (same step/iperhl/ipervl/total, same x0/y0, same i%10 progress,
+/// same blend/accumulate tail). The .om keeps NCHW I/O (omg log-proven), so
+/// the ORT path's NCHW mirror-fill tile extraction is reused directly — no
+/// NHWC conversion (unlike the .ms route). §8.4: perfmode 4 ≈ 130ms/tile vs
+/// 257ms (.ms NNRT) / 1215ms (X90 ORT CPU).
+#[cfg(target_env = "ohos")]
+fn run_native_denoise_om(
+    img: &Rgb32FImage,
+    session: &Mutex<crate::ohos_integration::om::OmModel>,
+    accumulator: &mut [f32],
+    width: usize,
+    height: usize,
+    app_handle: &tauri::AppHandle,
+    params: TileParams,
+) -> Result<()> {
+    let step = params.ucs.saturating_sub(params.overlap).max(1);
+    let iperhl = (width.saturating_sub(params.ucs) as f64 / step as f64).ceil() as usize;
+    let ipervl = (height.saturating_sub(params.ucs) as f64 / step as f64).ceil() as usize;
+    let total = (iperhl + 1) * (ipervl + 1);
+
+    for i in 0..total {
+        let yi = i / (iperhl + 1);
+        let xi = i % (iperhl + 1);
+        let x0 =
+            params.ucs as i32 * xi as i32 - params.overlap as i32 * xi as i32 - params.pad as i32;
+        let y0 =
+            params.ucs as i32 * yi as i32 - params.overlap as i32 * yi as i32 - params.pad as i32;
+
+        if i % 10 == 0 {
+            let pct = (i as f32 / total as f32) * 100.0;
+            let _ = app_handle.emit("denoise-progress", format!("Denoising… {:.0}%", pct));
+        }
+
+        let crop = extract_tile_mirror(img, x0, y0, params.cs);
+        let input_slice = crop
+            .as_slice()
+            .ok_or_else(|| anyhow::anyhow!("tile extraction produced non-contiguous data"))?;
+
+        let out_flat = {
+            let model = session.lock().unwrap();
+            model.write_input_f32(0, input_slice)?;
+            model.run()?;
+            model.read_output_f32(0)?
+        };
+
+        let mut tile = Array4::from_shape_vec((1, 3, params.cs, params.cs), out_flat)?;
+
+        let blend = compute_blend_params(params, x0, y0, width, height);
+        apply_seamless(&mut tile, &blend);
+        accumulate_tile(accumulator, &tile, &blend);
+    }
+    Ok(())
 }
 
 pub fn run_lama_inpainting(
@@ -1454,22 +1896,27 @@ pub fn run_sam_decoder(
     }
 }
 
-pub fn run_sky_seg_model(
+/// Shared runner for the 320² u2net-family mask models (sky seg +
+/// foreground). Letterbox paste + ImageNet normalization in, min-max
+/// normalized mask out; only the inference call differs between the ORT
+/// and CANN (OHOS .om) sessions.
+fn run_u2net_family_model(
     image: &DynamicImage,
-    sky_seg_session: &Mutex<Session>,
+    session: &MaskSession,
+    input_size: u32,
 ) -> Result<GrayImage> {
     let (orig_width, orig_height) = image.dimensions();
 
-    let resized_image = image.resize(SKYSEG_INPUT_SIZE, SKYSEG_INPUT_SIZE, FilterType::Triangle);
+    let resized_image = image.resize(input_size, input_size, FilterType::Triangle);
     let (resized_w, resized_h) = resized_image.dimensions();
     let resized_rgb = resized_image.into_rgb8();
     let raw_pixels = resized_rgb.as_raw();
 
-    let paste_x = ((SKYSEG_INPUT_SIZE - resized_w) / 2) as usize;
-    let paste_y = ((SKYSEG_INPUT_SIZE - resized_h) / 2) as usize;
+    let paste_x = ((input_size - resized_w) / 2) as usize;
+    let paste_y = ((input_size - resized_h) / 2) as usize;
 
     let mut input_tensor: Array<f32, _> =
-        Array::zeros((1, 3, SKYSEG_INPUT_SIZE as usize, SKYSEG_INPUT_SIZE as usize));
+        Array::zeros((1, 3, input_size as usize, input_size as usize));
 
     let mean = [0.485, 0.456, 0.406];
     let std = [0.229, 0.224, 0.225];
@@ -1492,13 +1939,30 @@ pub fn run_sky_seg_model(
         }
     }
 
-    let input_tensor_dyn = input_tensor.into_dyn();
-    let t_input = Tensor::from_array(input_tensor_dyn.as_standard_layout().into_owned())?;
-
-    let mut session = sky_seg_session.lock().unwrap();
-    let outputs = session.run(ort::inputs![t_input])?;
-    let output_tensor = outputs[0].try_extract_array::<f32>()?.to_owned();
-    let out_slice = output_tensor.as_slice().unwrap();
+    let out_flat: Vec<f32> = match session {
+        MaskSession::Ort(s) => {
+            let input_tensor_dyn = input_tensor.into_dyn();
+            let t_input = Tensor::from_array(input_tensor_dyn.as_standard_layout().into_owned())?;
+            let mut session = s.lock().unwrap();
+            let outputs = session.run(ort::inputs![t_input])?;
+            let output_tensor = outputs[0].try_extract_array::<f32>()?.to_owned();
+            output_tensor
+                .as_slice()
+                .ok_or_else(|| anyhow::anyhow!("non-contiguous mask model output"))?
+                .to_vec()
+        }
+        #[cfg(target_env = "ohos")]
+        MaskSession::Cann(m) => {
+            let input_slice = input_tensor
+                .as_slice()
+                .ok_or_else(|| anyhow::anyhow!("non-contiguous mask model input"))?;
+            let model = m.lock().unwrap();
+            model.write_input_f32(0, input_slice)?;
+            model.run()?;
+            model.read_output_f32(0)?
+        }
+    };
+    let out_slice = out_flat.as_slice();
 
     let mut min_val = f32::MAX;
     let mut max_val = f32::MIN;
@@ -1510,7 +1974,7 @@ pub fn run_sky_seg_model(
     let range = max_val - min_val;
     let scale = if range > 1e-6 { 255.0 / range } else { 0.0 };
 
-    let usize_size = SKYSEG_INPUT_SIZE as usize;
+    let usize_size = input_size as usize;
     let mut cropped_mask_data = Vec::with_capacity(rw * rh);
 
     for y in 0..rh {
@@ -1528,92 +1992,19 @@ pub fn run_sky_seg_model(
     }
 
     let cropped_mask = GrayImage::from_raw(resized_w, resized_h, cropped_mask_data)
-        .ok_or_else(|| anyhow::anyhow!("Failed to create mask from Sky Segmentation output"))?;
+        .ok_or_else(|| anyhow::anyhow!("Failed to create mask from u2net-family model output"))?;
 
     let final_mask = imageops::resize(&cropped_mask, orig_width, orig_height, FilterType::Triangle);
 
     Ok(final_mask)
 }
 
-pub fn run_u2netp_model(
-    image: &DynamicImage,
-    u2netp_session: &Mutex<Session>,
-) -> Result<GrayImage> {
-    let (orig_width, orig_height) = image.dimensions();
+pub fn run_sky_seg_model(image: &DynamicImage, sky_seg_session: &MaskSession) -> Result<GrayImage> {
+    run_u2net_family_model(image, sky_seg_session, SKYSEG_INPUT_SIZE)
+}
 
-    let resized_image = image.resize(U2NETP_INPUT_SIZE, U2NETP_INPUT_SIZE, FilterType::Triangle);
-    let (resized_w, resized_h) = resized_image.dimensions();
-    let resized_rgb = resized_image.into_rgb8();
-    let raw_pixels = resized_rgb.as_raw();
-
-    let paste_x = ((U2NETP_INPUT_SIZE - resized_w) / 2) as usize;
-    let paste_y = ((U2NETP_INPUT_SIZE - resized_h) / 2) as usize;
-
-    let mut input_tensor: Array<f32, _> =
-        Array::zeros((1, 3, U2NETP_INPUT_SIZE as usize, U2NETP_INPUT_SIZE as usize));
-
-    let mean = [0.485, 0.456, 0.406];
-    let std = [0.229, 0.224, 0.225];
-
-    let rw = resized_w as usize;
-    let rh = resized_h as usize;
-
-    for y in 0..rh {
-        for x in 0..rw {
-            let idx = (y * rw + x) * 3;
-            let dest_y = y + paste_y;
-            let dest_x = x + paste_x;
-
-            input_tensor[[0, 0, dest_y, dest_x]] =
-                (raw_pixels[idx] as f32 / 255.0 - mean[0]) / std[0];
-            input_tensor[[0, 1, dest_y, dest_x]] =
-                (raw_pixels[idx + 1] as f32 / 255.0 - mean[1]) / std[1];
-            input_tensor[[0, 2, dest_y, dest_x]] =
-                (raw_pixels[idx + 2] as f32 / 255.0 - mean[2]) / std[2];
-        }
-    }
-
-    let input_tensor_dyn = input_tensor.into_dyn();
-    let t_input = Tensor::from_array(input_tensor_dyn.as_standard_layout().into_owned())?;
-
-    let mut session = u2netp_session.lock().unwrap();
-    let outputs = session.run(ort::inputs![t_input])?;
-    let output_tensor = outputs[0].try_extract_array::<f32>()?.to_owned();
-    let out_slice = output_tensor.as_slice().unwrap();
-
-    let mut min_val = f32::MAX;
-    let mut max_val = f32::MIN;
-    for &v in out_slice {
-        min_val = min_val.min(v);
-        max_val = max_val.max(v);
-    }
-
-    let range = max_val - min_val;
-    let scale = if range > 1e-6 { 255.0 / range } else { 0.0 };
-
-    let usize_size = U2NETP_INPUT_SIZE as usize;
-    let mut cropped_mask_data = Vec::with_capacity(rw * rh);
-
-    for y in 0..rh {
-        let src_y = y + paste_y;
-        for x in 0..rw {
-            let src_x = x + paste_x;
-            let val = out_slice[src_y * usize_size + src_x];
-            let pixel = if range > 1e-6 {
-                ((val - min_val) * scale) as u8
-            } else {
-                0
-            };
-            cropped_mask_data.push(pixel);
-        }
-    }
-
-    let cropped_mask = GrayImage::from_raw(resized_w, resized_h, cropped_mask_data)
-        .ok_or_else(|| anyhow::anyhow!("Failed to create mask from U-2-Netp output"))?;
-
-    let final_mask = imageops::resize(&cropped_mask, orig_width, orig_height, FilterType::Triangle);
-
-    Ok(final_mask)
+pub fn run_u2netp_model(image: &DynamicImage, u2netp_session: &MaskSession) -> Result<GrayImage> {
+    run_u2net_family_model(image, u2netp_session, U2NETP_INPUT_SIZE)
 }
 
 pub fn run_depth_anything_model(

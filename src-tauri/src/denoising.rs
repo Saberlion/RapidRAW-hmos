@@ -11,8 +11,8 @@ use std::cmp::Ordering;
 use std::fs;
 use std::io::Cursor;
 use std::path::Path;
+use std::sync::Arc;
 use std::sync::atomic::{AtomicI64, AtomicUsize, Ordering as AtomicOrdering};
-use std::sync::{Arc, Mutex};
 use tauri::{AppHandle, Emitter};
 
 struct ProgressReporter<'a> {
@@ -299,7 +299,7 @@ fn denoise_image(
     intensity: f32,
     method: String,
     app_handle: AppHandle,
-    ai_session: Option<Arc<Mutex<ort::session::Session>>>,
+    ai_session: Option<Arc<crate::ai_processing::DenoiseSession>>,
 ) -> Result<(DynamicImage, String), String> {
     let path = Path::new(&path_str);
     if !path.exists() {
