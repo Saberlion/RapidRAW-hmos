@@ -177,6 +177,99 @@ try {
   } else {
     Write-Host "no machine-local libonnxruntime.so under src-tauri/libs/ohos/$targetAbi - HAP ships without ORT (AI degrades gracefully)"
   }
+  # CANN vendor libs (machine-local, same provisioning channel as ORT).
+  # The HCL facade AND libai_fmk_tensor.so ride in the HAP, each with its
+  # full transitive dependency closure. The facade is the one CANN piece
+  # an app process cannot reach by name: /vendor/lib64/passthrough/ is
+  # outside every searchable namespace, and files dropped into the app
+  # lib dir post-install fail OHOS XPM code-signing (mmap EACCES) - so it
+  # must ride inside the HAP. libai_fmk_tensor.so is nominally reachable
+  # via /vendor/lib64/passthrough/indirect/, but the facade lazily
+  # dlopens it by soname from moduleNs_default (app context) at
+  # NDTensorBuffer creation, and that dlopen only succeeds when the
+  # soname is already in moduleNs_default's loaded list or dirs - a copy
+  # pre-loaded into the rich system namespace (where a bare-soname dlopen
+  # of an indirect/ resident lands first) gets REJECTED with errno=2
+  # (device-verified) - so tensor must load from the app lib dir too.
+  # App-lib-dir loads land in moduleNs_default, whose dependency search
+  # covers the app lib dir only - NOT the chipset-*/platformsdk subdirs
+  # where this ROM keeps libhilog/libsec_shared etc., and not even
+  # /system/lib64 root (the platform libc++.so symlink fails there with
+  # errno=2; only loader-provided libc.so resolves) - so both closures
+  # run down to leaf system libs, C++ runtime included (device-verified
+  # level by level). Everything else - core, the _impl chain and the
+  # whole vendor closure - is pulled into the rich default ns by
+  # load_api's absolute-path dlopens from indirect/, where chipset
+  # dirs ARE searchable (device-verified: libnpu_ai_fmk_om/libgraph/
+  # libai_fmk_base all load with zero packing; the _impl chain must
+  # NOT be packed, an app-dir copy would load it into moduleNs_default
+  # and break it instead).
+  #
+  # Two namespace rules learned the hard way (T6/T7 device evidence):
+  # - DT_NEEDED deps of app-dir (moduleNs_default) libs may be
+  #   satisfied cross-namespace by copies the system stack already
+  #   loaded in the default ns (T7: packed hilog/ffrt/ubsan/etc. never
+  #   got mapped - the platformsdk/ndk copies satisfied them).
+  # - Lazy dlopen() issued from moduleNs_default code resolves against
+  #   ndk dirs + the app dir ONLY (no rich fallback), and a copy of the
+  #   same soname already loaded in the default ns is cross-ns REJECTED
+  #   instead of returned - so every soname the CANN client stack
+  #   lazily dlopens MUST be packed here: libai_fmk_tensor.so (facade's
+  #   buffer handle fetch, T6) and libai_hdi_request_client.so (tensor
+  #   buffer creation's HDI ION allocation path, T7 - the dlopen failed
+  #   with the lib sitting in indirect/ AND already mapped in the
+  #   default ns through core's dependency closure).
+  $cannLibs = @(
+    'libai_fmk_hcl_model_runtime.so',
+    'libai_infra_log.so',
+    'libsec_shared.z.so',
+    'libhitrace_meter.so',
+    'libbegetutil.z.so',
+    'libhilog.so',
+    'libhitracechain.so',
+    'libconfigpolicy_util.z.so',
+    'libsystemparam.z.so',
+    'libhilog_inner.so',
+    'libhilog_encode.so',
+    'libsandboxlog.so',
+    'libcjson.z.so',
+    'libclang_rt.ubsan_minimal.so',
+    'libc++.so',
+    'libai_fmk_tensor.so',
+    'libai_infra_client.so',
+    'libai_infra_dma_memory.so',
+    'libai_infra_memory_manager_client.so',
+    'libai_infra_rpc_client.so',
+    'libai_fmk_tensor_cache_status_manager.so',
+    'libai_hdi_request_client.so',
+    'libdmabufheap.z.so',
+    'libaccesstoken_compat_sdk.z.so',
+    'libipc_single.z.so',
+    'libbacktrace_local.so',
+    'libfaultloggerd.z.so',
+    'libunwinder.z.so',
+    'libhisysevent.z.so',
+    'libffrt.so',
+    'libutils.z.so',
+    'libdfx_util.z.so',
+    'libdfx_procinfo.z.so',
+    'liblzma.z.so',
+    'libsamgr_proxy.z.so',
+    'libipc_common.z.so',
+    'libselinux.z.so',
+    'libpcre2.z.so'
+  )
+  foreach ($cannLib in $cannLibs) {
+    $cannSrc = "$repo\src-tauri\libs\ohos\$targetAbi\$cannLib"
+    if (Test-Path $cannSrc) {
+      $old = $zip.GetEntry("libs/$targetAbi/$cannLib")
+      if ($old) { $old.Delete() }
+      [IO.Compression.ZipFileExtensions]::CreateEntryFromFile(
+        $zip, $cannSrc, "libs/$targetAbi/$cannLib",
+        [IO.Compression.CompressionLevel]::Optimal) | Out-Null
+      Write-Host "CANN lib injected into HAP libs/$targetAbi/: $cannLib"
+    }
+  }
 } finally { $zip.Dispose() }
 
 # ---------- 4. report artifact ----------
