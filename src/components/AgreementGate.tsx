@@ -21,14 +21,14 @@ export type AgreementDocKind = 'privacy' | 'terms';
 // texts authored once per script (zh-Hans / zh-Hant / en) and selected by
 // language prefix. The 15-locale sync check only governs UI chrome strings.
 const PRIVACY_DOCS: Record<string, string> = {
-  'zh-CN': `RapidRAW 隐私政策
+  'zh-CN': `LightRaw 隐私政策
 更新日期:2026 年 10 月 6 日
 
 一、总则
-RapidRAW 是一款以本地处理为核心的开源照片编辑器。我们高度重视您的隐私:本应用没有用户账号系统,不包含任何遥测或使用统计代码。
+LightRaw 是一款以本地处理为核心的开源照片编辑器。我们高度重视您的隐私:本应用没有用户账号系统,不包含任何遥测或使用统计代码。
 
 二、我们收集哪些信息
-RapidRAW 不收集、不上传、不分享任何个人身份信息。
+LightRaw 不收集、不上传、不分享任何个人身份信息。
 
 三、本地数据
 您的照片、编辑参数(.rrdata 边车文件)、缩略图缓存与应用设置均仅保存在您的设备本地。卸载应用即删除上述应用数据;您的照片文件不受影响。
@@ -49,14 +49,14 @@ RapidRAW 不收集、不上传、不分享任何个人身份信息。
 
 八、联系我们
 请通过 GitHub 仓库的 Issues 页面与我们联系。`,
-  'zh-TW': `RapidRAW 隱私政策
+  'zh-TW': `LightRaw 隱私政策
 更新日期:2026 年 10 月 6 日
 
 一、總則
-RapidRAW 是一款以本機處理為核心的開源照片編輯器。我們高度重視您的隱私:本應用沒有使用者帳號系統,不包含任何遙測或使用統計程式碼。
+LightRaw 是一款以本機處理為核心的開源照片編輯器。我們高度重視您的隱私:本應用沒有使用者帳號系統,不包含任何遙測或使用統計程式碼。
 
 二、我們收集哪些資訊
-RapidRAW 不收集、不上傳、不分享任何個人身分資訊。
+LightRaw 不收集、不上傳、不分享任何個人身分資訊。
 
 三、本機資料
 您的照片、編輯參數(.rrdata 邊車檔案)、縮圖快取與應用程式設定均僅儲存在您的裝置本機。解除安裝應用程式即刪除上述資料;您的照片檔案不受影響。
@@ -77,14 +77,14 @@ RapidRAW 不收集、不上傳、不分享任何個人身分資訊。
 
 八、聯絡我們
 請透過 GitHub 儲存庫的 Issues 頁面與我們聯絡。`,
-  en: `RapidRAW Privacy Policy
+  en: `LightRaw Privacy Policy
 Last updated: October 6, 2026
 
 1. Overview
-RapidRAW is an open-source, local-first photo editor. We take your privacy seriously: the app has no account system and contains no telemetry or usage tracking.
+LightRaw is an open-source, local-first photo editor. We take your privacy seriously: the app has no account system and contains no telemetry or usage tracking.
 
 2. Information we collect
-RapidRAW does not collect, upload, or share any personal information.
+LightRaw does not collect, upload, or share any personal information.
 
 3. Local data
 Your photos, edit parameters (.rrdata sidecar files), thumbnail caches, and app settings are stored only on your device. Uninstalling the app removes this app data; your photo files are untouched.
@@ -108,11 +108,11 @@ Reach us via the GitHub repository's Issues page.`,
 };
 
 const TERMS_DOCS: Record<string, string> = {
-  'zh-CN': `RapidRAW 用户协议
+  'zh-CN': `LightRaw 用户协议
 更新日期:2026 年 10 月 6 日
 
 一、协议的接受
-点击"同意并继续"或继续使用 RapidRAW,即表示您已阅读并同意本协议与《隐私政策》。
+点击"同意并继续"或继续使用 LightRaw,即表示您已阅读并同意本协议与《隐私政策》。
 
 二、开源许可
 本应用以 GNU Affero 通用公共许可证第 3.0 版(AGPL-3.0)分发。您可以在遵守该许可证的前提下自由使用、研究、修改和再分发本软件。完整许可证文本:https://www.gnu.org/licenses/agpl-3.0.html
@@ -128,11 +128,11 @@ const TERMS_DOCS: Record<string, string> = {
 
 六、协议变更
 本协议如有重大变更,将在应用内重新弹窗征求您的同意。继续使用即视为接受变更后的协议。`,
-  'zh-TW': `RapidRAW 使用者協議
+  'zh-TW': `LightRaw 使用者協議
 更新日期:2026 年 10 月 6 日
 
 一、協議的接受
-點擊「同意並繼續」或繼續使用 RapidRAW,即表示您已閱讀並同意本協議與《隱私政策》。
+點擊「同意並繼續」或繼續使用 LightRaw,即表示您已閱讀並同意本協議與《隱私政策》。
 
 二、開源許可
 本應用以 GNU Affero 通用公共授權條款第 3.0 版(AGPL-3.0)散布。您可以在遵守該授權條款的前提下自由使用、研究、修改和再散布本軟體。完整授權條款文本:https://www.gnu.org/licenses/agpl-3.0.html
@@ -148,11 +148,11 @@ const TERMS_DOCS: Record<string, string> = {
 
 六、協議變更
 本協議如有重大變更,將在應用內重新彈窗徵求您的同意。繼續使用即視為接受變更後的協議。`,
-  en: `RapidRAW User Agreement
+  en: `LightRaw User Agreement
 Last updated: October 6, 2026
 
 1. Acceptance
-By tapping "Agree & Continue" or using RapidRAW, you accept this agreement and the Privacy Policy.
+By tapping "Agree & Continue" or using LightRaw, you accept this agreement and the Privacy Policy.
 
 2. Open-source license
 This app is distributed under the GNU Affero General Public License v3.0 (AGPL-3.0). You may use, study, modify, and redistribute it under the terms of that license. Full text: https://www.gnu.org/licenses/agpl-3.0.html
@@ -207,7 +207,7 @@ export default function AgreementGate({ appSettings, onAgree }: AgreementGatePro
     <div className="fixed inset-0 z-50 flex flex-col bg-bg-primary text-text-primary font-sans select-none">
       <div className="pt-10 pb-3 px-6 text-center shrink-0">
         <Text variant={TextVariants.title} color={TextColors.accent} weight={TextWeights.bold}>
-          RapidRAW
+          LightRaw
         </Text>
         <div className="mt-2">
           <Text variant={TextVariants.heading}>{t('ui.agreement.title')}</Text>

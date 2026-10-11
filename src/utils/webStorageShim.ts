@@ -1,6 +1,6 @@
 /**
  * ArkWeb (the OpenHarmony webview) exposes `window.localStorage` as null —
- * any access (even `Object.keys(localStorage)`) throws a TypeError. RapidRAW
+ * any access (even `Object.keys(localStorage)`) throws a TypeError. LightRaw
  * itself does not use web storage (all persistence goes through the Rust
  * settings sidecar), but this guard keeps future code and third-party
  * libraries from crashing on OHOS. When a storage is missing or throws on
