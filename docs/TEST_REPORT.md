@@ -309,7 +309,7 @@
 
 | ID | 状态 | 证据 | 备注 |
 |---|---|---|---|
-| TC-PRIV-01 | ⬜ | 实现:`privacy_state` 桥 → `get_ohos_privacy_state` → 关于页链接行(§6.18-1/3) | 需真机 |
+| TC-PRIV-01 | ⬜ | 实现:`privacy_state` 桥 → `get_ohos_privacy_state` → 关于页链接行;平台未下发时回退到 AGC 托管声明常量(§6.18-1/3/4) | 需真机 |
 | TC-PRIV-02 | ⬜ | 实现:`ohosConsentOf` 三态(§6.18-3) | 需真机 |
 | TC-PRIV-03 | ⬜ | 实现:`requestAppPrivacyConsent(context)`(§6.18-1) | 需真机 |
 | TC-PRIV-04 | ⬜ | 实现:`disableService` + ConfirmModal 二次确认(§6.18-1/8) | 需真机 |

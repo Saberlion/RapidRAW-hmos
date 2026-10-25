@@ -49,6 +49,27 @@ export type OhosConsent = 'granted' | 'denied' | 'unknown';
 /** AppGallery error code: the app does not use privacy statement hosting. */
 export const PRIVACY_NOT_INTEGRATED = 1006700003;
 
+/**
+ * This app's AGC-hosted privacy statement (the "standardized privacy statement
+ * hosting" document published in AppGallery Connect). Used as the fallback
+ * target when the privacy management service reports no link — i.e. hosting is
+ * not configured yet, or the build has no `appgallery_privacy_*` metadata — so
+ * the statement stays reachable from the About section.
+ */
+export const PRIVACY_STATEMENT_AGREEMENT_ID = '2053968770484970432';
+
+const PRIVACY_STATEMENT_BASE = 'https://agreement-drcn.hispace.dbankcloud.cn/index.html';
+
+/**
+ * Build the hosted-statement URL for a UI language. The hosted page switches
+ * content by its `lang` query parameter; only `zh` and `en` are published, so
+ * every non-Chinese locale falls back to `en`.
+ */
+export function privacyStatementUrl(language: string): string {
+  const lang = language.toLowerCase().startsWith('zh') ? 'zh' : 'en';
+  return `${PRIVACY_STATEMENT_BASE}?lang=${lang}&agreementId=${PRIVACY_STATEMENT_AGREEMENT_ID}`;
+}
+
 const EMPTY: OhosPrivacyState = { ok: false, links: [], results: [], error: null, code: null };
 
 function normalize(value: unknown): OhosPrivacyState {
@@ -122,19 +143,24 @@ export interface OhosPrivacyLinkEntry {
 }
 
 /**
- * Turn the store-issued links into labelled rows.
+ * Turn the store-issued links into labelled rows, falling back to the
+ * AGC-hosted statement when the platform reports none (hosting not configured,
+ * or an unlisted debug build without the `appgallery_privacy_*` metadata) so the
+ * user always has a way to read the policy.
  *
- * `AppPrivacyLink.type` is not publicly documented; the mapping used here
- * treats `type === 1` as the privacy statement when such an entry exists and
- * otherwise takes the first link (the statement is always present when hosting
- * is in use), labelling any remaining entries as user agreements. Refine here
- * if a device ever reports a different type scheme.
+ * `AppPrivacyLink.type` is not publicly documented; the mapping used here treats
+ * `type === 1` as the privacy statement when such an entry exists and otherwise
+ * takes the first link (the statement is always present when hosting is in use),
+ * labelling any remaining entries as user agreements. Refine here if a device
+ * ever reports a different type scheme.
  */
-export function platformPrivacyLinks(state: OhosPrivacyState | null): OhosPrivacyLinkEntry[] {
+export function platformPrivacyLinks(state: OhosPrivacyState | null, language: string): OhosPrivacyLinkEntry[] {
   const links = (state?.links ?? []).filter(
     (link): link is OhosPrivacyLink & { url: string } => typeof link.url === 'string' && link.url.length > 0,
   );
-  if (links.length === 0) return [];
+  if (links.length === 0) {
+    return [{ labelKey: 'settings.about.privacyPolicy', url: privacyStatementUrl(language) }];
+  }
   const statementIndex = links.findIndex((link) => link.type === 1);
   const primaryIndex = statementIndex >= 0 ? statementIndex : 0;
   return links.map((link, index) => ({

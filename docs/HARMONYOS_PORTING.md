@@ -742,12 +742,21 @@ fail-open 是刻意的:文档明确"用户未签署隐私协议时,将无法申�
 
 ```json5
 // gen/ohos/entry/src/main/module.json5 → module.metadata
+// 必填两项:appgallery_privacy_hosted + appgallery_privacy_link_privacy_statement;
+// 用户协议(appgallery_privacy_link_user_agreement / _user_agreements)可选——
+// 目前没有独立的用户协议文档,故整体省略。
 "metadata": [
   { "name": "appgallery_privacy_hosted", "value": "1" },
-  { "name": "appgallery_privacy_link_privacy_statement", "value": "https://<你的域名>/privacy" },
-  { "name": "appgallery_privacy_link_user_agreement", "value": "https://<你的域名>/terms" }
+  {
+    "name": "appgallery_privacy_link_privacy_statement",
+    "value": "https://agreement-drcn.hispace.dbankcloud.cn/index.html?lang=zh&agreementId=2053968770484970432"
+  }
 ]
 ```
+
+> 该 URL 即本应用在 AGC 的**标准化隐私声明**(托管协议 `agreementId=2053968770484970432`,`lang` 参数切换中/英)。上架后在 AGC 侧同样配置这一份声明,平台弹窗与 `getAppPrivacyMgmtInfo` 都以云侧为准。
+>
+> **应用侧回退**:同一链接以常量形式编译进 `src/utils/ohosPrivacy.ts`(`PRIVACY_STATEMENT_AGREEMENT_ID` + `privacyStatementUrl(lang)`,按界面语言切 `lang=zh|en`)。当隐私服务未接入/未预置(无 `AppPrivacyLink`)时,「关于」页用它对隐私政策行兜底,**平台下发链接优先**;这样即使托管未生效,用户仍能读到声明。
 
 约束:必须 **https**;构建模式须为 **debug**;须**从本地文件 `hdc install`** 且设备可正常使用华为应用市场。正式上架后以 AGC 云端托管配置为准(metadata 应移除,避免与云侧版本号不一致)。
 
@@ -774,7 +783,7 @@ hdc shell "hilog -x | grep -iE 'RapidRAW.+(privacy|consent)'"
 - `AppPrivacyLink.type` 语义未公开:前端按 `type === 1` 视为主隐私声明、否则取首条为主、其余标注为用户协议(设备实测后可收窄);
 - 撤销同意后界面即时显示"未同意"(平台记录已清,下次启动自然回落,无需重启);
 - ArkTS 桥依赖 `EntryAbility.template.ets` 补丁:注册表新增 `resolveOhosPrivacy` 与 `notifyOhosPrivacyChanged`,**`ohos init` 重跑后须按模板重打**;
-- 未接入/未预置构建:状态显示「未启用」(`1006700003`),门控放行(第 2 节);
+- 未接入/未预置构建:状态显示「未启用」(`1006700003`),门控放行(第 2 节);「关于」页隐私政策行回退到 AGC 托管声明链接(第 4 节),不是空行;
 - 本次只做静态门禁,真机行为(弹窗文案、事件时序、门控时序)未验证 —— 见本节第 6/7 条。
 
 ## 7. 移植路线图与进度清单

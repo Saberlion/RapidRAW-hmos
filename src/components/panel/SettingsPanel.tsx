@@ -559,7 +559,7 @@ export default function SettingsPanel({
   const [privacyBusy, setPrivacyBusy] = useState(false);
   const [privacyRevokeOpen, setPrivacyRevokeOpen] = useState(false);
   const privacyConsent = ohosConsentOf(ohosPrivacy);
-  const privacyLinks = platformPrivacyLinks(ohosPrivacy);
+  const privacyLinks = platformPrivacyLinks(ohosPrivacy, i18n.language);
 
   // The store can change the consent behind our back (its standardized dialog,
   // or a revocation from system settings), so re-read whenever About is opened.
