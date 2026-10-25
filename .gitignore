@@ -49,3 +49,6 @@ src-tauri/libs/
 
 # bench/replay.js result dumps
 bench/out/
+
+# agent-session scratch data (plans / run-continuation / ultraresearch)
+.omo/

@@ -700,6 +700,8 @@ demosaic 输出         f32 RGB   734MB
 
 **提审包 v3(2026-10-11 16:10)——去掉 ACL 受限权限 `ohos.permission.READ_IMAGEVIDEO`**(AGC 审核问题③;应用经 SAF 选择器访问图片,全仓 Rust/前端零引用,真机 INTERNET-only 验证早已佐证无需它):module.json5 收敛为 **7 权限定版**(`.agc-backup` 同步更新,SHA256 `43E9CB4B4A7E37C5E4F10E158198E9A9D5890A2A8B2B4B37AA9D350F2875188A`),`-Release` 重出 + 全链路复核(7 权限无 READ_IMAGEVIDEO、LightRaw、42 库零 DWARF/零 symtab、0 map)。产物 `entry-default.app` **26.17MB**,SHA256 `986387BEC6C200AAFD624962AFCED6D6FC1E579FEBE6EA36DED73828C6E7BDA0`。**风险预告:`WRITE_IMAGEVIDEO` 与 `MEDIA_LOCATION` 同为弃用/ACL 受限类权限(应用走 SAF 均不需要),下一轮审核可能同样被点名**——要去掉改 module.json5 后按同流程重出。版本 1.0.0(versionCode 1,同版本修订重提;若 AGC 要求新版本号需改 AppScope/app.json5 后重出)。**注意:AGC 控制台应用名称/图标须同步改为 LightRaw**(§6.15"名称须填 RapidRAW"已随更名过时;bundleName 未变,签名/备案不受影响);真机现装 INTERNET-only release 冒烟变体(非提审包);`perm_read_imagevideo` 字符串资源闲置保留(无引用,无害)。
 
+**协议门控复测(2026-10-12)**:针对现装冒烟变体(装机于 10-11 11:07,较 HEAD `0a1ffb5c` 早 3 个提交——AGC strip/docs/NPU 文案,均不触及门控;`App.tsx`/`useSettingsStore.ts`/`AgreementGate.tsx` 自 `8f5c88b2` 零改动,SettingsPanel 隐私查看区亦未动)重跑 §6.17 验证:`bm clean -d` 清数据后冷启 ×2(force-stop 复测),**零协议弹窗、直进欢迎页**,与首次验证一致。验证方法(无视觉模型的盲测,可复用):uitest dumpLayout 确认 EntryAbility 前台焦点 + 窗口 bounds,再以 WPF 像素扫描判屏——欢迎页签名 = 左半 splash 照片(`bg-black` 容器,纹理化暗质量、随图片加载渐亮)+ 右半纯浅色底 + 内容块 `max-w-xs`/`h-11`(2x DPI 下 accent 按钮 bbox 与布局公式吻合);AgreementGate 签名(整窗扁平底色 + 居中密集法律文本 + 底部居中按钮组)完全不匹配。行为反证:点击欢迎页「打开文件夹」弹出系统 SAF 选择器(`com.huawei.hmos.filemanager` 入 layout)——门控若挂载则主 UI 整树不渲染、不可能触发任何文件活动。**注意:2in1 设备上 SAF 选择器以 UIExtension 挂载并会把应用窗口吸附为左侧窄条(本次 [76,76][390,1470]),取消按钮在 layout JSON 中检索「取消」取 bounds 点击后窗口复原;Back 键关不掉选择器(焦点在选择器但无响应)。**桌面/Android 门控行为未重测(需动本机桌面应用数据),以代码零改动 + `8f5c88b2` 当日验证为准。
+
 ## 7. 移植路线图与进度清单
 
 ### Phase 0 — 技术验证(1~2 周)
