@@ -127,8 +127,15 @@ export function ohosConsentOf(state: OhosPrivacyState | null): OhosConsent {
   if (!state || !state.ok) return 'unknown';
   if (typeof state.isAgreed === 'boolean') return state.isAgreed ? 'granted' : 'denied';
   const results = state.results ?? [];
-  if (results.length === 0) return 'unknown';
-  return results.every((result) => result.result === 1) ? 'granted' : 'denied';
+  if (results.length > 0) {
+    return results.every((result) => result.result === 1) ? 'granted' : 'denied';
+  }
+  // No per-document verdict at all. When the platform is serving links, the
+  // hosted statement IS in play, so "no result" means it has not been signed
+  // yet — a freshly installed build reports exactly this (links present,
+  // results []), and it must not read as the softer "unknown". After a revoke
+  // the platform reports an explicit result: 0 instead.
+  return (state.links ?? []).length > 0 ? 'denied' : 'unknown';
 }
 
 /** True when the service reported that the app does not use hosting. */

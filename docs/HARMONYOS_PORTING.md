@@ -762,7 +762,38 @@ fail-open 是刻意的:文档明确"用户未签署隐私协议时,将无法申�
 
 **5. 上架前 AGC 前置清单**(缺一即返回 `1006700003`):①接入**标准化隐私声明托管服务** ②配置隐私协议链接与**版本信息** ③隐私协议**过审**。审核红线(§6.15/6.17 已对齐):未接入托管服务 → 驳回;自定义弹窗与系统弹窗并存 → 驳回。
 
-**6. 验证状态**:**静态门禁全绿**——`cargo fmt --check`、宿主 `clippy --all-targets -- -D warnings`、宿主 + `aarch64-unknown-linux-ohos` `cargo check`、OHOS 目标 clippy 对本模块零 lint、`tsc` 70 项基线**零新增**、改动文件 prettier 零新增、`i18n:check`(1480 复数解析)通过。**真机验证待执行**:该服务**不支持模拟器**(文档明确),需真机 + 已接入托管/预置 metadata 的构建。
+**6. 验证状态**:**静态门禁全绿**——`cargo fmt --check`、宿主 `clippy --all-targets -- -D warnings`、宿主 + `aarch64-unknown-linux-ohos` `cargo check`、OHOS 目标 clippy 对本模块零 lint、`tsc` 70 项基线**零新增**、改动文件 prettier 零新增、`i18n:check`(1480 复数解析)通过。**真机端到端验证已完成**,见第 6.1 节。
+
+**6.1 真机端到端验证(2026-10-25,真机 3XB0124617000013 / HAD-W32 2in1 / HarmonyOS 7.0)**
+
+方法:`scripts/build-ohos.ps1 -Target aarch64`(debug)+ 调试材料重签(`.csr/SIGNING.md` §7)+ `hdc uninstall`/`install`(清掉平台同意记录以复现首启态)+ **CDP 页面内实测**(`fport 9222 → Runtime.evaluate → __TAURI_INTERNALS__.invoke`,§6.13-3 方法学)+ `uitest dumpLayout -i` 取 bounds 后 `uinput` 点击 + `app.log`/hilog 取证。
+
+| # | 验证项 | 证据(实测) | 结论 |
+|---|---|---|---|
+| 1 | 桥端到端 | 页面内 `invoke('get_ohos_privacy_state')` → `{ok:true, links:[{type:1, versionCode:0, url:"…?ver=2&lang=zh-Hans-CN&agreementId=2053968770484970432"}], results:[]}` | ✅ Rust↔ArkTS↔Rust 全通 |
+| 2 | 未上架预置 metadata 生效 | hilog `C04712/AppGalleryKit: NAPI_GetAppPrivacyManageInfo called` → `sa_appinfo_manager(GetAppPrivacyManageInfoFromDb) query bundle=io.github.CyberTimon.RapidRAW, version=1 success` → `GetPrivacyLinks dev lang=zh-Hans-CN` | ✅ 预置配置可用(第 4 节配方实测有效) |
+| 3 | 平台下发链接与硬编码一致 | 平台返回 `agreementId=2053968770484970432`(= 第 4 节的托管声明),`type=1` | ✅ `type===1` 为主声明**假设成立**(D-17 收窄) |
+| 4 | 取权门控(同意前) | 页面内点击「Open Folder」→ `pick_ohos_folder` 内 `ensure_consent` → **平台标准化弹窗出现**(dumpLayout:`您可通过关于LightRaw与隐私的声明…` + 取消/同意) | ✅ 门控按设计先取同意 |
+| 5 | 同意后继续原操作 | 弹窗「同意」→ 平台记录 `results:[{result:1,signingTimestamp:…}]` → **FileKit picker 随即打开**(`com.huawei.hmos.filemanager`「选择路径」窗口)→ 选 Download → 图库网格 + 缩略图渲染 | ✅ 门控放行后链路完整(同时回归验证选文件夹/缩略图) |
+| 6 | 签署结果事件链 | 同意后 `app.log`:`OHOS privacy consent changed: granted=true`(两次:门控路径 + 设置页路径) | ✅ `PRIVACY_STATE_CHANGED` → napi → tauri 事件全通 |
+| 7 | 门控热路径缓存 | 已同意后再次 `pick_ohos_folder`:picker 打开,**无**隐私弹窗 | ✅ 缓存生效,无重复打扰 |
+| 8 | 同意跨进程持久 | `aa force-stop` + 重启后查询仍为 `result:1` | ✅ 平台侧记录持久(故需 `disableService` 撤销) |
+| 9 | 撤销同意 | `invoke('revoke_ohos_privacy_consent')` → `{ok:true}`;再查询 `results:[{result:0}]`;设置页「关于」显示 **Consent status: Not accepted** | ✅ 撤销生效且 UI 正确 |
+| 10 | 撤销后重新门控 | 再次 `pick_ohos_folder` → 平台弹窗**重新出现** | ✅ 撤销 → 重新征求同意闭环 |
+| 11 | 设置页「关于」OHOS 变体 | DOM 实测:状态行 + 平台链接 `href=…agreementId=2053968770484970432`(「Privacy Policy」)+「Request consent」+「Revoke consent」;本地法务文本查看器不渲染 | ✅ 平台文本取代本地文本 |
+| 12 | 设置页主动请求授权 | 点「Request consent」→ 平台弹窗 → 同意 → 状态变 **Accepted** + `app.log granted=true` | ✅ 主动拉起重请求可用 |
+
+**6.2 实测发现(三条,均已处理/记录)**
+
+1. **ArkTS 严格性:`.ets` 不在 tsc/eslint 覆盖内** —— 首轮构建被 hvigor `CompileArkTS` 拒绝 5 处:`Record<string, Object>` 的值**不接受 `undefined`/`null`**(`AppPrivacyLink.type?: number` 这类可选字段直接塞入即报 `Type 'number | undefined' is not assignable to type 'Object'`)。修正:可选字段一律 `?? 0` / `?? ''` 收敛;`error` 用 `''` 而非 `null`;`isAgreed` 仅在确为 boolean 时写入。**教训:改 ArkTS 后必须跑一次 HAP 构建(或至少 hvigor 的 CompileArkTS),不能只信 tsc/eslint。**
+2. **平台在用户拒绝后直接杀进程** —— 在标准化弹窗上点「取消」后,hilog 实证:`A06666/commonUI/AG/AppGallery: [PrivacySignUtil]:killProcessesByBundleName bundleName: io.github.CyberTimon.RapidRAW success` + `[DisposeAlertAbility]:privacy dialog closed unexpectedly, now kill bundle`。**无崩溃栈**(faultlog 最新条目为他应用),属平台行为:未同意即不得运行。故应用侧门控的 `Err` 分支主要面向"弹窗被系统异常处置"等边角;真实拒绝路径是"应用被平台终止"。写用例/排障时勿把该退出误判为应用崩溃。
+3. **"托管在用但未签署"的平台返回形态** —— 首装未签署时 `getAppPrivacyResult` 返回 **`results: []`**(而非 `result:0`);撤销之后才返回 `result:0`。原前端三态把 `results:[]` 归为 `unknown`(显示「未知」),对首装用户是错误语义。修正 `ohosConsentOf`:**托管在用(`links` 非空)且无任何结果 → 视为「未同意」**;仅当既无 links 又无 results(托管未启用)才回落 `unknown`。Rust 侧 `ensure_consent` 无需改动(两种情况都会走"主动拉起弹窗"分支)。
+
+**6.3 回归观察(同一构建)**
+
+- 应用启动、Vulkan 适配器(`Maleoon 916 (backend: Vulkan)`)、`[pipeline-warmup] completed`(热缓存 184ms)正常,无新增崩溃;
+- 选文件夹 → 图库网格 + 缩略图渲染(Download:`.tiff`/`.fff`/`.jpg` 三张)正常;
+- 重启后 `Could not scan directory '/storage/Users/currentUser/Download': Operation not permitted (os error 1)` —— 属 §6.14 已知的会话级授权语义,重授权流兜底,非本次回归。
 
 **7. 真机验证 runbook**(待执行,命令沿用 §6.5/6.14 方法学)
 
@@ -829,7 +860,7 @@ hdc shell "hilog -x | grep -iE 'RapidRAW.+(privacy|consent)'"
 - [ ] ORT 动态加载真机验证;AI 蒙版/降噪功能分级测试(**模拟器部分已完成** 2026-10-04,见 6.12:NIND AI 降噪端到端全通——下载/持久化/ORT dlopen/推理/保存;模型下载 FUSE rename EACCES 已由拷贝回退修复;5 模型蒙版栈被 4GB 模拟器 LMK 阻塞待真机;x86_64 ORT v1.28.2 经 build-ohos.ps1 注入 HAP)
 - [ ] (可选)MindSpore Lite / NNRt NPU 路径评估(**前置调研已完成** 2026-10-04,见 `docs/MINDSPORE_LITE_NPU_EVAL.md`:结论 GO 基础上分模型——系统 MindSpore Lite Kit(`libmindspore_lite_ndk.z.so`,`OH_AI_*` C API,NNRT+CPU 逐算子回退)为推荐路径,Rust 绑定需手写(无现成 crate);converter_lite 2.10.0 离线转换;U2Net/skyseg/NIND 低风险、ViT 系需重导出、**LaMa 受 FFT 阻塞**;**全部验证需真机**——模拟器无 Kit/NNRT 支持,与 Phase 3-3 同一硬件阻塞;**CANN(`.om`)路线已应用集成并真机端到端验通**(2026-10-11,见 6.16:u2net 前景 + NIND 降噪接 HIAI_MR 直连,三道编译门禁全过;真机 E2E 全通——触发→NPU 推理→蒙版落盘 4.85s,NPU 时钟/CPU 分区执行/ORT 零回退三重实证,38 库命名空间闭包定版)
 - [ ] AGC 签名、AppGallery 上架(摄影类目)、版本通道(**签名已打通** 2026-10-05:sign-app/verify-app 全通、signed.hap 已产出;命令、证书材料与坑位记录在**未入库**的 `.csr/SIGNING.md`——签名材料含私钥,永不入库,`.csr/` 与 `*.p12/*.p7b/*.jks` 已加 .gitignore;**release HAP 真机直装已实证走不通** 2026-10-06:hdc install 被拒 code 9568322 "not trusted app source"(卸载重装同样被拒)——release profile 仅 AGC 分发渠道信任,真机迭代一律用 AGC 自动调试材料签名(配方 `SIGNING.md` §7,首启协议门闸即以此装包完成全流程真机验证);上架待干净 aarch64 release 包走 AGC 提审)
-- [x] AppGallery 隐私管理服务对接(2026-10-25,见 6.18):`privacyManager` 四接口 + `PRIVACY_STATE_CHANGED` 公共事件经 Rust/ArkTS 桥接入(3 个 tauri 命令 `get/request/revoke_ohos_privacy_*` + 2 个 napi 导出);FileKit picker 前置同意门控(**失败开放**);设置页「关于」展示平台隐私链接/签署状态/撤销同意;未上架调试包 `module.json5` 预置 metadata(gen/ 本地修改,重跑 `ohos init` 后需重加);15 locale 新增 11 键。**真机验证待执行**(该服务不支持模拟器)
+- AppGallery 隐私管理服务对接(2026-10-25,见 6.18):`privacyManager` 四接口 + `PRIVACY_STATE_CHANGED` 公共事件经 Rust/ArkTS 桥接入(3 个 tauri 命令 `get/request/revoke_ohos_privacy_*` + 2 个 napi 导出);FileKit picker 前置同意门控(**失败开放**);设置页「关于」展示平台隐私链接/签署状态/撤销同意;未上架调试包 `module.json5` 预置 metadata(gen/ 本地修改,重跑 `ohos init` 后需重加);15 locale 新增 11 键。**真机端到端验证已完成**(2026-10-25,12 项全通:桥/预置 metadata/门控/同意→picker/事件链/缓存/持久/撤销/重请求/关于页,见 6.18-6.1;实测发现 3 条已处理,见 6.18-6.2)
 
 ## 8. 环境搭建速查(Phase 1 参考)
 

@@ -260,9 +260,9 @@ export default class EntryAbility extends RustAbility {
       const privacyLinks: privacyManager.AppPrivacyLink[] = info.privacyInfo;
       for (let i = 0; i < privacyLinks.length; i++) {
         links.push({
-          'type': privacyLinks[i]['type'],
-          'versionCode': privacyLinks[i]['versionCode'],
-          'url': privacyLinks[i]['url'],
+          'type': privacyLinks[i]['type'] ?? 0,
+          'versionCode': privacyLinks[i]['versionCode'] ?? 0,
+          'url': privacyLinks[i]['url'] ?? '',
         });
       }
       ok = true;
@@ -275,10 +275,10 @@ export default class EntryAbility extends RustAbility {
       const privacyResults: privacyManager.AppPrivacyResult[] = privacyManager.getAppPrivacyResult();
       for (let i = 0; i < privacyResults.length; i++) {
         results.push({
-          'type': privacyResults[i]['type'],
-          'versionCode': privacyResults[i]['versionCode'],
-          'result': privacyResults[i]['result'],
-          'signingTimestamp': privacyResults[i]['signingTimestamp'],
+          'type': privacyResults[i]['type'] ?? 0,
+          'versionCode': privacyResults[i]['versionCode'] ?? 0,
+          'result': privacyResults[i]['result'] ?? 0,
+          'signingTimestamp': privacyResults[i]['signingTimestamp'] ?? 0,
         });
       }
       ok = true;
@@ -286,11 +286,14 @@ export default class EntryAbility extends RustAbility {
       errors.push(`getAppPrivacyResult failed: ${JSON.stringify(error)}`);
       console.error(`[RapidRAW] getAppPrivacyResult failed: ${JSON.stringify(error)}`);
     }
+    // ArkTS: every value in a Record<string, Object> must be non-nullable, so the
+    // error field is '' rather than null (the Rust side treats '' as absent).
+    const errorText: string = errors.length > 0 ? errors.join('; ') : '';
     const payload: Record<string, Object> = {
       'ok': ok,
       'links': links,
       'results': results,
-      'error': errors.length > 0 ? errors.join('; ') : null,
+      'error': errorText,
     };
     const json: string = JSON.stringify(payload);
     console.info(`[RapidRAW] privacy state: ${json}`);
@@ -305,19 +308,24 @@ export default class EntryAbility extends RustAbility {
           const privacyResults: privacyManager.AppPrivacyResult[] = consentResult['results'] ?? [];
           for (let i = 0; i < privacyResults.length; i++) {
             results.push({
-              'type': privacyResults[i]['type'],
-              'versionCode': privacyResults[i]['versionCode'],
-              'result': privacyResults[i]['result'],
-              'signingTimestamp': privacyResults[i]['signingTimestamp'],
+              'type': privacyResults[i]['type'] ?? 0,
+              'versionCode': privacyResults[i]['versionCode'] ?? 0,
+              'result': privacyResults[i]['result'] ?? 0,
+              'signingTimestamp': privacyResults[i]['signingTimestamp'] ?? 0,
             });
           }
           const payload: Record<string, Object> = {
             'ok': true,
             'links': [],
             'results': results,
-            'isAgreed': consentResult['isAgreed'],
-            'error': null,
+            'error': '',
           };
+          // Only carry isAgreed when the platform actually reports a boolean:
+          // the Rust side prefers it over results[] when present.
+          const agreed: boolean | undefined = consentResult['isAgreed'];
+          if (typeof agreed === 'boolean') {
+            payload['isAgreed'] = agreed;
+          }
           const json: string = JSON.stringify(payload);
           console.info(`[RapidRAW] privacy consent result: ${json}`);
           resolvePrivacy(requestId, json);
@@ -334,7 +342,7 @@ export default class EntryAbility extends RustAbility {
     try {
       privacyManager.disableService();
       console.info('[RapidRAW] privacy consent revoked');
-      resolvePrivacy(requestId, JSON.stringify({ 'ok': true, 'results': [], 'error': null }));
+      resolvePrivacy(requestId, JSON.stringify({ 'ok': true, 'results': [], 'error': '' }));
     } catch (error) {
       resolvePrivacy(requestId, this.privacyErrorPayload('disableService failed', error));
     }
