@@ -1726,6 +1726,19 @@
       "saved": "已儲存的鏡頭",
       "title": "我的鏡頭"
     },
+    "privacy": {
+      "managedNotice": "本應用使用應用程式市場標準化隱私聲明託管服務,首次啟動的隱私彈窗由應用程式市場提供。",
+      "notIntegrated": "未啟用",
+      "requestConsent": "重新請求授權",
+      "requestConsentDesc": "拉起應用程式市場的標準化隱私彈窗",
+      "revoke": "撤銷同意",
+      "revokeConfirm": "確定撤銷已記錄的隱私同意?下次啟動將重新彈出隱私彈窗,檔案存取需重新授權。",
+      "revokeDesc": "清除已記錄的同意,下次啟動重新徵求同意",
+      "status": "授權狀態",
+      "statusDenied": "未同意",
+      "statusGranted": "已同意",
+      "statusUnknown": "未知"
+    },
     "processing": {
       "ai": {
         "cloud": {

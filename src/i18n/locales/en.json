@@ -1729,6 +1729,19 @@
       "saved": "Saved Lenses",
       "title": "My Lenses"
     },
+    "privacy": {
+      "managedNotice": "This app uses AppGallery's managed privacy statement; the first-launch privacy dialog is provided by AppGallery.",
+      "notIntegrated": "Not enabled",
+      "requestConsent": "Request consent",
+      "requestConsentDesc": "Show AppGallery's standardized privacy dialog",
+      "revoke": "Revoke consent",
+      "revokeConfirm": "Revoke the recorded privacy consent? The AppGallery privacy dialog will be shown again on the next launch, and file access will need to be re-authorized.",
+      "revokeDesc": "Clear the recorded consent; the next launch asks again",
+      "status": "Consent status",
+      "statusDenied": "Not accepted",
+      "statusGranted": "Accepted",
+      "statusUnknown": "Unknown"
+    },
     "processing": {
       "ai": {
         "cloud": {

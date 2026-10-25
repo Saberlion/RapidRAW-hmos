@@ -1768,6 +1768,19 @@
       "saved": "Lentes Salvas",
       "title": "Minhas Lentes"
     },
+    "privacy": {
+      "managedNotice": "Este aplicativo usa a declaração de privacidade gerenciada da AppGallery; a caixa de diálogo de privacidade da primeira inicialização é fornecida pela AppGallery.",
+      "notIntegrated": "Não ativado",
+      "requestConsent": "Solicitar consentimento",
+      "requestConsentDesc": "Mostrar a caixa de diálogo de privacidade padrão da AppGallery",
+      "revoke": "Revogar consentimento",
+      "revokeConfirm": "Revogar o consentimento de privacidade registrado? A caixa de diálogo da AppGallery aparecerá novamente na próxima inicialização e o acesso a arquivos precisará ser autorizado de novo.",
+      "revokeDesc": "Apaga o consentimento registrado; a solicitação retorna na próxima inicialização",
+      "status": "Status do consentimento",
+      "statusDenied": "Não aceito",
+      "statusGranted": "Aceito",
+      "statusUnknown": "Desconhecido"
+    },
     "processing": {
       "ai": {
         "cloud": {

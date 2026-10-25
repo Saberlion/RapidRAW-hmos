@@ -3,6 +3,7 @@ import { invoke } from '@tauri-apps/api/core';
 import { platform } from '@tauri-apps/plugin-os';
 import { AppSettings, SupportedTypes, Invokes } from '../components/ui/AppProperties';
 import { DEFAULT_THEME_ID } from '../utils/themes';
+import type { OhosPrivacyState } from '../utils/ohosPrivacy';
 
 interface SettingsState {
   appSettings: AppSettings | null;
@@ -13,6 +14,8 @@ interface SettingsState {
   /** Whether the IsOhosBuild probe has settled (true + false = known not OHOS). */
   isOhosKnown: boolean;
   isSystemDark: boolean | null;
+  /** Last AppGallery privacy payload (OHOS only; null elsewhere). */
+  ohosPrivacy: OhosPrivacyState | null;
 
   // Actions
   initPlatform: () => void;
@@ -20,6 +23,7 @@ interface SettingsState {
   setTheme: (theme: string) => void;
   setSupportedTypes: (types: SupportedTypes | null) => void;
   setSystemDark: (dark: boolean) => void;
+  setOhosPrivacy: (state: OhosPrivacyState | null) => void;
   handleSettingsChange: (newSettings: AppSettings) => Promise<void>;
 }
 
@@ -31,6 +35,7 @@ export const useSettingsStore = create<SettingsState>((set, get) => ({
   isOhos: false,
   isOhosKnown: false,
   isSystemDark: null,
+  ohosPrivacy: null,
 
   initPlatform: () => {
     try {
@@ -52,6 +57,8 @@ export const useSettingsStore = create<SettingsState>((set, get) => ({
   setSupportedTypes: (types) => set({ supportedTypes: types }),
 
   setSystemDark: (dark) => set({ isSystemDark: dark }),
+
+  setOhosPrivacy: (state) => set({ ohosPrivacy: state }),
 
   handleSettingsChange: async (newSettings: AppSettings) => {
     if (!newSettings) {

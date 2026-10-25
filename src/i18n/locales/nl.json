@@ -1725,6 +1725,19 @@
       "saved": "Opgeslagen lenzen",
       "title": "Mijn lenzen"
     },
+    "privacy": {
+      "managedNotice": "Deze app gebruikt de beheerde privacyverklaring van AppGallery; de privacydialoog bij de eerste start wordt door AppGallery geleverd.",
+      "notIntegrated": "Niet ingeschakeld",
+      "requestConsent": "Toestemming aanvragen",
+      "requestConsentDesc": "De gestandaardiseerde privacydialoog van AppGallery tonen",
+      "revoke": "Toestemming intrekken",
+      "revokeConfirm": "De vastgelegde privacytoestemming intrekken? Bij de volgende start verschijnt de AppGallery-dialoog opnieuw en moet bestandstoegang opnieuw worden toegestaan.",
+      "revokeDesc": "Wist de vastgelegde toestemming; bij de volgende start wordt opnieuw gevraagd",
+      "status": "Toestemmingsstatus",
+      "statusDenied": "Niet geaccepteerd",
+      "statusGranted": "Geaccepteerd",
+      "statusUnknown": "Onbekend"
+    },
     "processing": {
       "ai": {
         "cloud": {

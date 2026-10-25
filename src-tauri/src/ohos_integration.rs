@@ -165,7 +165,8 @@ mod system_bridge {
         }
     }
 
-    fn emit(event: &str, payload: serde_json::Value) {
+    /// Emit a tauri event to the webview (shared with sibling bridge modules).
+    pub(super) fn emit(event: &str, payload: serde_json::Value) {
         if let Some(handle) = APP_HANDLE.get() {
             use tauri::Emitter;
             let _ = handle.emit(event, payload);
@@ -255,7 +256,9 @@ mod file_bridge {
         (id, rx)
     }
 
-    fn complete_request(id: u32, result: serde_json::Value) {
+    /// Complete a parked request. Visible to sibling bridge modules (e.g.
+    /// `privacy`) that share this request registry.
+    pub(crate) fn complete_request(id: u32, result: serde_json::Value) {
         if let Some(tx) = remove_sender(id) {
             let _ = tx.send(result.to_string());
         }
@@ -313,7 +316,9 @@ mod file_bridge {
     }
 
     /// Async request for tauri command contexts.
-    async fn request(payload: serde_json::Value) -> std::result::Result<serde_json::Value, String> {
+    pub(crate) async fn request(
+        payload: serde_json::Value,
+    ) -> std::result::Result<serde_json::Value, String> {
         let (_id, rx) = request_payload(payload)?;
         let raw = rx
             .await
@@ -402,10 +407,15 @@ mod file_bridge {
 
 /// Open the OHOS system folder picker (FileKit `DocumentViewPicker`) and
 /// return the selected folder's path, or `None` when the user cancelled.
+///
+/// Gated on the AppGallery privacy consent: the picker requests a file-access
+/// grant, and the platform refuses grants while the hosted privacy statement is
+/// unsigned (see `privacy::ensure_consent`).
 #[tauri::command]
 pub async fn pick_ohos_folder() -> Result<Option<String>, String> {
     #[cfg(target_env = "ohos")]
     {
+        privacy::ensure_consent().await?;
         file_bridge::pick_folder().await
     }
     #[cfg(not(target_env = "ohos"))]
@@ -417,6 +427,8 @@ pub async fn pick_ohos_folder() -> Result<Option<String>, String> {
 /// Open the OHOS system file picker (FileKit `DocumentViewPicker`, FILE
 /// mode) and return the selected files' paths. Extension filtering happens
 /// picker-side; an empty result means the user cancelled.
+///
+/// Gated on the AppGallery privacy consent, like `pick_ohos_folder`.
 #[tauri::command]
 pub async fn pick_ohos_files(
     supported_extensions: Vec<String>,
@@ -424,6 +436,7 @@ pub async fn pick_ohos_files(
 ) -> Result<Vec<String>, String> {
     #[cfg(target_env = "ohos")]
     {
+        privacy::ensure_consent().await?;
         file_bridge::pick_files(&supported_extensions, max_select).await
     }
     #[cfg(not(target_env = "ohos"))]
@@ -435,16 +448,264 @@ pub async fn pick_ohos_files(
 
 /// Open the OHOS system save picker (FileKit `DocumentSaveOptions`); the
 /// picker creates the file and returns its path, or `None` when cancelled.
+///
+/// Gated on the AppGallery privacy consent, like `pick_ohos_folder`.
 #[tauri::command]
 pub async fn pick_ohos_save_file(file_name: String) -> Result<Option<String>, String> {
     #[cfg(target_env = "ohos")]
     {
+        privacy::ensure_consent().await?;
         file_bridge::pick_save_file(&file_name).await
     }
     #[cfg(not(target_env = "ohos"))]
     {
         let _ = file_name;
         Err("pick_ohos_save_file is only available on OpenHarmony builds".to_string())
+    }
+}
+
+// ---------------------------------------------------------------------------
+// Privacy bridge: AppGallery standardized privacy-statement hosting
+// ---------------------------------------------------------------------------
+//
+// When an app uses AppGallery's standardized privacy-statement hosting service,
+// the STORE owns first-launch consent: the platform shows its own privacy
+// dialog and the app must NOT draw a second one (AppGallery rejects builds that
+// do). `App.tsx` already skips the in-app gate on OHOS for that reason (docs
+// 6.17); this bridge adds the active half of the integration — the app can
+//   - show the store-issued privacy statement / user agreement links,
+//   - read the current consent state, including store-side changes pushed as
+//     the `usual.event.PRIVACY_STATE_CHANGED` common event,
+//   - revoke a recorded consent, and
+//   - proactively re-request consent before a permission-gated operation
+//     (the FileKit pickers above).
+//
+// The service is unavailable on emulators and in builds without the hosted
+// statement (AppGallery error 1006700003). Every entry point FAILS OPEN: the
+// app keeps working and the platform still refuses the underlying permission
+// grant itself, which is where the guarantee actually lives.
+
+#[cfg(target_env = "ohos")]
+pub mod privacy {
+    use std::sync::Mutex;
+    use std::sync::atomic::{AtomicBool, Ordering};
+
+    use napi_ohos::bindgen_prelude::Result;
+
+    /// Last consent verdict derived from a bridge response or a
+    /// `PRIVACY_STATE_CHANGED` push. `None` = not (yet) reported, or reported
+    /// as unknown (hosted statement missing / service unavailable).
+    static CONSENT_GRANTED: Mutex<Option<bool>> = Mutex::new(None);
+
+    /// Latched once the service reports that hosting is not in use (or the
+    /// device cannot use it), so permission operations skip the gate for the
+    /// rest of the process instead of probing + failing on every picker.
+    static SERVICE_UNAVAILABLE: AtomicBool = AtomicBool::new(false);
+
+    fn set_consent(granted: Option<bool>) {
+        *CONSENT_GRANTED.lock().unwrap() = granted;
+    }
+
+    /// Last known consent verdict, if any.
+    pub fn consent_granted() -> Option<bool> {
+        *CONSENT_GRANTED.lock().unwrap()
+    }
+
+    /// Derive a verdict from an ArkTS privacy payload. `isAgreed` wins when the
+    /// ArkTS side provides it (`ConsentResult`); otherwise the per-document
+    /// `results[]` are collapsed: all signed (result == 1) = granted, an empty
+    /// list = unknown (no hosted statement in play).
+    fn payload_granted(payload: &serde_json::Value) -> Option<bool> {
+        if let Some(agreed) = payload.get("isAgreed").and_then(serde_json::Value::as_bool) {
+            return Some(agreed);
+        }
+        let results = payload.get("results")?.as_array()?;
+        if results.is_empty() {
+            return None;
+        }
+        Some(
+            results
+                .iter()
+                .all(|r| r.get("result").and_then(serde_json::Value::as_i64) == Some(1)),
+        )
+    }
+
+    /// NAPI export (ArkTS name: `resolveOhosPrivacy`). Completes a parked
+    /// privacy bridge request with the ArkTS-side JSON payload.
+    #[napi_derive_ohos::napi]
+    pub fn resolve_ohos_privacy(request_id: u32, payload: String) -> Result<()> {
+        let value = serde_json::from_str(&payload).unwrap_or_else(|e| {
+            serde_json::json!({
+                "ok": false,
+                "error": format!("Malformed OHOS privacy payload ({e}): {payload}"),
+            })
+        });
+        super::file_bridge::complete_request(request_id, value);
+        Ok(())
+    }
+
+    /// NAPI export (ArkTS name: `notifyOhosPrivacyChanged`). The ArkTS side
+    /// pushes the `usual.event.PRIVACY_STATE_CHANGED` payload here; the webview
+    /// receives it as the `ohos-privacy-state` tauri event.
+    #[napi_derive_ohos::napi]
+    pub fn notify_ohos_privacy_changed(payload: String) -> Result<()> {
+        let parsed: serde_json::Value =
+            serde_json::from_str(&payload).unwrap_or(serde_json::Value::Null);
+        let granted = parsed
+            .get("granted")
+            .and_then(serde_json::Value::as_bool)
+            .or_else(|| {
+                parsed
+                    .get("resultType")
+                    .and_then(serde_json::Value::as_i64)
+                    .map(|value| value == 1)
+            });
+        if let Some(granted) = granted {
+            log::info!("OHOS privacy consent changed: granted={granted}");
+            set_consent(Some(granted));
+        }
+        super::system_bridge::emit("ohos-privacy-state", parsed);
+        Ok(())
+    }
+
+    /// Send one privacy op over the shared request registry.
+    async fn call(op: &str) -> std::result::Result<serde_json::Value, String> {
+        super::file_bridge::request(serde_json::json!({ "op": op })).await
+    }
+
+    fn is_ok(payload: &serde_json::Value) -> bool {
+        payload.get("ok").and_then(serde_json::Value::as_bool) == Some(true)
+    }
+
+    /// Store-issued privacy links + current consent state.
+    pub async fn state() -> std::result::Result<serde_json::Value, String> {
+        let payload = call("privacy_state").await?;
+        if is_ok(&payload) {
+            set_consent(payload_granted(&payload));
+        }
+        Ok(payload)
+    }
+
+    /// Raise the platform's standardized privacy dialog, returning its result.
+    pub async fn request_consent() -> std::result::Result<serde_json::Value, String> {
+        let payload = call("privacy_request_consent").await?;
+        if is_ok(&payload) {
+            set_consent(payload_granted(&payload));
+        }
+        Ok(payload)
+    }
+
+    /// Revoke the recorded consent (the next launch shows the dialog again).
+    pub async fn revoke() -> std::result::Result<serde_json::Value, String> {
+        let payload = call("privacy_revoke").await?;
+        if is_ok(&payload) {
+            set_consent(Some(false));
+        }
+        Ok(payload)
+    }
+
+    /// Consent gate for permission-requiring operations (the FileKit pickers).
+    ///
+    /// Fails OPEN by design: when the hosted statement is missing or the service
+    /// errors out, the caller proceeds exactly as before — the platform denies
+    /// the permission grant itself in that case, so an emulator or an unlisted
+    /// debug build must not become unusable. Only an explicit rejection of the
+    /// dialog raised here blocks the operation.
+    pub async fn ensure_consent() -> std::result::Result<(), String> {
+        if matches!(consent_granted(), Some(true)) {
+            return Ok(());
+        }
+        if SERVICE_UNAVAILABLE.load(Ordering::Relaxed) {
+            return Ok(());
+        }
+        match state().await {
+            Ok(payload) => {
+                if !is_ok(&payload) {
+                    log::warn!("OHOS privacy hosting is not in use; skipping the consent gate");
+                    SERVICE_UNAVAILABLE.store(true, Ordering::Relaxed);
+                    return Ok(());
+                }
+                if payload_granted(&payload) == Some(true) {
+                    return Ok(());
+                }
+            }
+            Err(e) => {
+                log::warn!("OHOS privacy state unavailable ({e}); skipping the consent gate");
+                return Ok(());
+            }
+        }
+        match request_consent().await {
+            Ok(payload) => {
+                if !is_ok(&payload) {
+                    log::warn!(
+                        "OHOS privacy consent dialog unavailable; skipping the consent gate"
+                    );
+                    SERVICE_UNAVAILABLE.store(true, Ordering::Relaxed);
+                    return Ok(());
+                }
+                match payload_granted(&payload) {
+                    Some(true) => Ok(()),
+                    // A user rejection stays retryable: the next attempt asks again.
+                    Some(false) => Err("The privacy statement has not been accepted; AppGallery \
+                         requires consent before a file access grant can be requested"
+                        .to_string()),
+                    // No document reported back: hosting is effectively not in
+                    // play, so stop asking on every picker.
+                    None => {
+                        log::warn!(
+                            "OHOS privacy consent dialog reported no documents; skipping the consent gate"
+                        );
+                        SERVICE_UNAVAILABLE.store(true, Ordering::Relaxed);
+                        Ok(())
+                    }
+                }
+            }
+            Err(e) => {
+                log::warn!("OHOS privacy consent request failed ({e}); skipping the consent gate");
+                Ok(())
+            }
+        }
+    }
+}
+
+/// Query the AppGallery-issued privacy links and the current consent state.
+/// Returns the ArkTS payload as-is (`ok: false` + `error`/`code` when the
+/// hosted statement is not in play); only bridge/transport failures are `Err`.
+#[tauri::command]
+pub async fn get_ohos_privacy_state() -> Result<serde_json::Value, String> {
+    #[cfg(target_env = "ohos")]
+    {
+        privacy::state().await
+    }
+    #[cfg(not(target_env = "ohos"))]
+    {
+        Err("get_ohos_privacy_state is only available on OpenHarmony builds".to_string())
+    }
+}
+
+/// Raise AppGallery's standardized privacy dialog and return its result.
+#[tauri::command]
+pub async fn request_ohos_privacy_consent() -> Result<serde_json::Value, String> {
+    #[cfg(target_env = "ohos")]
+    {
+        privacy::request_consent().await
+    }
+    #[cfg(not(target_env = "ohos"))]
+    {
+        Err("request_ohos_privacy_consent is only available on OpenHarmony builds".to_string())
+    }
+}
+
+/// Revoke the recorded AppGallery privacy consent.
+#[tauri::command]
+pub async fn revoke_ohos_privacy_consent() -> Result<serde_json::Value, String> {
+    #[cfg(target_env = "ohos")]
+    {
+        privacy::revoke().await
+    }
+    #[cfg(not(target_env = "ohos"))]
+    {
+        Err("revoke_ohos_privacy_consent is only available on OpenHarmony builds".to_string())
     }
 }
 

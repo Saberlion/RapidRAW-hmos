@@ -1768,6 +1768,19 @@
       "saved": "Obiettivi Salvati",
       "title": "I Miei Obiettivi"
     },
+    "privacy": {
+      "managedNotice": "Questa app utilizza l'informativa sulla privacy gestita di AppGallery; la finestra sulla privacy del primo avvio è fornita da AppGallery.",
+      "notIntegrated": "Non attivato",
+      "requestConsent": "Richiedi consenso",
+      "requestConsentDesc": "Mostra la finestra sulla privacy standardizzata di AppGallery",
+      "revoke": "Revoca consenso",
+      "revokeConfirm": "Revocare il consenso sulla privacy registrato? La finestra di AppGallery ricomparirà al prossimo avvio e sarà necessario autorizzare di nuovo l'accesso ai file.",
+      "revokeDesc": "Cancella il consenso registrato; al prossimo avvio verrà richiesto di nuovo",
+      "status": "Stato del consenso",
+      "statusDenied": "Non accettato",
+      "statusGranted": "Accettato",
+      "statusUnknown": "Sconosciuto"
+    },
     "processing": {
       "ai": {
         "cloud": {

@@ -1768,6 +1768,19 @@
       "saved": "Objectius desats",
       "title": "Els meus objectius"
     },
+    "privacy": {
+      "managedNotice": "Aquesta aplicació utilitza la declaració de privacitat gestionada d'AppGallery; el diàleg de privacitat del primer inici el proporciona AppGallery.",
+      "notIntegrated": "No activat",
+      "requestConsent": "Sol·licita consentiment",
+      "requestConsentDesc": "Mostra el diàleg de privacitat estandarditzat d'AppGallery",
+      "revoke": "Revoca el consentiment",
+      "revokeConfirm": "Voleu revocar el consentiment de privacitat registrat? El diàleg d'AppGallery tornarà a aparèixer al proper inici i caldrà tornar a autoritzar l'accés als fitxers.",
+      "revokeDesc": "Esborra el consentiment registrat; es tornarà a demanar al proper inici",
+      "status": "Estat del consentiment",
+      "statusDenied": "No acceptat",
+      "statusGranted": "Acceptat",
+      "statusUnknown": "Desconegut"
+    },
     "processing": {
       "ai": {
         "cloud": {

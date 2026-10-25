@@ -51,6 +51,14 @@ import { RotateCcw } from 'lucide-react';
 import { useUIStore } from '../../store/useUIStore';
 import { useSettingsStore } from '../../store/useSettingsStore';
 import { getAgreementDocument, type AgreementDocKind } from '../AgreementGate';
+import {
+  fetchOhosPrivacyState,
+  isPrivacyHostingMissing,
+  ohosConsentOf,
+  platformPrivacyLinks,
+  requestOhosPrivacyConsent,
+  revokeOhosPrivacyConsent,
+} from '../../utils/ohosPrivacy';
 
 interface ConfirmModalState {
   confirmText: string;
@@ -546,6 +554,47 @@ export default function SettingsPanel({
   const [viewingDoc, setViewingDoc] = useState<AgreementDocKind | null>(null);
   const docViewerRef = useRef<HTMLDivElement | null>(null);
 
+  // AppGallery privacy management service state (OHOS only).
+  const ohosPrivacy = useSettingsStore((s) => s.ohosPrivacy);
+  const [privacyBusy, setPrivacyBusy] = useState(false);
+  const [privacyRevokeOpen, setPrivacyRevokeOpen] = useState(false);
+  const privacyConsent = ohosConsentOf(ohosPrivacy);
+  const privacyLinks = platformPrivacyLinks(ohosPrivacy);
+
+  // The store can change the consent behind our back (its standardized dialog,
+  // or a revocation from system settings), so re-read whenever About is opened.
+  useEffect(() => {
+    if (!isOhos || activeCategory !== 'about') return;
+    fetchOhosPrivacyState()
+      .then((state) => useSettingsStore.getState().setOhosPrivacy(state))
+      .catch(() => undefined);
+  }, [isOhos, activeCategory]);
+
+  const handleRequestPrivacyConsent = async () => {
+    setPrivacyBusy(true);
+    const requested = await requestOhosPrivacyConsent();
+    const refreshed = await fetchOhosPrivacyState();
+    useSettingsStore.getState().setOhosPrivacy(refreshed.ok ? refreshed : requested);
+    setPrivacyBusy(false);
+  };
+
+  const handleRevokePrivacyConsent = async () => {
+    setPrivacyBusy(true);
+    const revoked = await revokeOhosPrivacyConsent();
+    if (revoked.ok) {
+      const refreshed = await fetchOhosPrivacyState();
+      // The platform has cleared the record; surface that immediately instead
+      // of waiting for the next launch to report no signature.
+      useSettingsStore
+        .getState()
+        .setOhosPrivacy({ ...(refreshed.ok ? refreshed : revoked), results: [], isAgreed: false });
+    } else {
+      useSettingsStore.getState().setOhosPrivacy(revoked);
+    }
+    setPrivacyBusy(false);
+    setPrivacyRevokeOpen(false);
+  };
+
   // The doc viewer renders below the settings rows; without this, opening it
   // from a "View" button is invisible (content grows below the fold).
   useEffect(() => {
@@ -1039,6 +1088,16 @@ export default function SettingsPanel({
   return (
     <>
       <ConfirmModal {...confirmModalState} onClose={closeConfirmModal} />
+      {/* AppGallery privacy consent revocation (OHOS About section). */}
+      <ConfirmModal
+        isOpen={privacyRevokeOpen}
+        title={t('settings.privacy.revoke')}
+        message={t('settings.privacy.revokeConfirm')}
+        confirmVariant="destructive"
+        confirmText={t('settings.privacy.revoke')}
+        onConfirm={handleRevokePrivacyConsent}
+        onClose={() => setPrivacyRevokeOpen(false)}
+      />
       <LayoutGroup id="settings-panel">
         <div className="flex flex-col h-full w-full text-text-primary">
           <header className="shrink-0 flex flex-wrap items-center justify-between gap-y-4 mb-8 pt-4">
@@ -1991,9 +2050,7 @@ export default function SettingsPanel({
                           description={t('settings.processing.aiDenoiseBackendDesc')}
                         >
                           <Dropdown
-                            onChange={(value: any) =>
-                              handleProcessingSettingChange('aiDenoiseBackend', value)
-                            }
+                            onChange={(value: any) => handleProcessingSettingChange('aiDenoiseBackend', value)}
                             options={denoiseBackendOptions}
                             value={
                               denoiseBackendOptions.some(
@@ -2565,28 +2622,81 @@ export default function SettingsPanel({
                       {t('settings.about.title')}
                     </Text>
                     <div className="divide-y divide-border-color">
-                      <SettingItem
-                        label={t('settings.about.privacyPolicy')}
-                        description={t('settings.about.privacyPolicyDesc')}
-                      >
-                        <Button
-                          className="bg-surface"
-                          onClick={() => setViewingDoc(viewingDoc === 'privacy' ? null : 'privacy')}
-                        >
-                          {t('settings.about.view')}
-                        </Button>
-                      </SettingItem>
-                      <SettingItem
-                        label={t('settings.about.userAgreement')}
-                        description={t('settings.about.userAgreementDesc')}
-                      >
-                        <Button
-                          className="bg-surface"
-                          onClick={() => setViewingDoc(viewingDoc === 'terms' ? null : 'terms')}
-                        >
-                          {t('settings.about.view')}
-                        </Button>
-                      </SettingItem>
+                      {isOhos ? (
+                        <>
+                          <SettingItem
+                            label={t('settings.privacy.status')}
+                            description={t('settings.privacy.managedNotice')}
+                          >
+                            <Text variant={TextVariants.small} color={TextColors.secondary}>
+                              {privacyConsent === 'granted'
+                                ? t('settings.privacy.statusGranted')
+                                : privacyConsent === 'denied'
+                                  ? t('settings.privacy.statusDenied')
+                                  : isPrivacyHostingMissing(ohosPrivacy)
+                                    ? t('settings.privacy.notIntegrated')
+                                    : t('settings.privacy.statusUnknown')}
+                            </Text>
+                          </SettingItem>
+                          {privacyLinks.map((link) => (
+                            <SettingItem key={link.url} label={t(link.labelKey)}>
+                              <a
+                                href={link.url}
+                                target="_blank"
+                                rel="noopener noreferrer"
+                                className="font-semibold text-accent hover:underline break-all"
+                              >
+                                {t('settings.about.view')}
+                              </a>
+                            </SettingItem>
+                          ))}
+                          <SettingItem
+                            label={t('settings.privacy.requestConsent')}
+                            description={t('settings.privacy.requestConsentDesc')}
+                          >
+                            <Button className="bg-surface" disabled={privacyBusy} onClick={handleRequestPrivacyConsent}>
+                              {t('settings.privacy.requestConsent')}
+                            </Button>
+                          </SettingItem>
+                          <SettingItem
+                            label={t('settings.privacy.revoke')}
+                            description={t('settings.privacy.revokeDesc')}
+                          >
+                            <Button
+                              className="bg-surface"
+                              disabled={privacyBusy}
+                              onClick={() => setPrivacyRevokeOpen(true)}
+                            >
+                              {t('settings.privacy.revoke')}
+                            </Button>
+                          </SettingItem>
+                        </>
+                      ) : (
+                        <>
+                          <SettingItem
+                            label={t('settings.about.privacyPolicy')}
+                            description={t('settings.about.privacyPolicyDesc')}
+                          >
+                            <Button
+                              className="bg-surface"
+                              onClick={() => setViewingDoc(viewingDoc === 'privacy' ? null : 'privacy')}
+                            >
+                              {t('settings.about.view')}
+                            </Button>
+                          </SettingItem>
+                          <SettingItem
+                            label={t('settings.about.userAgreement')}
+                            description={t('settings.about.userAgreementDesc')}
+                          >
+                            <Button
+                              className="bg-surface"
+                              onClick={() => setViewingDoc(viewingDoc === 'terms' ? null : 'terms')}
+                            >
+                              {t('settings.about.view')}
+                            </Button>
+                          </SettingItem>
+                        </>
+                      )}
                       <SettingItem
                         label={t('settings.about.openSourceLicense')}
                         description={t('settings.about.licenseDesc')}
@@ -2614,13 +2724,11 @@ export default function SettingsPanel({
                         </a>
                       </SettingItem>
                     </div>
-                    {viewingDoc && (
+                    {viewingDoc && !isOhos && (
                       <div ref={docViewerRef} className="mt-6">
                         <Text variant={TextVariants.heading} className="mb-2">
                           {t(
-                            viewingDoc === 'privacy'
-                              ? 'settings.about.privacyPolicy'
-                              : 'settings.about.userAgreement',
+                            viewingDoc === 'privacy' ? 'settings.about.privacyPolicy' : 'settings.about.userAgreement',
                           )}
                         </Text>
                         <div className="max-h-80 overflow-y-auto custom-scrollbar bg-bg-primary rounded-md p-4">

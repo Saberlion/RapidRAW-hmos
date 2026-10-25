@@ -702,6 +702,81 @@ demosaic 输出         f32 RGB   734MB
 
 **协议门控复测(2026-10-12)**:针对现装冒烟变体(装机于 10-11 11:07,较 HEAD `0a1ffb5c` 早 3 个提交——AGC strip/docs/NPU 文案,均不触及门控;`App.tsx`/`useSettingsStore.ts`/`AgreementGate.tsx` 自 `8f5c88b2` 零改动,SettingsPanel 隐私查看区亦未动)重跑 §6.17 验证:`bm clean -d` 清数据后冷启 ×2(force-stop 复测),**零协议弹窗、直进欢迎页**,与首次验证一致。验证方法(无视觉模型的盲测,可复用):uitest dumpLayout 确认 EntryAbility 前台焦点 + 窗口 bounds,再以 WPF 像素扫描判屏——欢迎页签名 = 左半 splash 照片(`bg-black` 容器,纹理化暗质量、随图片加载渐亮)+ 右半纯浅色底 + 内容块 `max-w-xs`/`h-11`(2x DPI 下 accent 按钮 bbox 与布局公式吻合);AgreementGate 签名(整窗扁平底色 + 居中密集法律文本 + 底部居中按钮组)完全不匹配。行为反证:点击欢迎页「打开文件夹」弹出系统 SAF 选择器(`com.huawei.hmos.filemanager` 入 layout)——门控若挂载则主 UI 整树不渲染、不可能触发任何文件活动。**注意:2in1 设备上 SAF 选择器以 UIExtension 挂载并会把应用窗口吸附为左侧窄条(本次 [76,76][390,1470]),取消按钮在 layout JSON 中检索「取消」取 bounds 点击后窗口复原;Back 键关不掉选择器(焦点在选择器但无响应)。**桌面/Android 门控行为未重测(需动本机桌面应用数据),以代码零改动 + `8f5c88b2` 当日验证为准。
 
+### 6.18 Phase 4:AppGallery 隐私管理服务对接(2026-10-25)
+
+**背景**:AGC 审核问题①要求"接入平台标准化隐私声明托管服务、删除自建隐私弹窗"(§6.17 已删除自建首启门控)。本次把"被动合规"补成**主动对接**——接入 `privacyManager`(`@kit.AppGalleryKit`)的四个接口与签署结果公共事件,并给**未上架调试包**补 `module.json5` 预置隐私链接,同时把 FileKit 取权前的同意门控接到桥里。
+
+**1. 接口与桥架构**(复用 §6.7 的 requestId 注册表 + napi 回传模式)
+
+| 平台接口 | 桥请求 op | ArkTS 回传 | Rust tauri 命令 | 前端入口 |
+|---|---|---|---|---|
+| `getAppPrivacyMgmtInfo` / `getAppPrivacyResult` | `privacy_state` | `resolveOhosPrivacy(requestId, json)` | `get_ohos_privacy_state` | 设置页「关于」+ 启动期拉取 |
+| `requestAppPrivacyConsent(context)` | `privacy_request_consent` | 同上 | `request_ohos_privacy_consent` | 设置页「重新请求授权」+ 门控 |
+| `disableService()` | `privacy_revoke` | 同上 | `revoke_ohos_privacy_consent` | 设置页「撤销同意」 |
+| `COMMON_EVENT_PRIVACY_STATE_CHANGED` | — | `notifyOhosPrivacyChanged(json)` | 事件 **`ohos-privacy-state`** | `useAppInitialization` 监听 |
+
+- 回传统一为 JSON 字符串:`{ ok, links:[{type,versionCode,url}], results:[{type,versionCode,result,signingTimestamp}], isAgreed, error, code }`;失败时 `ok:false` + `code`(ArkTS 从 `BusinessError` 取,便于前端识别 `1006700003`)。
+- 共享请求注册表:`file_bridge::request`/`complete_request` 改为 `pub(crate)` 供 `privacy` 模块复用(所有桥请求共用一个 id 空间,天然支持并发)。
+- `CONSENT_GRANTED` 缓存(`privacy` 模块内 `Mutex<Option<bool>>`):查询/请求/撤销成功时更新,事件推送时直接置位——热路径(取文件夹)免一次桥往返。
+
+**2. 同意门控(consent gate)**——`pick_ohos_folder` / `pick_ohos_files` / `pick_ohos_save_file` 在派发 picker 前调用 `privacy::ensure_consent()`:
+
+1. 缓存已同意 → 直接放行;
+2. 否则查询状态;已同意 → 放行;
+3. 未同意/未知 → **主动拉起平台标准化弹窗**;用户明确拒绝 → 返回 Err(不弹 picker);
+4. **失败开放(fail-open)**:托管声明缺失(`1006700003`)、模拟器、桥异常一律放行。
+
+fail-open 是刻意的:文档明确"用户未签署隐私协议时,将无法申请系统权限"——**保证在平台侧**,应用侧门控只是 UX 优化(避免用户点了取文件夹却拿到权限失败)。本地不应因平台能力缺失而不可用。
+
+- **未**对相册导出加门控:包内已无 `WRITE_IMAGEVIDEO`(§6.17),导出走 `showAssetsCreationDialog` 的显式同意,不构成运行时权限申请。
+
+**3. 前端**
+
+- 新增 `src/utils/ohosPrivacy.ts`:类型 + 三命令封装 + tri-state `ohosConsentOf`(granted/denied/unknown)+ `platformPrivacyLinks`(把平台下发链接转成带标签的行)。
+- `useSettingsStore.ohosPrivacy` 状态;`useAppInitialization` 在 OHOS 下启动即拉取 + 监听 `ohos-privacy-state`(商店侧改签后无需轮询)。
+- 设置页「关于」**OHOS 变体**:授权状态 / 平台下发的隐私政策与用户协议链接(`<a href target="_blank">`)/ 重新请求授权 / 撤销同意(`ConfirmModal` 二次确认);打开「关于」时自动重读一次状态。
+- 本地法务文本(`AgreementGate.PRIVACY_DOCS/TERMS_DOCS`)在 OHOS **不再展示**(以平台托管文本为准);桌面/Android 行为不变。
+- i18n:15 locale 新增 `settings.privacy.*` 共 11 键(`i18n:extract` 生成空键后逐语言填入,`i18n:check` 通过)。
+
+**4. 未上架调试包预置(真机联调必需)**——AGC 接入前/未上架时,平台弹窗靠 `module.json5` metadata 模拟。**gen/ 本地修改,`cargo tauri ohos init` 重跑后需重加**(同 §6.14/6.15/6.17 纪律):
+
+```json5
+// gen/ohos/entry/src/main/module.json5 → module.metadata
+"metadata": [
+  { "name": "appgallery_privacy_hosted", "value": "1" },
+  { "name": "appgallery_privacy_link_privacy_statement", "value": "https://<你的域名>/privacy" },
+  { "name": "appgallery_privacy_link_user_agreement", "value": "https://<你的域名>/terms" }
+]
+```
+
+约束:必须 **https**;构建模式须为 **debug**;须**从本地文件 `hdc install`** 且设备可正常使用华为应用市场。正式上架后以 AGC 云端托管配置为准(metadata 应移除,避免与云侧版本号不一致)。
+
+**5. 上架前 AGC 前置清单**(缺一即返回 `1006700003`):①接入**标准化隐私声明托管服务** ②配置隐私协议链接与**版本信息** ③隐私协议**过审**。审核红线(§6.15/6.17 已对齐):未接入托管服务 → 驳回;自定义弹窗与系统弹窗并存 → 驳回。
+
+**6. 验证状态**:**静态门禁全绿**——`cargo fmt --check`、宿主 `clippy --all-targets -- -D warnings`、宿主 + `aarch64-unknown-linux-ohos` `cargo check`、OHOS 目标 clippy 对本模块零 lint、`tsc` 70 项基线**零新增**、改动文件 prettier 零新增、`i18n:check`(1480 复数解析)通过。**真机验证待执行**:该服务**不支持模拟器**(文档明确),需真机 + 已接入托管/预置 metadata 的构建。
+
+**7. 真机验证 runbook**(待执行,命令沿用 §6.5/6.14 方法学)
+
+```powershell
+# 0) 前置:module.json5 预置 metadata(第 4 节)+ debug 构建 + 设备可访问华为应用市场
+scripts\build-ohos.ps1 -Target aarch64            # debug
+hdc install -r src-tauri\gen\ohos\entry\build\default\outputs\default\entry-default-unsigned.hap
+# 1) 首启平台弹窗 → 同意
+hdc shell aa start -a EntryAbility -b io.github.CyberTimon.RapidRAW
+# 2) 应用侧状态:app.log 应见 "privacy state: {...}" 与 granted/denied 事件
+hdc shell "hilog -x | grep -iE 'RapidRAW.+(privacy|consent)'"
+# 3) 门控:撤销同意(设置→关于→撤销同意)后再点「打开文件夹」→ 应重新弹平台弹窗
+# 4) 事件链:平台弹窗同意后前端应自动刷新状态(无需重进设置页)
+```
+
+**8. 已知边界/顺延项**
+
+- `AppPrivacyLink.type` 语义未公开:前端按 `type === 1` 视为主隐私声明、否则取首条为主、其余标注为用户协议(设备实测后可收窄);
+- 撤销同意后界面即时显示"未同意"(平台记录已清,下次启动自然回落,无需重启);
+- ArkTS 桥依赖 `EntryAbility.template.ets` 补丁:注册表新增 `resolveOhosPrivacy` 与 `notifyOhosPrivacyChanged`,**`ohos init` 重跑后须按模板重打**;
+- 未接入/未预置构建:状态显示「未启用」(`1006700003`),门控放行(第 2 节);
+- 本次只做静态门禁,真机行为(弹窗文案、事件时序、门控时序)未验证 —— 见本节第 6/7 条。
+
 ## 7. 移植路线图与进度清单
 
 ### Phase 0 — 技术验证(1~2 周)
@@ -745,6 +820,7 @@ demosaic 输出         f32 RGB   734MB
 - [ ] ORT 动态加载真机验证;AI 蒙版/降噪功能分级测试(**模拟器部分已完成** 2026-10-04,见 6.12:NIND AI 降噪端到端全通——下载/持久化/ORT dlopen/推理/保存;模型下载 FUSE rename EACCES 已由拷贝回退修复;5 模型蒙版栈被 4GB 模拟器 LMK 阻塞待真机;x86_64 ORT v1.28.2 经 build-ohos.ps1 注入 HAP)
 - [ ] (可选)MindSpore Lite / NNRt NPU 路径评估(**前置调研已完成** 2026-10-04,见 `docs/MINDSPORE_LITE_NPU_EVAL.md`:结论 GO 基础上分模型——系统 MindSpore Lite Kit(`libmindspore_lite_ndk.z.so`,`OH_AI_*` C API,NNRT+CPU 逐算子回退)为推荐路径,Rust 绑定需手写(无现成 crate);converter_lite 2.10.0 离线转换;U2Net/skyseg/NIND 低风险、ViT 系需重导出、**LaMa 受 FFT 阻塞**;**全部验证需真机**——模拟器无 Kit/NNRT 支持,与 Phase 3-3 同一硬件阻塞;**CANN(`.om`)路线已应用集成并真机端到端验通**(2026-10-11,见 6.16:u2net 前景 + NIND 降噪接 HIAI_MR 直连,三道编译门禁全过;真机 E2E 全通——触发→NPU 推理→蒙版落盘 4.85s,NPU 时钟/CPU 分区执行/ORT 零回退三重实证,38 库命名空间闭包定版)
 - [ ] AGC 签名、AppGallery 上架(摄影类目)、版本通道(**签名已打通** 2026-10-05:sign-app/verify-app 全通、signed.hap 已产出;命令、证书材料与坑位记录在**未入库**的 `.csr/SIGNING.md`——签名材料含私钥,永不入库,`.csr/` 与 `*.p12/*.p7b/*.jks` 已加 .gitignore;**release HAP 真机直装已实证走不通** 2026-10-06:hdc install 被拒 code 9568322 "not trusted app source"(卸载重装同样被拒)——release profile 仅 AGC 分发渠道信任,真机迭代一律用 AGC 自动调试材料签名(配方 `SIGNING.md` §7,首启协议门闸即以此装包完成全流程真机验证);上架待干净 aarch64 release 包走 AGC 提审)
+- [x] AppGallery 隐私管理服务对接(2026-10-25,见 6.18):`privacyManager` 四接口 + `PRIVACY_STATE_CHANGED` 公共事件经 Rust/ArkTS 桥接入(3 个 tauri 命令 `get/request/revoke_ohos_privacy_*` + 2 个 napi 导出);FileKit picker 前置同意门控(**失败开放**);设置页「关于」展示平台隐私链接/签署状态/撤销同意;未上架调试包 `module.json5` 预置 metadata(gen/ 本地修改,重跑 `ohos init` 后需重加);15 locale 新增 11 键。**真机验证待执行**(该服务不支持模拟器)
 
 ## 8. 环境搭建速查(Phase 1 参考)
 
@@ -816,7 +892,7 @@ cargo tauri ohos build -d -t aarch64
 | ≥60MP 真机性能/内存基线(6.10/6.11) | 模拟器基线 + 缓解方向评估;**渲染管线真机已通(6.13:24/33MP 出图,Vulkan ~290ms/趟)**,61MP 资产已在真机 Download | 跑基线即可(方法学已固化于 6.10) |
 | ORT 真机验证 + AI 蒙版/降噪分级测试(6.12) | NIND 降噪模拟器单模型端到端全通;**ORT CPU 回退路径真机已实证**(CANN 调试期 6 轮失败回退全部完整出蒙版、无崩溃,见 6.16) | 分级测试待执行(23GB 内存充裕);注意模型下载目标已随 app_paths 迁至沙箱(6.13) |
 | MindSpore Lite / NNRt NPU 路径(可选) | 前置调研完成(`MINDSPORE_LITE_NPU_EVAL.md`);**CANN(`.om`)路线已真机端到端验通**(u2net 前景 4.85s 全通,见 6.16)——u2net/nind 收益已由 CANN 兑现 | MindSpore 路线仅剩兜底/对照价值;LaMa 受 FFT 阻塞、ViT 系需重导出 |
-| AGC 签名、AppGallery 上架、版本通道 | **签名已打通**(2026-10-05:sign-app/verify-app 全通、signed.hap 产出,材料见未入库 `.csr/SIGNING.md`);**品牌更名 LightRaw + 审核问题①双弹窗修复已完成并真机验证**(6.17) | release HAP 真机直装被拒(9568322,2026-10-06 实证)——上架须走 AGC 提审;真机迭代用调试签名(SIGNING.md §7);**带 ACL 权限包调试装机被拒(9568289,6.17)**——提审包 v3(release 模式、7 权限)已产出、全链路验证 + 真机冒烟通过(6.17:`entry-default.app` 26.17MB,SHA256 986387BE…BDA0;AGC 控制台名称/图标须同步改 LightRaw) |
+| AGC 签名、AppGallery 上架、版本通道 | **签名已打通**(2026-10-05:sign-app/verify-app 全通、signed.hap 产出,材料见未入库 `.csr/SIGNING.md`);**品牌更名 LightRaw + 审核问题①双弹窗修复已完成并真机验证**(6.17);**隐私管理服务已主动对接**(6.18:四接口 + 签署事件 + 取权前同意门控 + 未上架 metadata 预置,真机验证待执行)。 | release HAP 真机直装被拒(9568322,2026-10-06 实证)——上架须走 AGC 提审;真机迭代用调试签名(SIGNING.md §7);**带 ACL 权限包调试装机被拒(9568289,6.17)**——提审包 v3(release 模式、7 权限)已产出、全链路验证 + 真机冒烟通过(6.17:`entry-default.app` 26.17MB,SHA256 986387BE…BDA0;AGC 控制台名称/图标须同步改 LightRaw) |
 
 ### 9.2 被"无真机"阻塞的散布验证项
 

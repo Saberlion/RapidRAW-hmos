@@ -1769,6 +1769,19 @@
       "saved": "Objectifs enregistrés",
       "title": "Mes objectifs"
     },
+    "privacy": {
+      "managedNotice": "Cette application utilise la déclaration de confidentialité gérée d'AppGallery ; la boîte de dialogue de confidentialité du premier lancement est fournie par AppGallery.",
+      "notIntegrated": "Non activé",
+      "requestConsent": "Demander le consentement",
+      "requestConsentDesc": "Afficher la boîte de dialogue de confidentialité standardisée d'AppGallery",
+      "revoke": "Révoquer le consentement",
+      "revokeConfirm": "Révoquer le consentement de confidentialité enregistré ? La boîte de dialogue AppGallery réapparaîtra au prochain lancement et l'accès aux fichiers devra être réautorisé.",
+      "revokeDesc": "Efface le consentement enregistré ; la demande reviendra au prochain lancement",
+      "status": "État du consentement",
+      "statusDenied": "Non accepté",
+      "statusGranted": "Accepté",
+      "statusUnknown": "Inconnu"
+    },
     "processing": {
       "ai": {
         "cloud": {

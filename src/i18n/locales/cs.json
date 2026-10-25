@@ -1807,6 +1807,19 @@
       "saved": "Uložené objektivy",
       "title": "Moje objektivy"
     },
+    "privacy": {
+      "managedNotice": "Tato aplikace používá spravované prohlášení o ochraně soukromí AppGallery; dialog o soukromí při prvním spuštění zobrazuje AppGallery.",
+      "notIntegrated": "Neaktivní",
+      "requestConsent": "Vyžádat souhlas",
+      "requestConsentDesc": "Zobrazit standardní dialog o soukromí AppGallery",
+      "revoke": "Odvolat souhlas",
+      "revokeConfirm": "Odvolat uložený souhlas se soukromím? Při příštím spuštění se dialog AppGallery zobrazí znovu a přístup k souborům bude nutné znovu autorizovat.",
+      "revokeDesc": "Vymaže uložený souhlas; při příštím spuštění se zeptá znovu",
+      "status": "Stav souhlasu",
+      "statusDenied": "Nepřijato",
+      "statusGranted": "Přijato",
+      "statusUnknown": "Neznámý"
+    },
     "processing": {
       "ai": {
         "cloud": {

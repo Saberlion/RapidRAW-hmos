@@ -1768,6 +1768,19 @@
       "saved": "Lentes guardadas",
       "title": "Mis lentes"
     },
+    "privacy": {
+      "managedNotice": "Esta aplicación usa la declaración de privacidad gestionada de AppGallery; el diálogo de privacidad del primer inicio lo proporciona AppGallery.",
+      "notIntegrated": "No activado",
+      "requestConsent": "Solicitar consentimiento",
+      "requestConsentDesc": "Mostrar el diálogo de privacidad estandarizado de AppGallery",
+      "revoke": "Revocar consentimiento",
+      "revokeConfirm": "¿Revocar el consentimiento de privacidad registrado? El diálogo de AppGallery volverá a mostrarse al iniciar y habrá que volver a autorizar el acceso a archivos.",
+      "revokeDesc": "Borra el consentimiento registrado; se volverá a preguntar al iniciar",
+      "status": "Estado del consentimiento",
+      "statusDenied": "No aceptado",
+      "statusGranted": "Aceptado",
+      "statusUnknown": "Desconocido"
+    },
     "processing": {
       "ai": {
         "cloud": {

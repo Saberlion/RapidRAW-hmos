@@ -1726,6 +1726,19 @@
       "saved": "已保存的镜头",
       "title": "我的镜头"
     },
+    "privacy": {
+      "managedNotice": "本应用使用应用市场标准化隐私声明托管服务,首次启动的隐私弹窗由应用市场提供。",
+      "notIntegrated": "未启用",
+      "requestConsent": "重新请求授权",
+      "requestConsentDesc": "拉起应用市场的标准化隐私弹窗",
+      "revoke": "撤销同意",
+      "revokeConfirm": "确定撤销已记录的隐私同意?下次启动将重新弹出隐私弹窗,文件访问需重新授权。",
+      "revokeDesc": "清除已记录的同意,下次启动重新征求同意",
+      "status": "授权状态",
+      "statusDenied": "未同意",
+      "statusGranted": "已同意",
+      "statusUnknown": "未知"
+    },
     "processing": {
       "ai": {
         "cloud": {

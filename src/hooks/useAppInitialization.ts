@@ -8,6 +8,7 @@ import { useLibraryStore } from '../store/useLibraryStore';
 import { useEditorStore } from '../store/useEditorStore';
 import { useProcessStore } from '../store/useProcessStore';
 import { THEMES, DEFAULT_THEME_ID, ThemeProps, resolveThemeId } from '../utils/themes';
+import { fetchOhosPrivacyState } from '../utils/ohosPrivacy';
 import { COPYABLE_ADJUSTMENT_KEYS, withAdjustmentLayout } from '../utils/adjustments';
 import {
   FilterCriteria,
@@ -64,6 +65,7 @@ export const useAppInitialization = ({
     appSettings,
     theme,
     osPlatform,
+    isOhos,
     isSystemDark,
     setAppSettings,
     setTheme,
@@ -75,6 +77,7 @@ export const useAppInitialization = ({
       appSettings: state.appSettings,
       theme: state.theme,
       osPlatform: state.osPlatform,
+      isOhos: state.isOhos,
       isSystemDark: state.isSystemDark,
       setAppSettings: state.setAppSettings,
       setTheme: state.setTheme,
@@ -164,6 +167,28 @@ export const useAppInitialization = ({
       })
       .catch(() => undefined);
 
+    // AppGallery privacy management service: the store owns first-launch
+    // consent, so the app only mirrors it here (links + verdict) and re-reads it
+    // whenever the store reports a change.
+    if (isOhos) {
+      fetchOhosPrivacyState()
+        .then((state) => {
+          if (active) useSettingsStore.getState().setOhosPrivacy(state);
+        })
+        .catch(() => undefined);
+
+      listen('ohos-privacy-state', () => {
+        fetchOhosPrivacyState()
+          .then((state) => useSettingsStore.getState().setOhosPrivacy(state))
+          .catch(() => undefined);
+      })
+        .then((unlisten) => {
+          if (active) unlisteners.push(unlisten);
+          else unlisten();
+        })
+        .catch(() => undefined);
+    }
+
     const media = window.matchMedia('(prefers-color-scheme: dark)');
     useSettingsStore.getState().setSystemDark(media.matches);
     const onMediaChange = (event: MediaQueryListEvent) => useSettingsStore.getState().setSystemDark(event.matches);
@@ -174,7 +199,7 @@ export const useAppInitialization = ({
       unlisteners.forEach((unlisten) => unlisten());
       media.removeEventListener('change', onMediaChange);
     };
-  }, []);
+  }, [isOhos]);
 
   useEffect(() => {
     invoke(Invokes.GetSupportedFileTypes)

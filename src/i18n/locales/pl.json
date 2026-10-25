@@ -1807,6 +1807,19 @@
       "saved": "Zapisane obiektywy",
       "title": "Moje obiektywy"
     },
+    "privacy": {
+      "managedNotice": "Ta aplikacja korzysta z zarządzanej polityki prywatności AppGallery; okno prywatności przy pierwszym uruchomieniu wyświetla AppGallery.",
+      "notIntegrated": "Nieaktywne",
+      "requestConsent": "Poproś o zgodę",
+      "requestConsentDesc": "Wyświetl standardowe okno prywatności AppGallery",
+      "revoke": "Wycofaj zgodę",
+      "revokeConfirm": "Wycofać zapisaną zgodę na prywatność? Przy następnym uruchomieniu ponownie pojawi się okno AppGallery i trzeba będzie ponownie autoryzować dostęp do plików.",
+      "revokeDesc": "Usuwa zapisaną zgodę; przy następnym uruchomieniu pytanie powróci",
+      "status": "Stan zgody",
+      "statusDenied": "Nie zaakceptowano",
+      "statusGranted": "Zaakceptowano",
+      "statusUnknown": "Nieznany"
+    },
     "processing": {
       "ai": {
         "cloud": {

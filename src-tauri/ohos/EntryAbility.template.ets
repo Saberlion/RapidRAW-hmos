@@ -1,7 +1,7 @@
 import { RustAbility } from '@ohos-rs/ability'
 import Want from '@ohos.app.ability.Want'
-import { AbilityConstant, Configuration, ConfigurationConstant } from '@kit.AbilityKit';
-import { BusinessError } from '@kit.BasicServicesKit';
+import { AbilityConstant, Configuration, ConfigurationConstant, common } from '@kit.AbilityKit';
+import { BusinessError, commonEventManager } from '@kit.BasicServicesKit';
 import { KeyboardAvoidMode } from '@ohos.arkui.UIContext';
 import window from '@ohos.window';
 import picker from '@ohos.file.picker';
@@ -10,6 +10,7 @@ import fs from '@ohos.file.fs';
 import { fileShare } from '@kit.CoreFileKit';
 import deviceInfo from '@ohos.deviceInfo';
 import { photoAccessHelper } from '@kit.MediaLibraryKit';
+import { privacyManager } from '@kit.AppGalleryKit';
 
 export default class EntryAbility extends RustAbility {
   // change to dynamic library name
@@ -20,6 +21,9 @@ export default class EntryAbility extends RustAbility {
   public defaultPage: boolean = false;
   public mode: 'xcomponent' | 'webview' = 'webview'
   private rapidrawModule: ESObject | null = null;
+  // PRIVACY_STATE_CHANGED subscription (AppGallery standardized privacy
+  // hosting); kept so a future teardown path can unsubscribe.
+  private privacySubscriber: commonEventManager.CommonEventSubscriber | null = null;
 
   async onCreate(want: Want, launchParam: AbilityConstant.LaunchParam): Promise<void> {
     super.onCreate(want, launchParam);
@@ -97,9 +101,14 @@ export default class EntryAbility extends RustAbility {
         mod.resolveOhosSaveToGallery ?? mod.default?.resolveOhosSaveToGallery;
       const resolveSaveFileAs: ESObject =
         mod.resolveOhosSaveFileAs ?? mod.default?.resolveOhosSaveFileAs;
+      const resolvePrivacy: ESObject =
+        mod.resolveOhosPrivacy ?? mod.default?.resolveOhosPrivacy;
       if (typeof resolvePickFolder !== 'function' || typeof resolvePickFiles !== 'function' ||
         typeof resolveSaveToGallery !== 'function' || typeof resolveSaveFileAs !== 'function') {
         console.error('[RapidRAW] bridge resolve exports missing from librapidraw_lib.so');
+      }
+      if (typeof resolvePrivacy !== 'function') {
+        console.error('[RapidRAW] resolveOhosPrivacy missing from librapidraw_lib.so');
       }
       register((op: string) => {
         try {
@@ -112,7 +121,8 @@ export default class EntryAbility extends RustAbility {
             req = null;
           }
           if (req !== null && typeof req['op'] === 'string') {
-            this.handleBridgeRequest(req, resolvePickFolder, resolvePickFiles, resolveSaveToGallery, resolveSaveFileAs);
+            this.handleBridgeRequest(req, resolvePickFolder, resolvePickFiles, resolveSaveToGallery,
+              resolveSaveFileAs, resolvePrivacy);
             return;
           }
           switch (op) {
@@ -146,6 +156,9 @@ export default class EntryAbility extends RustAbility {
       // the Rust bridge with the current system color mode.
       this.rapidrawModule = mod;
       this.pushColorMode(this.context.config?.colorMode);
+      // Subscribe only now that the module handle exists: the consent
+      // subscription pushes through notifyOhosPrivacyChanged below.
+      this.subscribePrivacyEvents();
       console.info('[RapidRAW] OHOS window controller registered');
     } catch (e) {
       console.error(`[RapidRAW] window-controller registration failed: ${JSON.stringify(e)}`);
@@ -180,6 +193,7 @@ export default class EntryAbility extends RustAbility {
     resolvePickFiles: ESObject,
     resolveSaveToGallery: ESObject,
     resolveSaveFileAs: ESObject,
+    resolvePrivacy: ESObject,
   ): void {
     const op: string = req['op'] as string;
     const requestId: number = req['requestId'] as number;
@@ -196,9 +210,175 @@ export default class EntryAbility extends RustAbility {
       case 'save_file_as':
         this.saveFileAs(req, requestId, resolveSaveFileAs);
         break;
+      case 'privacy_state':
+        resolvePrivacy(requestId, this.collectPrivacyState());
+        break;
+      case 'privacy_request_consent':
+        this.requestPrivacyConsent(requestId, resolvePrivacy);
+        break;
+      case 'privacy_revoke':
+        this.revokePrivacyConsent(requestId, resolvePrivacy);
+        break;
       default:
         console.warn(`[RapidRAW] unknown bridge op '${op}'`);
     }
+  }
+
+  // ---- AppGallery privacy management service (标准化隐私声明托管服务) ----
+  //
+  // The store owns first-launch consent when the standardized hosting service
+  // is in use; these handlers only expose the service to the app (query the
+  // store-issued links and consent state, re-request consent, revoke it). Every
+  // path resolves its request exactly once: the Rust side parks a oneshot per
+  // request id with no timeout. The service is unavailable on emulators and in
+  // builds without the hosted statement (error 1006700003) — the payload then
+  // carries ok=false plus code/error and the Rust side fails open.
+
+  private privacyErrorPayload(prefix: string, error: ESObject): string {
+    let code: number = -1;
+    let message: string = '';
+    try {
+      code = (error?.code as number) ?? -1;
+      message = (error?.message as string) ?? '';
+    } catch (e) {
+      code = -1;
+    }
+    const detail: string = `${prefix}: code=${code}${message !== '' ? `, message=${message}` : ''}`;
+    console.error(`[RapidRAW] ${detail}`);
+    return JSON.stringify({ 'ok': false, 'error': detail, 'code': code });
+  }
+
+  private collectPrivacyState(): string {
+    const links: Array<Record<string, Object>> = [];
+    const results: Array<Record<string, Object>> = [];
+    const errors: Array<string> = [];
+    let ok: boolean = false;
+    // getAppPrivacyMgmtInfo: the store-issued privacy statement / user
+    // agreement links (AppPrivacyLink: type, versionCode, url).
+    try {
+      const info: privacyManager.AppPrivacyMgmtInfo = privacyManager.getAppPrivacyMgmtInfo();
+      const privacyLinks: privacyManager.AppPrivacyLink[] = info.privacyInfo;
+      for (let i = 0; i < privacyLinks.length; i++) {
+        links.push({
+          'type': privacyLinks[i]['type'],
+          'versionCode': privacyLinks[i]['versionCode'],
+          'url': privacyLinks[i]['url'],
+        });
+      }
+      ok = true;
+    } catch (error) {
+      errors.push(`getAppPrivacyMgmtInfo failed: ${JSON.stringify(error)}`);
+      console.error(`[RapidRAW] getAppPrivacyMgmtInfo failed: ${JSON.stringify(error)}`);
+    }
+    // getAppPrivacyResult: the recorded consent verdict per document.
+    try {
+      const privacyResults: privacyManager.AppPrivacyResult[] = privacyManager.getAppPrivacyResult();
+      for (let i = 0; i < privacyResults.length; i++) {
+        results.push({
+          'type': privacyResults[i]['type'],
+          'versionCode': privacyResults[i]['versionCode'],
+          'result': privacyResults[i]['result'],
+          'signingTimestamp': privacyResults[i]['signingTimestamp'],
+        });
+      }
+      ok = true;
+    } catch (error) {
+      errors.push(`getAppPrivacyResult failed: ${JSON.stringify(error)}`);
+      console.error(`[RapidRAW] getAppPrivacyResult failed: ${JSON.stringify(error)}`);
+    }
+    const payload: Record<string, Object> = {
+      'ok': ok,
+      'links': links,
+      'results': results,
+      'error': errors.length > 0 ? errors.join('; ') : null,
+    };
+    const json: string = JSON.stringify(payload);
+    console.info(`[RapidRAW] privacy state: ${json}`);
+    return json;
+  }
+
+  private requestPrivacyConsent(requestId: number, resolvePrivacy: ESObject): void {
+    try {
+      privacyManager.requestAppPrivacyConsent(this.context as common.UIAbilityContext)
+        .then((consentResult: privacyManager.ConsentResult) => {
+          const results: Array<Record<string, Object>> = [];
+          const privacyResults: privacyManager.AppPrivacyResult[] = consentResult['results'] ?? [];
+          for (let i = 0; i < privacyResults.length; i++) {
+            results.push({
+              'type': privacyResults[i]['type'],
+              'versionCode': privacyResults[i]['versionCode'],
+              'result': privacyResults[i]['result'],
+              'signingTimestamp': privacyResults[i]['signingTimestamp'],
+            });
+          }
+          const payload: Record<string, Object> = {
+            'ok': true,
+            'links': [],
+            'results': results,
+            'isAgreed': consentResult['isAgreed'],
+            'error': null,
+          };
+          const json: string = JSON.stringify(payload);
+          console.info(`[RapidRAW] privacy consent result: ${json}`);
+          resolvePrivacy(requestId, json);
+        })
+        .catch((error: BusinessError) => {
+          resolvePrivacy(requestId, this.privacyErrorPayload('requestAppPrivacyConsent failed', error));
+        });
+    } catch (error) {
+      resolvePrivacy(requestId, this.privacyErrorPayload('requestAppPrivacyConsent threw', error));
+    }
+  }
+
+  private revokePrivacyConsent(requestId: number, resolvePrivacy: ESObject): void {
+    try {
+      privacyManager.disableService();
+      console.info('[RapidRAW] privacy consent revoked');
+      resolvePrivacy(requestId, JSON.stringify({ 'ok': true, 'results': [], 'error': null }));
+    } catch (error) {
+      resolvePrivacy(requestId, this.privacyErrorPayload('disableService failed', error));
+    }
+  }
+
+  // The store sends PRIVACY_STATE_CHANGED after the user answers its
+  // standardized dialog; forward it so the webview can react without polling.
+  private subscribePrivacyEvents(): void {
+    const subscribeInfo: commonEventManager.CommonEventSubscribeInfo = {
+      events: ['usual.event.PRIVACY_STATE_CHANGED'],
+    };
+    commonEventManager.createSubscriber(subscribeInfo)
+      .then((subscriber: commonEventManager.CommonEventSubscriber) => {
+        this.privacySubscriber = subscriber;
+        try {
+          commonEventManager.subscribe(subscriber, (err: BusinessError, data: commonEventManager.CommonEventData) => {
+            if (err) {
+              console.error(`[RapidRAW] privacy event subscribe failed: ${JSON.stringify(err)}`);
+              return;
+            }
+            let resultType: number = 0;
+            let appIndex: number = 0;
+            try {
+              const parsed: Record<string, number> = JSON.parse(data?.data ?? '{}') as Record<string, number>;
+              resultType = parsed['resultType'] ?? 0;
+              appIndex = parsed['appIndex'] ?? 0;
+            } catch (e) {
+              console.error(`[RapidRAW] privacy event payload parse failed: ${JSON.stringify(e)}`);
+            }
+            console.info(`[RapidRAW] privacy state changed: resultType=${resultType}, appIndex=${appIndex}`);
+            const notify: ESObject =
+              this.rapidrawModule?.notifyOhosPrivacyChanged ?? this.rapidrawModule?.default?.notifyOhosPrivacyChanged;
+            if (typeof notify === 'function') {
+              notify(JSON.stringify({ 'granted': resultType === 1, 'appIndex': appIndex }));
+            }
+          });
+          console.info('[RapidRAW] subscribed to PRIVACY_STATE_CHANGED');
+        } catch (error) {
+          console.error(`[RapidRAW] privacy event subscribe threw: ${JSON.stringify(error)}`);
+        }
+      })
+      .catch((error: BusinessError) => {
+        console.error(`[RapidRAW] createSubscriber for privacy events failed: ${JSON.stringify(error)}`);
+      });
   }
 
   private pickFolder(requestId: number, resolvePickFolder: ESObject): void {

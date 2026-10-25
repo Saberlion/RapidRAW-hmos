@@ -12,7 +12,7 @@
 
 本用例集覆盖两部分:
 
-1. **鸿蒙移植专项**(主要):构建打包、平台门控、沙箱路径、FileKit 文件桥、导入/导出链、窗口控制、系统 UI 适配、ArkWeb 存储兜底、签名上架;
+1. **鸿蒙移植专项**(主要):构建打包、平台门控、沙箱路径、FileKit 文件桥、导入/导出链、窗口控制、系统 UI 适配、ArkWeb 存储兜底、签名上架、**AppGallery 隐私管理服务对接**;
 2. **核心功能回归**(次要):图库、编辑器 GPU 管线、调整项、AI 蒙版/降噪、性能与内存基线,以及桌面/Android 的"零回归"等价性验证。
 
 不在范围内:桌面三平台的全功能验收(仅覆盖 cfg 等价性冒烟)、相机联机拍摄(`tethering`,OHOS 不构建该 feature)、云服务/社区页后端。
@@ -97,7 +97,8 @@ cargo check --target aarch64-unknown-linux-ohos   # OHOS(需 §6.1 环境变量)
 | 性能与内存 | `TC-PERF` | 7 | 高像素基线、交互 FPS、预热 |
 | 签名与上架 | `TC-SIGN` | 10 | HAP/.app 双层签名、AGC 991/权限对齐 |
 | 回归与静态门禁 | `TC-REG` | 9 | fmt/clippy/tsc/eslint/i18n、桌面回归 |
-| **合计** | | **162** | |
+| AppGallery 隐私管理服务 | `TC-PRIV` | 13 | 隐私链接、签署状态、主动请求/撤销、签署事件、取权门控、未上架预置 |
+| **合计** | | **175** | |
 
 ---
 
@@ -364,6 +365,27 @@ cargo check --target aarch64-unknown-linux-ohos   # OHOS(需 §6.1 环境变量)
 | TC-REG-08 | Android 回归 | [AND] | 同上 + SAF 路径 | 行为不变(移动端路径、图库导出) | P2 | §6 不变性保证 |
 | TC-REG-09 | UI 平滑度对比 | [HOST/桌面] | `bench/replay.js` 前后各一轮 + `analyze.mjs` | 同机前后可对比;viewport 一致;无回归 | P2 | `bench/README.md` |
 
+### 3.16 TC-PRIV —— AppGallery 隐私管理服务
+
+> 代码:`ohos_integration.rs` `privacy` 模块 + 3 个 tauri 命令、`EntryAbility.template.ets`(privacyManager + `PRIVACY_STATE_CHANGED`)、`src/utils/ohosPrivacy.ts`、`SettingsPanel.tsx`(关于页 OHOS 变体);背景与配方见 §6.18。
+> **前置**:该服务**不支持模拟器**,须真机;且需已接入标准化隐私声明托管服务,或用 `module.json5` 预置 metadata(§6.18 第 4 节)。
+
+| ID | 名称 | 前置条件 | 步骤 | 预期结果 | 优先级 | 依据 |
+|---|---|---|---|---|---|---|
+| TC-PRIV-01 | 平台隐私链接查询 | [DEV-A] 已接入/已预置 | 打开 设置 → 关于 | app.log `privacy state: {...}` 含 `links[]`;链接行按平台下发的 URL 渲染(隐私政策/用户协议) | P1 | §6.18-1/3 |
+| TC-PRIV-02 | 签署状态查询 | 同上 | 观察关于页状态行;首启同意后再看 | 三态正确:已同意/未同意/未知 | P1 | §6.18-3(`ohosConsentOf`) |
+| TC-PRIV-03 | 主动拉起标准化隐私弹窗 | 同上 | 关于页 →「重新请求授权」 | 拉起平台弹窗;同意后状态转为「已同意」 | P0 | §6.18-1 |
+| TC-PRIV-04 | 撤销同意 | 同上,已同意 | 关于页 →「撤销同意」→ 确认 | `disableService` 成功;状态即时显示「未同意」;下次启动重新弹窗 | P1 | §6.18-1/8 |
+| TC-PRIV-05 | 签署结果事件链 | 同上 | 在平台弹窗上同意/拒绝,观察前端 | 无需重进设置页,状态自动刷新(`ohos-privacy-state` 事件 → 重新查询) | P1 | §6.18-1/3 |
+| TC-PRIV-06 | 未接入时优雅降级 | 无 metadata、未接入托管的构建 | 打开关于页;再点「打开文件夹」 | 状态显示「未启用」(`1006700003`);取文件夹**仍可用**(fail-open),不崩溃 | P0 | §6.18-2/8 |
+| TC-PRIV-07 | 取权前同意门控 | [DEV-A] 已撤销同意 | 点「打开文件夹」/ 导入 | **先**弹平台标准化弹窗;同意后 picker 正常打开 | P0 | §6.18-2 |
+| TC-PRIV-08 | 拒绝同意后不放行 | 同上 | 在门控弹窗中选择拒绝 | 不打开 picker;返回明确错误;应用不崩溃 | P1 | §6.18-2 |
+| TC-PRIV-09 | 门控缓存热路径 | 同上,已同意 | 连续两次取文件夹 | 第二次不再弹窗(缓存),无额外桥往返 | P2 | §6.18-1(`CONSENT_GRANTED`) |
+| TC-PRIV-10 | 未上架预置 metadata 生效 | debug 构建 + `hdc install` + 设备可访问应用市场 | 按 §6.18 第 4 节配置后安装,首启 | 弹出统一隐私弹框;接口可查链接/状态 | P1 | §6.18-4 |
+| TC-PRIV-11 | 关于页以平台文本取代本地文本 | [DEV-A] | 对比 OHOS 与桌面/Android 的关于页 | OHOS 展示平台链接(不渲染本地法务文本查看器);桌面/Android 不变 | P2 | §6.18-3 |
+| TC-PRIV-12 | 桥缺失时不 panic | 缺 EntryAbility 补丁的构建 | 触发任一隐私命令 | 返回 `ok:false` + 错误信息;不 panic、不挂起(请求必被 resolve 一次) | P2 | §6.18-1 |
+| TC-PRIV-13 | 非 OHOS 平台返回 Err | [DESK] | 调用三个隐私命令 | 返回明确 Err,不 panic | P2 | `ohos_integration.rs` |
+
 ---
 
 ## 4. 未覆盖 / 不在本次范围
@@ -379,6 +401,6 @@ cargo check --target aarch64-unknown-linux-ohos   # OHOS(需 §6.1 环境变量)
 
 ## 5. 用例维护约定
 
-- 新增 OHOS 集成代码须同步补用例;涉及 `gen/ohos/`(gitignored)手工补丁的(EntryAbility / Index.ets / module.json5 / 签名配置),在用例"前置条件"中说明**重打步骤**,并注明 `cargo tauri ohos init` 重跑后失效。
+- 新增 OHOS 集成代码须同步补用例;涉及 `gen/ohos/`(gitignored)手工补丁的(EntryAbility / Index.ets / module.json5 / 签名配置 / **`appgallery_privacy_*` 隐私 metadata**),在用例"前置条件"中说明**重打步骤**,并注明 `cargo tauri ohos init` 重跑后失效。
 - 涉及 Cargo.lock 冻结的改动,用例须附**双目标复核**(宿主 + `aarch64-unknown-linux-ohos`),见 `AGENTS.md`。
 - 证据留存格式:命令原文 + 输出片段 + 截图字节数(界面状态)+ app.log 摘录;证据出处回填到 `TEST_REPORT.md`。

@@ -1729,6 +1729,19 @@
       "saved": "Gespeicherte Objektive",
       "title": "Meine Objektive"
     },
+    "privacy": {
+      "managedNotice": "Diese App nutzt die verwaltete Datenschutzerklärung von AppGallery; den Datenschutzdialog beim ersten Start zeigt AppGallery.",
+      "notIntegrated": "Nicht aktiviert",
+      "requestConsent": "Zustimmung anfordern",
+      "requestConsentDesc": "Den standardisierten Datenschutzdialog von AppGallery anzeigen",
+      "revoke": "Zustimmung widerrufen",
+      "revokeConfirm": "Die gespeicherte Datenschutz-Zustimmung widerrufen? Beim nächsten Start erscheint der AppGallery-Dialog erneut und der Dateizugriff muss neu autorisiert werden.",
+      "revokeDesc": "Gespeicherte Zustimmung löschen; beim nächsten Start wird erneut gefragt",
+      "status": "Zustimmungsstatus",
+      "statusDenied": "Nicht akzeptiert",
+      "statusGranted": "Akzeptiert",
+      "statusUnknown": "Unbekannt"
+    },
     "processing": {
       "ai": {
         "cloud": {

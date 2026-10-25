@@ -1726,6 +1726,19 @@
       "saved": "登録されたレンズ",
       "title": "マイレンズ"
     },
+    "privacy": {
+      "managedNotice": "このアプリはAppGalleryの管理されたプライバシーステートメントを使用しています。初回起動時のプライバシーダイアログはAppGalleryが表示します。",
+      "notIntegrated": "未設定",
+      "requestConsent": "同意を再取得",
+      "requestConsentDesc": "AppGalleryの標準プライバシーダイアログを表示します",
+      "revoke": "同意を撤回",
+      "revokeConfirm": "記録されたプライバシー同意を撤回しますか?次回起動時にAppGalleryのダイアログが再表示され、ファイルアクセスの再許可が必要になります。",
+      "revokeDesc": "記録された同意を削除します。次回起動時に再度確認します",
+      "status": "同意の状態",
+      "statusDenied": "未同意",
+      "statusGranted": "同意済み",
+      "statusUnknown": "不明"
+    },
     "processing": {
       "ai": {
         "cloud": {
