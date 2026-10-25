@@ -19,10 +19,10 @@
 
 | 状态 | 数量 | 占比 |
 |---|---|---|
-| ✅ 通过(有实证证据) | 128 | 73.1% |
+| ✅ 通过(有实证证据) | 129 | 73.7% |
 | 🟡 部分通过(链路已实现/部分场景已验) | 12 | 6.9% |
 | ⚫ 已知边界(已观察并接受,记入缺陷/限制清单) | 6 | 3.4% |
-| ⬜ 未执行(待跑,含"实现已完成但设备端未验") | 29 | 16.6% |
+| ⬜ 未执行(待跑,含"实现已完成但设备端未验") | 28 | 16.0% |
 | **合计** | **175** | 100% |
 
 > 说明:"通过"中含 26 条 HOST 静态/构建类门禁(CI 可复现)、其余为模拟器与真机实证;真机实证集中于 PATH/FILE/EXPORT/UI/EDIT/AI/SIGN 模块(见各模块证据列)。
@@ -46,7 +46,7 @@
 | TC-PERF 性能与内存 | 7 | 5 | 0 | 0 | 2 | 部分通过(真机基线未跑) |
 | TC-SIGN 签名与上架 | 10 | 6 | 1 | 2 | 1 | 部分通过(提审未完成) |
 | TC-REG 回归与静态门禁 | 9 | 6 | 0 | 0 | 3 | 静态全绿;跨平台回归未跑 |
-| TC-PRIV AppGallery 隐私管理服务 | 13 | 11 | 0 | 0 | 2 | 真机端到端通过(12 项实测,2 项未跑) |
+| TC-PRIV AppGallery 隐私管理服务 | 13 | 12 | 0 | 0 | 1 | 真机端到端通过(含 release 降级路径;1 项待跑) |
 
 ---
 
@@ -314,7 +314,7 @@
 | TC-PRIV-03 | ✅ | 门控路径与设置页「Request consent」两条路径均拉起平台弹窗 | — |
 | TC-PRIV-04 | ✅ | `revoke_ohos_privacy_consent` → `{ok:true}`;再查询 `result:0`;关于页「Not accepted」 | — |
 | TC-PRIV-05 | ✅ | `app.log` ×2:`OHOS privacy consent changed: granted=true` | `PRIVACY_STATE_CHANGED` → 事件链实证 |
-| TC-PRIV-06 | ⬜ | 设计:fail-open + 「未启用」(§6.18-2/8) | 需无 metadata 构建;未跑 |
+| TC-PRIV-06 | ✅ | release 冒烟变体(INTERNET-only、无隐私预置)实测:`OHOS privacy hosting is not in use; skipping the consent gate` + 取文件夹照常打开(fail-open);「关于」页状态显示 **Not enabled**(`code=1006700003` 识别) | 见 §6.18-6.4/6.5 |
 | TC-PRIV-07 | ✅ | 点击「Open Folder」→ 平台弹窗 → 同意 → FileKit picker 打开 → 选 Download → 图库缩略图渲染;撤销后再点 → 弹窗重现 | 门控 + 放行全链 |
 | TC-PRIV-08 | ✅ | 拒绝 → 平台**终止应用**(hilog `[DisposeAlertAbility]:privacy dialog closed unexpectedly, now kill bundle`),picker 未打开,无崩溃栈 | 平台策略(§6.18-6.2-2) |
 | TC-PRIV-09 | ✅ | 已同意后再次 `pick_ohos_folder`:picker 打开,**无**隐私弹窗 | `CONSENT_GRANTED` 缓存 |
@@ -335,10 +335,8 @@
 | P1 | TC-PERF-04(≥60MP 真机基线) | 资产已推送,方法学已固化 | 用 §6.10 命令序列复测,不依赖开发 |
 | P1 | TC-REG-07 / TC-REG-08(桌面/Android 回归冒烟) | 需本机桌面应用数据 | 与 TC-UI-10 合并一轮跑,验证协议门控与 dialog 未受影响 |
 | P1 | TC-IMPORT-04/05/06、TC-EXPORT-07/08、TC-LIB-05/08、TC-ADJ-03/04/09 | 链路已实现但无专项取证 | 一至两轮真机定向取证即可闭合 |
-| P0/P1 | TC-PRIV-01…10(隐私管理服务,10 条) | 服务**不支持模拟器**;需真机 + 已接入托管或预置 metadata | 按 §6.18 第 7 节 runbook 跑;其中 TC-PRIV-06(降级)模拟器即可验 |
-| P2 | TC-PRIV-11/12 | 未设备端取证 / 未构造缺补丁构建 | 随隐私专项一轮顺带 |
-| P2 | TC-PRIV-06(未接入降级) | 需一个无 `appgallery_privacy_*` metadata 的构建 | 下一次改 module.json5 时顺带验 |
-| P2 | TC-PRIV-12(桥缺失不 panic) | 需缺 EntryAbility 补丁的构建 | 低优先,代码分支已审 |
+| P0/P1 | TC-PRIV-12(桥缺失不 panic) | 需缺 EntryAbility 补丁的构建 | 低优先,代码分支已审 |
+| — | ~~TC-PRIV-01…11~~ | **全部已在真机验证**(2026-10-25,含 release 冒烟),见 §3.16 | — |
 | P2 | TC-BUILD-14/18、TC-FILE-03/09、TC-WIN-05/06、TC-UI-04、TC-AI-15、TC-ADJ-10/12、TC-SIGN-09、TC-REG-09、TC-PERF-05、TC-EDIT-11 | 设计/方案已就绪或需立项 | 随相应功能 Iteration 顺带执行 |
 
 ---
@@ -368,6 +366,7 @@
 | D-17 | `AppPrivacyLink.type` 语义未公开:前端按 `type===1` 视为主隐私声明、否则取首条,其余标注为用户协议 | TC-PRIV-01/11 | P2 | **已收窄**(真机实测平台返回 `type:1`,与假设一致) |
 | D-18 | 首装未签署时前端状态显示「未知」而非「未同意」——平台此态返回 `results: []`(撤销后才返回 `result:0`) | TC-PRIV-02 | P2 | **已修复**(`ohosConsentOf`:托管在用且无结果 → 未同意) |
 | D-19 | `.ets` 不在 tsc/eslint 覆盖内:ArkTS 严格性(`Record<string, Object>` 不接受 `undefined`/`null`)只在 HAP 构建的 `CompileArkTS` 阶段暴露 | TC-BUILD-04 | P1 | **已修复**;流程风险仍在 —— 改 ArkTS 后必须跑构建 |
+| D-20 | `collectPrivacyState` 未携带 AppGallery 错误码 → "托管未启用"时「关于」页显示 `Unknown` 而非 `Not enabled` | TC-PRIV-06 | P2 | **已修复 + release 真机复核通过**(`privacyErrorCode()` 写入 payload 的 `code`) |
 
 ## 6. 剩余风险登记(未构成缺陷)
 

@@ -234,14 +234,21 @@ export default class EntryAbility extends RustAbility {
   // builds without the hosted statement (error 1006700003) — the payload then
   // carries ok=false plus code/error and the Rust side fails open.
 
+  private privacyErrorCode(error: ESObject): number {
+    try {
+      return (error?.code as number) ?? -1;
+    } catch (e) {
+      return -1;
+    }
+  }
+
   private privacyErrorPayload(prefix: string, error: ESObject): string {
-    let code: number = -1;
+    const code: number = this.privacyErrorCode(error);
     let message: string = '';
     try {
-      code = (error?.code as number) ?? -1;
       message = (error?.message as string) ?? '';
     } catch (e) {
-      code = -1;
+      message = '';
     }
     const detail: string = `${prefix}: code=${code}${message !== '' ? `, message=${message}` : ''}`;
     console.error(`[RapidRAW] ${detail}`);
@@ -253,6 +260,11 @@ export default class EntryAbility extends RustAbility {
     const results: Array<Record<string, Object>> = [];
     const errors: Array<string> = [];
     let ok: boolean = false;
+    // First AppGallery error code seen, so the app can tell "hosting not in use"
+    // (1006700003) apart from a generic failure. Device-verified need: without
+    // this the payload carried no code and the About row fell back to "Unknown"
+    // instead of "Not enabled".
+    let code: number = -1;
     // getAppPrivacyMgmtInfo: the store-issued privacy statement / user
     // agreement links (AppPrivacyLink: type, versionCode, url).
     try {
@@ -267,6 +279,7 @@ export default class EntryAbility extends RustAbility {
       }
       ok = true;
     } catch (error) {
+      if (code < 0) { code = this.privacyErrorCode(error); }
       errors.push(`getAppPrivacyMgmtInfo failed: ${JSON.stringify(error)}`);
       console.error(`[RapidRAW] getAppPrivacyMgmtInfo failed: ${JSON.stringify(error)}`);
     }
@@ -283,6 +296,7 @@ export default class EntryAbility extends RustAbility {
       }
       ok = true;
     } catch (error) {
+      if (code < 0) { code = this.privacyErrorCode(error); }
       errors.push(`getAppPrivacyResult failed: ${JSON.stringify(error)}`);
       console.error(`[RapidRAW] getAppPrivacyResult failed: ${JSON.stringify(error)}`);
     }
@@ -294,6 +308,7 @@ export default class EntryAbility extends RustAbility {
       'links': links,
       'results': results,
       'error': errorText,
+      'code': code,
     };
     const json: string = JSON.stringify(payload);
     console.info(`[RapidRAW] privacy state: ${json}`);

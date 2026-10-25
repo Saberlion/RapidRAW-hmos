@@ -700,6 +700,8 @@ demosaic 输出         f32 RGB   734MB
 
 **提审包 v3(2026-10-11 16:10)——去掉 ACL 受限权限 `ohos.permission.READ_IMAGEVIDEO`**(AGC 审核问题③;应用经 SAF 选择器访问图片,全仓 Rust/前端零引用,真机 INTERNET-only 验证早已佐证无需它):module.json5 收敛为 **7 权限定版**(`.agc-backup` 同步更新,SHA256 `43E9CB4B4A7E37C5E4F10E158198E9A9D5890A2A8B2B4B37AA9D350F2875188A`),`-Release` 重出 + 全链路复核(7 权限无 READ_IMAGEVIDEO、LightRaw、42 库零 DWARF/零 symtab、0 map)。产物 `entry-default.app` **26.17MB**,SHA256 `986387BEC6C200AAFD624962AFCED6D6FC1E579FEBE6EA36DED73828C6E7BDA0`。**风险预告:`WRITE_IMAGEVIDEO` 与 `MEDIA_LOCATION` 同为弃用/ACL 受限类权限(应用走 SAF 均不需要),下一轮审核可能同样被点名**——要去掉改 module.json5 后按同流程重出。版本 1.0.0(versionCode 1,同版本修订重提;若 AGC 要求新版本号需改 AppScope/app.json5 后重出)。**注意:AGC 控制台应用名称/图标须同步改为 LightRaw**(§6.15"名称须填 RapidRAW"已随更名过时;bundleName 未变,签名/备案不受影响);真机现装 INTERNET-only release 冒烟变体(非提审包);`perm_read_imagevideo` 字符串资源闲置保留(无引用,无害)。
 
+**提审包 v4(2026-10-25 12:02)——含 AppGallery 隐私管理服务对接(§6.18)+ 首装状态显示修复**:`-Release` 重出 + 全链路复核(7 权限、**无** `appgallery_privacy_*` 预置、42 库零 DWARF/零 symtab、无 `ets/sourceMaps.map`、`librapidraw_lib.so` 40.5 MB),`.csr\pack-app.ps1` 六步全过(内层 HAP release 签名逐字节保留 + `.app` 级签名块,条目名 `entry-default.hap`)。产物 `entry-default.app` **26.19 MB**,SHA256 `39F8E2486EE4CAA8C4A329303C0B0D3772A44E4EDBFEF26A131C69D135C7DE15`(取代 v3 的 `986387BE…BDA0`);release 真机冒烟(INTERNET-only + 调试签名)通过,详见 §6.18-6.4/6.5。**两个注意点**:①`build-ohos.ps1` 末行 `size:` 是 zip 重写**之前**的回读值(实测打印 106.5 MB vs 实际 50.2 MB),验包一律以磁盘文件/解包结果为准;②隐私预置 metadata **只属于未上架调试构建**,提审包内已确认不存在(上架后以 AGC 云侧托管配置为准)。
+
 **协议门控复测(2026-10-12)**:针对现装冒烟变体(装机于 10-11 11:07,较 HEAD `0a1ffb5c` 早 3 个提交——AGC strip/docs/NPU 文案,均不触及门控;`App.tsx`/`useSettingsStore.ts`/`AgreementGate.tsx` 自 `8f5c88b2` 零改动,SettingsPanel 隐私查看区亦未动)重跑 §6.17 验证:`bm clean -d` 清数据后冷启 ×2(force-stop 复测),**零协议弹窗、直进欢迎页**,与首次验证一致。验证方法(无视觉模型的盲测,可复用):uitest dumpLayout 确认 EntryAbility 前台焦点 + 窗口 bounds,再以 WPF 像素扫描判屏——欢迎页签名 = 左半 splash 照片(`bg-black` 容器,纹理化暗质量、随图片加载渐亮)+ 右半纯浅色底 + 内容块 `max-w-xs`/`h-11`(2x DPI 下 accent 按钮 bbox 与布局公式吻合);AgreementGate 签名(整窗扁平底色 + 居中密集法律文本 + 底部居中按钮组)完全不匹配。行为反证:点击欢迎页「打开文件夹」弹出系统 SAF 选择器(`com.huawei.hmos.filemanager` 入 layout)——门控若挂载则主 UI 整树不渲染、不可能触发任何文件活动。**注意:2in1 设备上 SAF 选择器以 UIExtension 挂载并会把应用窗口吸附为左侧窄条(本次 [76,76][390,1470]),取消按钮在 layout JSON 中检索「取消」取 bounds 点击后窗口复原;Back 键关不掉选择器(焦点在选择器但无响应)。**桌面/Android 门控行为未重测(需动本机桌面应用数据),以代码零改动 + `8f5c88b2` 当日验证为准。
 
 ### 6.18 Phase 4:AppGallery 隐私管理服务对接(2026-10-25)
@@ -794,6 +796,25 @@ fail-open 是刻意的:文档明确"用户未签署隐私协议时,将无法申�
 - 应用启动、Vulkan 适配器(`Maleoon 916 (backend: Vulkan)`)、`[pipeline-warmup] completed`(热缓存 184ms)正常,无新增崩溃;
 - 选文件夹 → 图库网格 + 缩略图渲染(Download:`.tiff`/`.fff`/`.jpg` 三张)正常;
 - 重启后 `Could not scan directory '/storage/Users/currentUser/Download': Operation not permitted (os error 1)` —— 属 §6.14 已知的会话级授权语义,重授权流兜底,非本次回归。
+
+**6.4 release 包复核(2026-10-25,提交包+真机冒烟)**
+
+沿用 §6.17 的两段式做法:**提审包**(7 权限 + release 签名)与**真机冒烟变体**(INTERNET-only + 调试签名,`module.json5.agc-backup` 保留提审态)分开构建。
+
+| 检查项 | 结果 |
+|---|---|
+| `-Release` 透传 | ✅ 产物内 `librapidraw_lib.so` **40.5 MB**(dev 为 388.5 MB;§6.17 参考 40.51 MB) |
+| 打包 `.so` 零 DWARF / 零 symtab | ✅ 42 个(ORT + CANN)全部为 0 |
+| `ets/sourceMaps.map` | ✅ 不存在 |
+| 权限集 / 隐私预置 | ✅ 提审包 7 权限、**无** `appgallery_privacy_*`;冒烟变体 INTERNET-only |
+| napi 桥导出(release+strip 后) | ✅ `resolveOhosPrivacy` / `notifyOhosPrivacyChanged` 等 9 个属性名均在注册表中(桥不会因 strip 失效) |
+| release 前端 bundle 是否含隐私代码 | ✅ `dist/` 实测含三个 invoke 名与 `settings.privacy.*` 键(release 把资源**压缩嵌入** `.so`,故二进制里搜不到明文——用 `.so` 字节搜索判断前端内容会误判) |
+| release 真机冒烟 | ✅ 启动/Vulkan/预热正常;取文件夹门控在"托管未启用"时按设计**失败开放**(`OHOS privacy hosting is not in use; skipping the consent gate`)且 picker 照常打开 = **TC-PRIV-06 降级路径实测通过**;设置页「关于」渲染平台链接行与状态行 |
+
+**6.5 陷阱与缺陷(release 出包轮次新增)**
+
+1. **`build-ohos.ps1` 打印的体积是"重写前"读数** —— 末行 `size: 106.5 MB` 取自注入前缓存的 `FileInfo.Length`;磁盘上实际产物为 50.2 MB(zip Update 重压缩后)。**验产物体积/内容一律以实际文件或解包结果为准**,勿引用脚本末行数字。
+2. **`collectPrivacyState` 曾漏带错误码**(已修):状态查询 payload 只有 `privacyErrorPayload` 那条路径带 `code`,`getAppPrivacyMgmtInfo` 抛错时 `code` 缺失 → 前端无法识别 `1006700003` → 「关于」页在"托管未启用"时显示 **Unknown** 而非 **Not enabled**。修复:抽出 `privacyErrorCode()`,状态查询的 catch 记录首个错误码并写入 payload。**真机复核:release 冒烟变体已显示 `Not enabled`**。此缺陷只在设备上可见(本地无 CDP、静态门禁不覆盖 `.ets`)。
 
 **7. 真机验证 runbook**(待执行,命令沿用 §6.5/6.14 方法学)
 
