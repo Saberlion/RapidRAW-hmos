@@ -838,6 +838,86 @@ hdc shell "hilog -x | grep -iE 'RapidRAW.+(privacy|consent)'"
 - 未接入/未预置构建:状态显示「未启用」(`1006700003`),门控放行(第 2 节);「关于」页隐私政策行回退到 AGC 托管声明链接(第 4 节),不是空行;
 - 本次只做静态门禁,真机行为(弹窗文案、事件时序、门控时序)未验证 —— 见本节第 6/7 条。
 
+### 6.19 外链全部点不开的根因与修复:shell 插件注入脚本 × `xdg-open` 缺失(2026-10-26)
+
+**背景**:AGC 提审前核对「关于」页,发现**隐私政策「查看」链接点不开**。实测每次点击都产生
+`[ERROR] [frontend] Unhandled promise rejection Scoped shell IO error: No such file or directory (os error 2)`,且没有任何窗口/浏览器被拉起 —— 审核员最容易点的就是这个链接,属提审风险。
+
+**根因(三段,均有实证)**:
+
+1. `tauri-plugin-shell` 注册了一个 **document-start 注入脚本**(`src/lib.rs` 的 `.js_init_script(include_str!("init-iife.js"))`):它监听 `document.body` 的 click,对 `href` 以 `http(s)://`/`mailto:`/`tel:` 开头且 `target="_blank"` 的 `<a>` 调 `invoke('plugin:shell|open', { path: href })` 并 **`preventDefault()`**。**这正是"前端 bundle 里找不到任何调用点"的原因** —— 调用方不在 app 代码里。
+2. 该命令在 OHOS 上走**桌面分支**:`Shell::open` 的移动端实现带 `#[cfg(mobile)]`(=`android | ios`),OHOS 不满足 → `open::open(None, path, with)` → `open` crate 5.4.1 在 `target_os = "linux"` 上 spawn **`xdg-open`**;HarmonyOS 无此二进制 → `io::Error`(ENOENT)→ 被 `tauri-plugin-shell/src/scope.rs:197` 包装成 `Scoped shell IO error: …` 作为 IPC 错误返回。与 6.4/6.9 的"OHOS 满足 `target_os = linux`"是同一类坑(此处依赖 crate 内部,应用侧无法加 `cfg` 门控)。
+3. 注入脚本**没有 await/catch** 那次 invoke → 前端 `unhandledrejection`(经 `frontendLogBridge` 落到 app.log);又因它已 `preventDefault()`,**webview 内导航同时被掐断**,故表现为"完全无反应"(双重失效)。
+
+**定位手段(可复用)**:`__TAURI_INTERNALS__.invoke` 是 `Object.defineProperty` 只读属性、`ipc` 被 `Object.freeze`,`postMessage` 亦不可重定义 —— JS 侧无法直接包装 IPC。**可用的缝是暴露出来的 `callbacks` Map**(`invoke` 每次都会向它注册 resolve/reject 回调):包装 `Map.prototype.set` 即可打印每次 invoke 的**调用栈**,从而区分"app bundle 调用"与"注入脚本调用":
+
+```
+[ipcdiag] click href=https://agreement-drcn.hispace.dbankcloud.cn/index.html?…&agreementId=…  target=_blank tag=A
+[ipcdiag] invoke-caller … at Object.value (<anonymous>:484:14) | at e (<anonymous>:550:102)   ← 注入脚本(init-iife)
+[ipcdiag] invoke-caller … at invoke (tauri://localhost/assets/index-*.js:10286)               ← app 自身调用(对照)
+[ERROR]   [frontend] Unhandled promise rejection Scoped shell IO error: No such file or directory (os error 2)
+```
+
+**实现(方案 A:一处修全部)**:
+
+- 前端新增 `src/utils/externalLinks.ts`:`openExternalUrl(url)` —— OHOS 走新命令 `open_external_url`,其余平台继续用 shell 插件的 `open`(桌面行为不变);`installExternalLinkHandler()` 在**捕获阶段**接管这批链接,`preventDefault()` + **`stopPropagation()`**(插件监听挂在 `body` 的冒泡阶段,必须在冒泡到 body 前截住),再交 `openExternalUrl`;非 OHOS 平台该监听直接返回。由 `main.tsx` 启动安装。
+- Rust `ohos_integration.rs`:新增 `#[tauri::command] open_external_url`。scheme 白名单与插件注入脚本一致(`http(s)://`/`mailto:`/`tel:`),其余 scheme 直接拒;OHOS 分支经既有请求桥下发(`file_bridge::request` + `resolve_ohos_open_url`),其余平台走 `Shell::open`(该方法已被上游标 deprecated,故加 `#[allow(deprecated)]` 并注明维持桌面行为不变)。
+- ArkTS(`EntryAbility.template.ets`,**`ohos init` 重跑后须按模板重加**,同 6.14/6.15/6.18 纪律):新增 `open_url` op,`this.context.startAbility({ action: 'ohos.want.action.viewData', uri })` 交系统按 scheme 分发(浏览器/邮件/拨号),结果回填 `resolveOhosOpenUrl`。
+- 设置页 3 处云服务按钮(原直接 `open(...)`)改用 `openExternalUrl` —— 前端不再直接依赖 `@tauri-apps/plugin-shell` 的 `open`。
+
+**验证(2026-10-26)**:
+- 静态门禁:`cargo fmt -p RapidRAW -- --check` ✓;`cargo clippy --all-targets -- -D warnings`(宿主,Windows 不具备 `--all-features`)✓;`cargo check --target aarch64-unknown-linux-ohos` ✓(OHOS 侧新代码参与编译,0 error、0 新增告警);`npm run typecheck` 与 eslint 对改动文件与 HEAD **逐文件计数一致**(既有告警不变、新文件 0 问题)。
+- 真机(2026-10-26,设备 `3XB0124617000013`):重编 → 调试材料签名装机(**本地诊断包**:产物副本的 `module.json` 临时改成 INTERNET-only 后重签,仓库产物保持 7 项提审形态)→ **三条链接实测全部拉起系统浏览器**(`uitest dumpLayout -i` 出现 `com.huawei.hmos.browser` 窗口,浏览器地址栏文本可读):
+  - 「关于」→ 隐私政策(**动态** `privacyStatementUrl()`):地址栏 = `agreement-drcn.hispace.dbankcloud.cn/index.html?lang=zh&agreementId=2068880948149116608`,页面渲染出「关于LightRaw与隐私的声明」;
+  - 「关于」→ 开源许可(静态 gnu.org):浏览器进程 5 个、窗口可见;
+  - 欢迎页 → 「在 GitHub 上贡献」(跨组件/跨 URL):地址栏 = `github.com/CyberTimon/RapidRAW`。
+  - `app.log` 中 `Scoped shell IO error` / `Failed to open external URL` / `Unhandled promise rejection` 计数为 **0**(修复前每次点击必有一条)。
+
+**注意**:
+- 该注入脚本对**任何**这类链接生效,故修复前欢迎页署名/GitHub、设置「关于」三处、编辑器文档链接等**全部点不开**(不是只有隐私链接);排查时注意"点没点到 anchor"——用 `[ipcdiag] click … tag=` 可判定(曾因点击落在 `tag=DIV` 上而误判某链接"不报错")。
+- 「关于」页滚到底部时,最下面几行的 a11y 盒会贴到窗口底边(布局坐标仍在可视区之外),**合成点击**打在那儿会命中同级 DIV 而点不到 anchor;真人先滚动再点即正常(已实测滚动后「开源许可」可正常开链)。排障时别把这种情况误判成"这个链接坏了"。
+- 若日后引入 `tauri-plugin-opener`,把 `openExternalUrl` 的非 OHOS 分支切过去即可顺带删掉 `#[allow(deprecated)]`。
+- 可选的彻底清理:OHOS 上不注册 `tauri-plugin-shell`(app 的 Rust 侧未用其其余能力),同步删 `capabilities/default.json` 的 `shell:default` —— 注入脚本即不复存在。
+
+### 6.20 "撤销同意"假成功 + 文件夹授权无法真正撤销(2026-10-26)
+
+**背景**:用户报告"撤销授权无效"。实测(设备 `3XB0124617000013`):设置→关于→`撤销同意`→确认后,状态行从「未启用」翻成「未同意」,但同一秒的 hilog 是
+`AppGalleryKit: [sa_service(GetAppPrivacyResult)]privacyInfo is empty` → `GetAppPrivacyResult failed, result = 1006700003`(`privacy manager not used`)——**平台侧什么都没发生**;重启后状态自然回落「未启用」。即:撤销"看起来成功",实际无效。
+
+**根因(三层,均代码确证)**:
+
+1. **ArkTS `revokePrivacyConsent`(根因)**:`privacyManager.disableService()` 是**void 同步调用**(官方文档:`disableService():void | 撤销同意记录接口`),它不返回任何结果,而代码**无条件回填 `{ok:true}`** —— 既没回读验证,也没区分"托管未启用/平台没清掉记录"。
+2. **Rust `privacy::revoke()`**:见 `ok:true` 就 `set_consent(Some(false))` → 门控缓存被写上一个平台从未报告的结论;`SERVICE_UNAVAILABLE` 也不参与判断。
+3. **前端 `handleRevokePrivacyConsent`**:`revoked.ok` 时**强制** `results: [], isAgreed: false` → 界面宣称「未同意」,与平台真实状态(`1006700003` → 「未启用」)相反;重启即打回原形。
+
+**同一主题的第二处"撤销无效"(顺手一并修,机制共用)**:文件夹授权从未被收回 ——
+- 移除根文件夹(`contextMenus.folders.removeRoot`)只在前端把路径从 `rootPaths` 过滤掉;
+- `persistFolderGrant`/`recordFolderGrant` 写入 `ohos_grants.json`,但**全仓没有任何** `fileShare.deactivatePermission`,也**从不删除**该文件的条目;
+- 启动期 `activatePersistedGrants()` 会把**所有**记录过的 URI 重新 `activatePermission` → 用户"移除了文件夹",平台授权还在、下次启动被复活;
+- 「撤销同意」确认框写着「文件访问需重新授权」,但实际上不会收回已持久化的授权 —— 承诺未兑现。
+
+**实现**:
+
+- **ArkTS 撤销改为回读验证**:`disableService()` → `getAppPrivacyResult()` 回读:仍有 `result === 1` → `{ok:false, error:'the consent record is still signed after disableService', code:0}`;抛错(如 `1006700003`)→ `privacyErrorPayload(...)`(`ok:false` + `code`);确实无签署记录才 `{ok:true}`。每条路径恰好回填一次(车位无超时)。
+- **ArkTS 新增授权收回** `revokeFolderGrants(identifiers: Array<string>|null)`:逐个 `fileShare.deactivatePermission([policy])` + 重写 `ohos_grants.json`(`identifiers === null` = 全部);**deactivate 失败也删记录**(否则下次启动会复活用户已要求撤销的授权);条目按 picker URI **或**已解析路径匹配(前端持有的是路径 `/storage/Users/…`,记录里是 `file://docs/…`)。经新桥 op `revoke_folder_grants` 暴露,配 `resolveOhosRevokeGrants` napi 出口。
+- **Rust**:新 tauri 命令 `revoke_ohos_folder_grants(identifiers)` + `file_bridge::revoke_grants`;`privacy::revoke()` 在未确认时 `log::warn!("OHOS privacy revoke not confirmed: {payload}")`,并在 `code == 1006700003` 时 latch `SERVICE_UNAVAILABLE`(与探针/门控一致,`PRIVACY_NOT_INTEGRATED` 常量入代码)。
+- **前端**:新增 `src/utils/ohosGrants.ts::revokeOhosFolderGrants`;`removeRoot` 时按路径收回该目录授权;`撤销同意` 成功后收回**全部**已持久化授权(兑现确认框文案);状态**只反映平台返回值**(删掉强制 `isAgreed:false`);**托管未启用(`isPrivacyHostingMissing`)时禁用「重新请求授权」与「撤销同意」两个按钮** —— 无记录可撤销,旧 UI 只会假报成功(禁用而不隐藏,保持功能可发现)。
+
+**验证(2026-10-26)**:
+- 静态:`cargo fmt -p RapidRAW -- --check` ✓;`cargo clippy --all-targets -- -D warnings`(宿主)✓;`cargo check --target aarch64-unknown-linux-ohos` ✓(新代码参与编译,0 error、无新增告警);`npm run typecheck`/eslint 对 `SettingsPanel.tsx`/`useAppContextMenus.ts`/`AppProperties.tsx` 与 HEAD **逐文件计数一致**,新文件 0 问题。
+- 真机(2026-10-26,设备 `3XB0124617000013`,**提审形态构建** = 无 `appgallery_privacy_*` metadata ⇒ 托管未启用):
+  - **"假成功"已消除**：「关于」页 `授权状态 = 未启用` 时，「重新请求授权」与「撤销同意」两个按钮实测 `enabled=false / clickable=false`（合成点击无效）；点击后状态保持「未启用」，**不再出现假的「未同意」**（修复前：点一次就翻成「未同意」，而平台同期返回 `1006700003`）。
+  - **授权记录可真正撤销（②）**：调试 profile 无 `FILE_ACCESS_PERSIST` ACL，本机 `persistPermission` 必然失败、无法产生真实持久化授权，故以一条**合成记录**（`…/haps/entry/files/ohos_grants.json`，属主改为 app uid/660）驱动：长按侧栏根目录 →「移除根文件夹」→ hilog `[RapidRAW] revoke_folder_grants: 0 revoked, 1 error(s)`（记录按**路径**命中 ✓、`deactivatePermission` 确已调用但本机无持久授权可撤销 ⇒ 1 error）→ **记录被清为 `[]`**；重启后 hilog 无 `activated N persisted folder grant(s)`、记录仍为 `[]` —— "删记录 ⇒ 不复活"这条链成立。
+  - **①的"真撤销"与③只能静态验证**：两者都要求托管在用（平台返回真实 `results`），本机形态无法触发；实现处已按官方语义（回读 `getAppPrivacyResult` 判定 + `disableService` 撤销）写好。
+  - 全程 `app.log` 无桥/前端错误。
+
+**注意**:
+- `disableService()` 与 `getAppPrivacyResult()` 的语义来自官方文档(store-privacy):前者撤销签署同意记录,后者查询签署状态;两者都在隐私管理服务**在用**时才有意义,未启用时抛 `1006700003`。
+- 收回文件夹授权是**破坏性**的:被收回的根目录在重启后不可读,应用会走 §6.14-3 的 toast + 重选 picker 自愈流程(这正是「文件访问需重新授权」的含义)。
+- `ohos_grants.json` 现在会在撤销时被重写;若日后新增授权写入路径,记得同时更新这里的删除逻辑(单一记录文件,`recordFolderGrant` / `revokeFolderGrants` 两处)。
+- **两个 files 目录别搞混(排障必踩)**:ArkTS `this.context.filesDir` = `/data/app/el2/100/base/<bundle>/**haps/entry**/files/` —— 授权记录 `ohos_grants.json` 在这里;而 Rust 的 `app_data_dir()`(fern 日志、`appdata/settings.json`)是 `/data/app/el2/100/base/<bundle>/**files/**`。本次排查中曾把合成记录写进后者,导致"0 revoked, 0 error(s)"的假阴性。
+- 用 hdc 往应用目录写测试文件时注意属主:shell 是 root,写出来的文件属主是 root,应用(uid 20020192)可能读写不了 —— 需要 `chown 20020192:20020192` + `chmod 660`。
+
 ## 7. 移植路线图与进度清单
 
 ### Phase 0 — 技术验证(1~2 周)
