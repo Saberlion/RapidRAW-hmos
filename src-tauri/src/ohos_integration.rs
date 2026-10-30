@@ -299,6 +299,18 @@ mod file_bridge {
         Ok(())
     }
 
+    #[napi_derive_ohos::napi]
+    pub fn resolve_ohos_revoke_grants(request_id: u32, payload: String) -> Result<()> {
+        let value = serde_json::from_str(&payload).unwrap_or_else(|e| {
+            serde_json::json!({
+                "ok": false,
+                "error": format!("Malformed OHOS grant payload ({e}): {payload}"),
+            })
+        });
+        complete_request(request_id, value);
+        Ok(())
+    }
+
     fn parse_result(raw: String) -> std::result::Result<serde_json::Value, String> {
         serde_json::from_str(&raw).map_err(|e| format!("Malformed OHOS bridge result ({e}): {raw}"))
     }
@@ -403,6 +415,20 @@ mod file_bridge {
         .await?;
         Ok(result["path"].as_str().map(str::to_string))
     }
+
+    /// Withdraw recorded folder grants: the ArkTS side deactivates the persisted
+    /// `fileShare` permission for each identifier and forgets the record, so a
+    /// later launch cannot re-activate it. `identifiers: None` withdraws every
+    /// recorded grant; identifiers are picker URIs or resolved paths.
+    pub async fn revoke_grants(
+        identifiers: Option<Vec<String>>,
+    ) -> std::result::Result<serde_json::Value, String> {
+        request(serde_json::json!({
+            "op": "revoke_folder_grants",
+            "uris": identifiers,
+        }))
+        .await
+    }
 }
 
 /// Open the OHOS system folder picker (FileKit `DocumentViewPicker`) and
@@ -464,6 +490,120 @@ pub async fn pick_ohos_save_file(file_name: String) -> Result<Option<String>, St
     }
 }
 
+/// Withdraw OpenHarmony folder grants.
+///
+/// `fileShare` grants persisted by the picker (`persistFolderGrant`) are
+/// re-activated on every launch, so removing a library root — or revoking the
+/// privacy consent, whose confirmation promises that file access has to be
+/// re-authorized — only takes effect once the grant is both deactivated and
+/// dropped from the bridge's record. `identifiers: None` withdraws every
+/// recorded grant (privacy revoke); a list withdraws just those entries, matched
+/// by picker URI or resolved path (removing a root folder).
+///
+/// Returns the ArkTS payload (`ok`, `revoked`, `errors`); a non-OHOS build has
+/// no such grants and reports that instead of pretending to have revoked them.
+#[tauri::command]
+pub async fn revoke_ohos_folder_grants(
+    identifiers: Option<Vec<String>>,
+) -> Result<serde_json::Value, String> {
+    #[cfg(target_env = "ohos")]
+    {
+        file_bridge::revoke_grants(identifiers).await
+    }
+    #[cfg(not(target_env = "ohos"))]
+    {
+        let _ = identifiers;
+        Err("revoke_ohos_folder_grants is only available on OpenHarmony builds".to_string())
+    }
+}
+
+// ---------------------------------------------------------------------------
+// External link bridge: open http(s)/mailto/tel URLs in the system browser
+// ---------------------------------------------------------------------------//
+// tauri-plugin-shell cannot do this on OHOS. Its `open` command only takes the
+// native path when `cfg(mobile)` holds (android | ios), so an OHOS build
+// compiles the desktop branch, which shells out to `xdg-open` through the
+// `open` crate. HarmonyOS has no `xdg-open`, so every external link click ended
+// as an unhandled rejection:
+//   `Scoped shell IO error: No such file or directory (os error 2)`
+// — and because the plugin's injected init script also `preventDefault()`s the
+// click (so the webview never navigates either), the link did nothing at all
+// (docs 6.19). The URL therefore goes through the same request bridge as the
+// pickers: the ArkTS side opens it with an `ohos.want.action.viewData` want.
+
+/// Schemes accepted for external links. Mirrors what tauri-plugin-shell's
+/// injected init script accepts (`src/init-iife.js`), so routing links through
+/// this bridge grants no reach the previous behaviour did not already have.
+const EXTERNAL_URL_SCHEMES: [&str; 4] = ["http://", "https://", "mailto:", "tel:"];
+
+fn is_openable_url(url: &str) -> bool {
+    EXTERNAL_URL_SCHEMES
+        .iter()
+        .any(|scheme| url.starts_with(scheme))
+}
+
+#[cfg(target_env = "ohos")]
+mod external_open {
+    use napi_ohos::bindgen_prelude::Result;
+
+    /// Ask the ArkTS side to launch the system browser for `url`.
+    pub async fn open(url: &str) -> std::result::Result<(), String> {
+        let result = super::file_bridge::request(serde_json::json!({
+            "op": "open_url",
+            "url": url,
+        }))
+        .await?;
+
+        match result["ok"].as_bool() {
+            Some(true) => Ok(()),
+            _ => Err(result["error"]
+                .as_str()
+                .unwrap_or("opening the external URL failed")
+                .to_string()),
+        }
+    }
+
+    #[napi_derive_ohos::napi]
+    pub fn resolve_ohos_open_url(request_id: u32, ok: bool, error: Option<String>) -> Result<()> {
+        super::file_bridge::complete_request(
+            request_id,
+            serde_json::json!({ "ok": ok, "error": error }),
+        );
+        Ok(())
+    }
+}
+
+/// Open an external URL in the system browser.
+///
+/// OHOS goes through the ArkTS bridge (see the note above); every other
+/// platform keeps using tauri-plugin-shell, which is correct there.
+///
+/// `Shell::open` is marked deprecated in favour of `tauri-plugin-opener`, which
+/// this project does not depend on — the frontend has always opened links
+/// through the shell plugin, so desktop behaviour is deliberately unchanged
+/// here.
+#[tauri::command]
+#[allow(deprecated)]
+pub async fn open_external_url(app_handle: tauri::AppHandle, url: String) -> Result<(), String> {
+    if !is_openable_url(&url) {
+        return Err(format!("refusing to open unsupported URL: {url}"));
+    }
+
+    #[cfg(target_env = "ohos")]
+    {
+        let _ = app_handle;
+        external_open::open(&url).await
+    }
+    #[cfg(not(target_env = "ohos"))]
+    {
+        use tauri_plugin_shell::ShellExt;
+        app_handle
+            .shell()
+            .open(url, None)
+            .map_err(|e| e.to_string())
+    }
+}
+
 // ---------------------------------------------------------------------------
 // Privacy bridge: AppGallery standardized privacy-statement hosting
 // ---------------------------------------------------------------------------
@@ -501,6 +641,10 @@ pub mod privacy {
     /// device cannot use it), so permission operations skip the gate for the
     /// rest of the process instead of probing + failing on every picker.
     static SERVICE_UNAVAILABLE: AtomicBool = AtomicBool::new(false);
+
+    /// AppGallery error code for "this app does not use privacy statement
+    /// hosting" — mirrors the frontend's `PRIVACY_NOT_INTEGRATED`.
+    const PRIVACY_NOT_INTEGRATED: i64 = 1006700003;
 
     fn set_consent(granted: Option<bool>) {
         *CONSENT_GRANTED.lock().unwrap() = granted;
@@ -596,10 +740,23 @@ pub mod privacy {
     }
 
     /// Revoke the recorded consent (the next launch shows the dialog again).
+    ///
+    /// Only a *verified* revoke clears the cached verdict — the payload now
+    /// comes back from the ArkTS side after re-reading `getAppPrivacyResult`,
+    /// because `disableService()` reports nothing (docs 6.20). A payload whose
+    /// code is "hosting not integrated" latches the same flag the probe uses, so
+    /// pickers stop gating on a service this build cannot use.
     pub async fn revoke() -> std::result::Result<serde_json::Value, String> {
         let payload = call("privacy_revoke").await?;
         if is_ok(&payload) {
             set_consent(Some(false));
+        } else {
+            log::warn!("OHOS privacy revoke not confirmed: {payload}");
+            if payload.get("code").and_then(serde_json::Value::as_i64)
+                == Some(PRIVACY_NOT_INTEGRATED)
+            {
+                SERVICE_UNAVAILABLE.store(true, Ordering::Relaxed);
+            }
         }
         Ok(payload)
     }

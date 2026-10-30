@@ -103,12 +103,22 @@ export default class EntryAbility extends RustAbility {
         mod.resolveOhosSaveFileAs ?? mod.default?.resolveOhosSaveFileAs;
       const resolvePrivacy: ESObject =
         mod.resolveOhosPrivacy ?? mod.default?.resolveOhosPrivacy;
+      const resolveOpenUrl: ESObject =
+        mod.resolveOhosOpenUrl ?? mod.default?.resolveOhosOpenUrl;
+      const resolveRevokeGrants: ESObject =
+        mod.resolveOhosRevokeGrants ?? mod.default?.resolveOhosRevokeGrants;
       if (typeof resolvePickFolder !== 'function' || typeof resolvePickFiles !== 'function' ||
         typeof resolveSaveToGallery !== 'function' || typeof resolveSaveFileAs !== 'function') {
         console.error('[RapidRAW] bridge resolve exports missing from librapidraw_lib.so');
       }
       if (typeof resolvePrivacy !== 'function') {
         console.error('[RapidRAW] resolveOhosPrivacy missing from librapidraw_lib.so');
+      }
+      if (typeof resolveOpenUrl !== 'function') {
+        console.error('[RapidRAW] resolveOhosOpenUrl missing from librapidraw_lib.so');
+      }
+      if (typeof resolveRevokeGrants !== 'function') {
+        console.error('[RapidRAW] resolveOhosRevokeGrants missing from librapidraw_lib.so');
       }
       register((op: string) => {
         try {
@@ -122,7 +132,7 @@ export default class EntryAbility extends RustAbility {
           }
           if (req !== null && typeof req['op'] === 'string') {
             this.handleBridgeRequest(req, resolvePickFolder, resolvePickFiles, resolveSaveToGallery,
-              resolveSaveFileAs, resolvePrivacy);
+              resolveSaveFileAs, resolvePrivacy, resolveOpenUrl, resolveRevokeGrants);
             return;
           }
           switch (op) {
@@ -194,6 +204,8 @@ export default class EntryAbility extends RustAbility {
     resolveSaveToGallery: ESObject,
     resolveSaveFileAs: ESObject,
     resolvePrivacy: ESObject,
+    resolveOpenUrl: ESObject,
+    resolveRevokeGrants: ESObject,
   ): void {
     const op: string = req['op'] as string;
     const requestId: number = req['requestId'] as number;
@@ -219,8 +231,51 @@ export default class EntryAbility extends RustAbility {
       case 'privacy_revoke':
         this.revokePrivacyConsent(requestId, resolvePrivacy);
         break;
+      case 'open_url':
+        this.openUrl(req, requestId, resolveOpenUrl);
+        break;
+      case 'revoke_folder_grants':
+        this.handleRevokeFolderGrants(req, requestId, resolveRevokeGrants);
+        break;
       default:
         console.warn(`[RapidRAW] unknown bridge op '${op}'`);
+    }
+  }
+
+  // ---- external links (docs 6.19) ----
+  //
+  // Opening an external URL has to go through the ability context: ArkWeb drops
+  // `<a target="_blank">` clicks (no onWindowNew handler is registered), and
+  // tauri-plugin-shell's own open() path spawns `xdg-open`, which does not
+  // exist on HarmonyOS — so links used to do nothing at all. A `viewData` want
+  // hands the URL to whichever app the system has registered for it (browser
+  // for http/https, mail client for mailto:, dialer for tel:).
+  private openUrl(req: Record<string, Object>, requestId: number, resolveOpenUrl: ESObject): void {
+    const url: string = (req['url'] as string) ?? '';
+    if (url.length === 0) {
+      resolveOpenUrl(requestId, false, 'empty url');
+      return;
+    }
+    const want: Want = {
+      action: 'ohos.want.action.viewData',
+      uri: url,
+    };
+    // Every request must be resolved exactly once (the Rust side parks a
+    // oneshot per id and has no timeout), so a synchronous throw from
+    // startAbility has to resolve here too.
+    try {
+      this.context.startAbility(want)
+        .then(() => {
+          console.info(`[RapidRAW] open_url ok: ${url}`);
+          resolveOpenUrl(requestId, true, null);
+        })
+        .catch((error: BusinessError) => {
+          console.error(`[RapidRAW] open_url failed: ${JSON.stringify(error)}`);
+          resolveOpenUrl(requestId, false, `startAbility failed: ${error.code}`);
+        });
+    } catch (error) {
+      console.error(`[RapidRAW] open_url threw: ${JSON.stringify(error)}`);
+      resolveOpenUrl(requestId, false, 'startAbility threw');
     }
   }
 
@@ -353,13 +408,49 @@ export default class EntryAbility extends RustAbility {
     }
   }
 
+  // Revoking must be *verified*: disableService() is a void call — it reports
+  // nothing — so the only proof that the record is gone is reading it back.
+  // Without that check the app answered {ok:true} unconditionally and the About
+  // row claimed "not accepted" even where the hosted service is not in use
+  // (1006700003) or the platform kept the signature: a revoke that silently did
+  // nothing, which after a restart looked like the revoke never worked (docs
+  // 6.20). Every path resolves the parked request exactly once.
   private revokePrivacyConsent(requestId: number, resolvePrivacy: ESObject): void {
     try {
       privacyManager.disableService();
-      console.info('[RapidRAW] privacy consent revoked');
-      resolvePrivacy(requestId, JSON.stringify({ 'ok': true, 'results': [], 'error': '' }));
     } catch (error) {
       resolvePrivacy(requestId, this.privacyErrorPayload('disableService failed', error));
+      return;
+    }
+
+    try {
+      const results: privacyManager.AppPrivacyResult[] = privacyManager.getAppPrivacyResult();
+      const signed: Array<Record<string, Object>> = [];
+      for (let i = 0; i < results.length; i++) {
+        const verdict: number = (results[i]['result'] as number) ?? 0;
+        if (verdict === 1) {
+          signed.push({
+            'type': results[i]['type'] ?? 0,
+            'result': verdict,
+          });
+        }
+      }
+      if (signed.length > 0) {
+        console.error('[RapidRAW] revoke did not clear the consent record');
+        resolvePrivacy(requestId, JSON.stringify({
+          'ok': false,
+          'results': signed,
+          'error': 'the consent record is still signed after disableService',
+          'code': 0,
+        }));
+        return;
+      }
+      console.info('[RapidRAW] privacy consent revoked');
+      resolvePrivacy(requestId, JSON.stringify({ 'ok': true, 'results': [], 'error': '', 'code': 0 }));
+    } catch (error) {
+      // Hosting not in use (1006700003) or the service refused: there is no
+      // record to revoke, and saying so is the truthful answer.
+      resolvePrivacy(requestId, this.privacyErrorPayload('getAppPrivacyResult after revoke failed', error));
     }
   }
 
@@ -667,6 +758,88 @@ export default class EntryAbility extends RustAbility {
     } catch (e) {
       console.error(`[RapidRAW] activatePersistedGrants failed: ${JSON.stringify(e)}`);
     }
+  }
+
+  // Withdraw recorded folder grants: deactivate the platform permission and
+  // forget the URI. The record matters as much as the deactivation — as long as
+  // an entry survives, the next launch's activatePersistedGrants() brings the
+  // permission back, which is exactly why "remove the folder" (and the privacy
+  // revoke, whose confirmation promises that file access must be re-authorized)
+  // used to change nothing at the OS level (docs 6.20).
+  //
+  // `identifiers === null` withdraws every recorded grant. Entries are matched
+  // by picker URI *or* resolved path: the frontend knows the path
+  // (`/storage/Users/…`), the record is keyed by the picker URI (`file://docs/…`).
+  // A failed deactivation still drops the record, so a later launch cannot
+  // resurrect a grant the user asked to revoke.
+  private async revokeFolderGrants(identifiers: Array<string> | null): Promise<Record<string, Object>> {
+    const grantsFile: string = `${this.context.filesDir}/ohos_grants.json`;
+    let grants: Array<Record<string, string>> = [];
+    try {
+      grants = JSON.parse(fs.readTextSync(grantsFile)) as Array<Record<string, string>>;
+    } catch (e) {
+      grants = [];
+    }
+
+    const wanted = (g: Record<string, string>): boolean => {
+      if (identifiers === null) {
+        return true;
+      }
+      const uri: string = g['uri'] ?? '';
+      const path: string = g['path'] ?? '';
+      return identifiers.includes(uri) || identifiers.includes(path);
+    };
+
+    const targets: Array<Record<string, string>> = grants.filter(wanted);
+    const remaining: Array<Record<string, string>> = grants.filter((g: Record<string, string>) => !wanted(g));
+    const revoked: Array<string> = [];
+    const errors: Array<string> = [];
+
+    for (const g of targets) {
+      const policy: fileShare.PolicyInfo = {
+        uri: g['uri'],
+        operationMode: fileShare.OperationMode.READ_MODE | fileShare.OperationMode.WRITE_MODE,
+      };
+      try {
+        await fileShare.deactivatePermission([policy]);
+        revoked.push(g['uri']);
+      } catch (e) {
+        errors.push(`deactivate failed for ${g['uri']}: ${JSON.stringify(e)}`);
+      }
+    }
+
+    try {
+      const file: fs.File = fs.openSync(grantsFile,
+        fs.OpenMode.READ_WRITE | fs.OpenMode.CREATE | fs.OpenMode.TRUNC);
+      fs.writeSync(file.fd, JSON.stringify(remaining));
+      fs.closeSync(file);
+    } catch (e) {
+      errors.push(`rewriting ohos_grants.json failed: ${JSON.stringify(e)}`);
+    }
+
+    const errorText: string = errors.length > 0 ? errors.join('; ') : '';
+    console.info(`[RapidRAW] revoke_folder_grants: ${revoked.length} revoked, ${errors.length} error(s)`);
+    return {
+      'ok': errors.length === 0,
+      'revoked': revoked,
+      'errors': errors,
+      'error': errorText,
+    };
+  }
+
+  private handleRevokeFolderGrants(req: Record<string, Object>, requestId: number,
+    resolveRevokeGrants: ESObject): void {
+    const raw: Object | undefined = req['uris'];
+    const identifiers: Array<string> | null = Array.isArray(raw) ? (raw as Array<string>) : null;
+    this.revokeFolderGrants(identifiers).then((payload: Record<string, Object>) => {
+      resolveRevokeGrants(requestId, JSON.stringify(payload));
+    }).catch((error: BusinessError) => {
+      console.error(`[RapidRAW] revoke_folder_grants failed: ${JSON.stringify(error)}`);
+      resolveRevokeGrants(requestId, JSON.stringify({
+        'ok': false,
+        'error': `revoke_folder_grants failed: ${JSON.stringify(error)}`,
+      }));
+    });
   }
 
   private unlinkQuietly(path: string): void {

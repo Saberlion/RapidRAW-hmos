@@ -46,7 +46,8 @@ import Text from '../ui/Text';
 import { TextColors, TextVariants, TextWeights } from '../../types/typography';
 import { useOsPlatform } from '../../hooks/useOsPlatform';
 import { useCloudUsage } from '../../hooks/useCloudUsage';
-import { open } from '@tauri-apps/plugin-shell';
+import { openExternalUrl } from '../../utils/externalLinks';
+import { revokeOhosFolderGrants } from '../../utils/ohosGrants';
 import { RotateCcw } from 'lucide-react';
 import { useUIStore } from '../../store/useUIStore';
 import { useSettingsStore } from '../../store/useSettingsStore';
@@ -339,7 +340,7 @@ const CloudDashboard = () => {
           <Button
             variant="ghost"
             className="bg-transparent text-text-secondary hover:text-text-primary hover:bg-surface border-none shadow-none"
-            onClick={() => open('https://www.getrapidraw.com/dashboard')}
+            onClick={() => void openExternalUrl('https://www.getrapidraw.com/dashboard')}
           >
             {t('settings.processing.ai.cloud.signedIn.manage')} <ExternalLinkIcon size={14} className="ml-1" />
           </Button>
@@ -375,7 +376,7 @@ const CloudDashboard = () => {
       ) : (
         <div className="bg-red-900/10 border border-red-500/50 p-4 rounded-md text-center">
           <Text className="mb-3">{t('settings.processing.ai.cloud.signedOut.upgradeDesc')}</Text>
-          <Button onClick={() => open('https://www.getrapidraw.com/cloud')}>
+          <Button onClick={() => void openExternalUrl('https://www.getrapidraw.com/cloud')}>
             {t('settings.processing.ai.cloud.signedOut.upgradeBtn')}
           </Button>
         </div>
@@ -560,6 +561,9 @@ export default function SettingsPanel({
   const [privacyRevokeOpen, setPrivacyRevokeOpen] = useState(false);
   const privacyConsent = ohosConsentOf(ohosPrivacy);
   const privacyLinks = platformPrivacyLinks(ohosPrivacy, i18n.language);
+  // Hosting not in use (1006700003): the platform keeps no record, so both
+  // privacy actions can only fail — gate them (docs 6.20).
+  const privacyHostingMissing = isPrivacyHostingMissing(ohosPrivacy);
 
   // The store can change the consent behind our back (its standardized dialog,
   // or a revocation from system settings), so re-read whenever About is opened.
@@ -582,15 +586,19 @@ export default function SettingsPanel({
     setPrivacyBusy(true);
     const revoked = await revokeOhosPrivacyConsent();
     if (revoked.ok) {
-      const refreshed = await fetchOhosPrivacyState();
-      // The platform has cleared the record; surface that immediately instead
-      // of waiting for the next launch to report no signature.
-      useSettingsStore
-        .getState()
-        .setOhosPrivacy({ ...(refreshed.ok ? refreshed : revoked), results: [], isAgreed: false });
-    } else {
-      useSettingsStore.getState().setOhosPrivacy(revoked);
+      // The ArkTS side verifies the revoke by re-reading the platform record
+      // (docs 6.20), so `ok` means the signature is really gone. The
+      // confirmation promised that file access has to be re-authorized: withdraw
+      // the persisted folder grants too, otherwise every existing root keeps
+      // working while the UI claims consent was revoked.
+      await revokeOhosFolderGrants();
     }
+    const refreshed = await fetchOhosPrivacyState();
+    // Reflect what the PLATFORM reports. Forcing "not accepted" here used to
+    // make a revoke the store never confirmed (service not in use, or the
+    // signature still on file) look successful until the next launch — the
+    // "revoke does nothing" report.
+    useSettingsStore.getState().setOhosPrivacy(refreshed.ok ? refreshed : revoked);
     setPrivacyBusy(false);
     setPrivacyRevokeOpen(false);
   };
@@ -2420,7 +2428,7 @@ export default function SettingsPanel({
                                     <Text variant={TextVariants.small}>
                                       {t('settings.processing.ai.cloud.signedOut.noAccount')}{' '}
                                       <button
-                                        onClick={() => open('https://www.getrapidraw.com/cloud')}
+                                        onClick={() => void openExternalUrl('https://www.getrapidraw.com/cloud')}
                                         className="text-accent hover:underline focus:outline-none"
                                       >
                                         {t('settings.processing.ai.cloud.signedOut.signup')}
@@ -2633,7 +2641,7 @@ export default function SettingsPanel({
                                 ? t('settings.privacy.statusGranted')
                                 : privacyConsent === 'denied'
                                   ? t('settings.privacy.statusDenied')
-                                  : isPrivacyHostingMissing(ohosPrivacy)
+                                  : privacyHostingMissing
                                     ? t('settings.privacy.notIntegrated')
                                     : t('settings.privacy.statusUnknown')}
                             </Text>
@@ -2654,7 +2662,16 @@ export default function SettingsPanel({
                             label={t('settings.privacy.requestConsent')}
                             description={t('settings.privacy.requestConsentDesc')}
                           >
-                            <Button className="bg-surface" disabled={privacyBusy} onClick={handleRequestPrivacyConsent}>
+                            {/* Both actions need the hosted statement to be in
+                                use: without a platform record a revoke can only
+                                fail, and the old UI reported success anyway
+                                (docs 6.20). Disabled rather than hidden so the
+                                feature stays discoverable. */}
+                            <Button
+                              className="bg-surface"
+                              disabled={privacyBusy || privacyHostingMissing}
+                              onClick={handleRequestPrivacyConsent}
+                            >
                               {t('settings.privacy.requestConsent')}
                             </Button>
                           </SettingItem>
@@ -2664,7 +2681,7 @@ export default function SettingsPanel({
                           >
                             <Button
                               className="bg-surface"
-                              disabled={privacyBusy}
+                              disabled={privacyBusy || privacyHostingMissing}
                               onClick={() => setPrivacyRevokeOpen(true)}
                             >
                               {t('settings.privacy.revoke')}

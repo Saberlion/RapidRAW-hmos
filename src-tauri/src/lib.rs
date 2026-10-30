@@ -2312,6 +2312,8 @@ pub fn run() {
                 ohos_integration::pick_ohos_folder,
                 ohos_integration::pick_ohos_files,
                 ohos_integration::pick_ohos_save_file,
+                ohos_integration::open_external_url,
+                ohos_integration::revoke_ohos_folder_grants,
                 ohos_integration::get_ohos_privacy_state,
                 ohos_integration::request_ohos_privacy_consent,
                 ohos_integration::revoke_ohos_privacy_consent,

@@ -56,7 +56,7 @@ export const PRIVACY_NOT_INTEGRATED = 1006700003;
  * not configured yet, or the build has no `appgallery_privacy_*` metadata — so
  * the statement stays reachable from the About section.
  */
-export const PRIVACY_STATEMENT_AGREEMENT_ID = '2053968770484970432';
+export const PRIVACY_STATEMENT_AGREEMENT_ID = '2068880948149116608';
 
 const PRIVACY_STATEMENT_BASE = 'https://agreement-drcn.hispace.dbankcloud.cn/index.html';
 
