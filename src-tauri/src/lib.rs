@@ -2125,12 +2125,21 @@ pub fn run() {
         builder = builder.plugin(tauri_plugin_dialog::init());
     }
 
-    builder
+    let mut builder = builder
         .plugin(tauri_plugin_os::init())
         .plugin(tauri_plugin_fs::init())
         .plugin(tauri_plugin_process::init())
-        .plugin(tauri_plugin_shell::init())
-        .plugin(tauri_plugin_http::init())
+        .plugin(tauri_plugin_shell::init());
+
+    // tauri-plugin-http resolves app_cache_dir() with desktop XDG semantics on
+    // OHOS (FUSE user storage → EPERM) and aborts plugin setup. Cloud/Clerk is
+    // desktop-only already, so skip the plugin on OpenHarmony.
+    #[cfg(not(target_env = "ohos"))]
+    {
+        builder = builder.plugin(tauri_plugin_http::init());
+    }
+
+    builder
         .plugin(PinchZoomDisablePlugin)
         .on_window_event(|window, event| if let tauri::WindowEvent::Resized(size) = event {
             let state = window.state::<AppState>();

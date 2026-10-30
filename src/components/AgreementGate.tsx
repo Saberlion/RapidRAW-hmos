@@ -207,7 +207,7 @@ export default function AgreementGate({ appSettings, onAgree }: AgreementGatePro
     <div className="fixed inset-0 z-50 flex flex-col bg-bg-primary text-text-primary font-sans select-none">
       <div className="pt-10 pb-3 px-6 text-center shrink-0">
         <Text variant={TextVariants.title} color={TextColors.accent} weight={TextWeights.bold}>
-          {t('splash.brand')}
+          {t('library.splash.brand')}
         </Text>
         <div className="mt-2">
           <Text variant={TextVariants.heading}>{t('ui.agreement.title')}</Text>

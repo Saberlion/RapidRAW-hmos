@@ -1078,7 +1078,7 @@ pub fn fast_color_guided_filter(
 }
 
 fn get_models_dir(app_handle: &tauri::AppHandle) -> Result<PathBuf> {
-    let models_dir = app_handle.path().app_data_dir()?.join("models");
+    let models_dir = crate::app_paths::app_data_dir(app_handle)?.join("models");
     if !models_dir.exists() {
         fs::create_dir_all(&models_dir)?;
     }

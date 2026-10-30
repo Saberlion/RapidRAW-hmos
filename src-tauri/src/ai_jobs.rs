@@ -613,7 +613,7 @@ pub fn prioritize(app_handle: &AppHandle, path: &str) {
 }
 
 pub fn start_worker(app_handle: AppHandle) {
-    if let Ok(dir) = app_handle.path().app_data_dir() {
+    if let Ok(dir) = crate::app_paths::app_data_dir(&app_handle) {
         let _ = fs::create_dir_all(&dir);
         let journal_path = dir.join(JOURNAL_FILE);
         let journal: Journal = fs::read(&journal_path)

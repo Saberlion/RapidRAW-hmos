@@ -3,6 +3,7 @@ import type { Clerk } from '@clerk/clerk-js';
 import { initClerk } from 'tauri-plugin-clerk';
 import { fetch } from '@tauri-apps/plugin-http';
 import { platform } from '@tauri-apps/plugin-os';
+import { invoke } from '@tauri-apps/api/core';
 
 export const CLOUD_API_BASE_URL = 'https://www.getrapidraw.com/api';
 
@@ -45,6 +46,13 @@ export const useCloudStore = create<CloudStoreState>((set, get) => ({
       os = '';
     }
     if (os === 'android' || os === 'ios') {
+      set({ authStatus: 'unsupported' });
+      return;
+    }
+    // Clerk/plugin-http are desktop-only in the OHOS port (plugin-http aborts
+    // on the FUSE app-cache path and both plugins are excluded at runtime).
+    const isOhos = await invoke<boolean>('is_ohos_build').catch(() => false);
+    if (isOhos) {
       set({ authStatus: 'unsupported' });
       return;
     }
