@@ -132,6 +132,8 @@
 
 ---
 
+> X90 芯片/固件层面的支持范围、性能基线与跨芯片限制,见 **`docs/KIRIN_X90_SUPPORT.md`**。
+
 ## 6. 全量 POC 实测结果(2026-10-30)
 
 工具链:CANN Kit DDK 6.1.1.0(WSL)+ `omg --platform=kirinx90`;设备:HUAWEI MateBook Pro(HAD-W24,3XB0124617000013);运行器:既有 `hiai_mr_test7`(HIAI_MR 直连,ION buffer,perfmode 4)。
