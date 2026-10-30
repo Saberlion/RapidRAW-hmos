@@ -11,7 +11,12 @@ import { useProcessStore } from '../store/useProcessStore';
 import { THEMES, DEFAULT_THEME_ID, ThemeProps, resolveThemeId } from '../utils/themes';
 import { fetchOhosPrivacyState } from '../utils/ohosPrivacy';
 import { COPYABLE_ADJUSTMENT_KEYS, withAdjustmentLayout } from '../utils/adjustments';
-import { detectSystemLanguage, resolveLanguageTag, type SupportedLanguage } from '../i18n';
+import {
+  FALLBACK_LANGUAGE,
+  detectSystemLanguage,
+  resolveLanguageTag,
+  type SupportedLanguage,
+} from '../i18n';
 import {
   FilterCriteria,
   Invokes,
@@ -41,13 +46,17 @@ interface UseAppInitializationProps {
  * plugin or its permission is unavailable.
  */
 const readSystemLanguage = async (): Promise<SupportedLanguage> => {
+  // The webview locale follows the OS locale on OHOS; plugin-os is the fallback
+  // (it reports the wrong value on some firmware builds).
+  const fromNavigator = detectSystemLanguage();
+  if (fromNavigator !== FALLBACK_LANGUAGE) return fromNavigator;
   try {
     const resolved = resolveLanguageTag(await locale());
     if (resolved) return resolved;
   } catch {
-    // Fall through to the navigator-based detection.
+    // Keep the navigator fallback.
   }
-  return detectSystemLanguage();
+  return FALLBACK_LANGUAGE;
 };
 
 export const useAppInitialization = ({

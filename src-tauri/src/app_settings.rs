@@ -790,7 +790,10 @@ impl Default for AppSettings {
             apply_preprocessing_to_non_raws: Some(false),
             use_apple_raw9: Some(false),
             exif_overlay: Some("off".to_string()),
-            language: Some("en".to_string()),
+            // Unset on purpose: the frontend resolves the OS locale once on first
+            // run and persists it here. Hard-coding "en" made the system-language
+            // default unreachable.
+            language: None,
             folder_tree_sort: Some(FolderTreeSort::default()),
             library_display_mode: Some("grid".to_string()),
             grouping: Some("off".to_string()),
