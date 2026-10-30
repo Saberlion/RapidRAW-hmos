@@ -97,3 +97,12 @@
 3. **P1 前景优化**:若 BiRefNet CPU 明显慢于旧 u2net NPU,做 `.om` 转换 PoC(静态 1024²);失败则评估轻量替代模型。
 4. **P2 人脸小模型**:在 ESAM3 稳定后,再评估 MediaPipe selfie/landmarks 的 `.om`/`.ms`。
 5. **文档维护**:`AI_BACKEND_PLACEMENT.md` 的 u2net/skyseg 章节与 `HARMONYOS_PORTING.md` §6.16 已标记为历史记录;后续 NPU 结论统一更新到本文。
+
+---
+
+## 6. 真机验证记录(2026-10-30,设备 3XB0124617000013)
+
+- `generate_ai_depth_mask`:`depth_anything_v2_vits.onnx` 下载 95 MB,ORT CPU 推理成功并返回 `maskDataBase64`。
+- `generate_ai_foreground_mask`:OHOS 无 GPU EP,实际下载并加载 **BiRefNet FP32(214 MB)**;ORT CPU 推理成功,返回约 89 KB 的蒙版 Base64。说明新前景模型在 OHOS 上可用,但走的是 CPU/FP32 路径。
+- 设备 `files/appdata/models` 已出现 `efficientsam3_ev_m_{image_encoder,decoder}.onnx`、`efficientsam3_sky_prompt.bin` 与 `nind_denoise_utnet_684.onnx`,说明新模型下载链路正常。
+- 待补:天空/文本/人脸与法线的真机耗时、PSS 峰值,以及 BiRefNet 与旧 u2net NPU(~50 ms)的量化对比。
