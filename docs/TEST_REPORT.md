@@ -3,6 +3,7 @@
 > 报告日期:2026-10-25 · 适用分支:`feature/harmonyos-port`
 > 与用例集对应:`docs/TEST_CASES.md`(175 条)
 > **报告性质:基于现有验证证据的汇总报告。** 本报告不新增执行,只把 `docs/HARMONYOS_PORTING.md` 中已记录的实证结果、脚本实测结果与静态门禁结果,按用例编号归集为「通过 / 部分通过 / 已知边界 / 未执行」。**未执行"的用例不含结果,后续执行请用 `docs/TEST_REPORT_TEMPLATE.md`。**
+> **最近一次实际执行**:2026-10-30「今日改动面全量回归」(X90 + XE90 双机),报告见 `docs/reports/TEST_REPORT_2026-10-30.md`。
 
 ---
 
