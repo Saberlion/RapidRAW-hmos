@@ -659,6 +659,8 @@ demosaic 输出         f32 RGB   734MB
 
 ### 6.16 CANN(.om)NPU 路线应用集成——u2net 前景蒙版 + NIND 降噪(2026-10-10)
 
+> **2026-10-30 更新(v1.6.7 合并)**:上游已删除 u2net / skyseg,改用 BiRefNet(前景)与 EfficientSAM3(天空/文本/人脸),本节的 u2net/skyseg CANN 集成只适用于旧移植分支,当前代码中已不存在;NIND 降噪部分仍然有效。模型清单与适配结论见 `docs/AI_MODELS_V1.6.7.md`。
+
 **背景**:NPU 评估战役(`MINDSPORE_LITE_NPU_EVAL.md` §8.4)路线定版"u2net/nind → `.om`+perfmode 4"(u2net ~50ms vs X90 CPU ~580ms ≈ 11.6×;nind 130ms vs `.ms` 257ms vs CPU 1215ms)。本条把两个明确有收益的模型接入应用本体;CLIP(`.ms`)/SAM3/LaMa(ORT CPU)不在此批。
 
 **实现**(全部 `cfg(target_env = "ohos")`,非 OHOS 平台零编译影响):

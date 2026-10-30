@@ -1,5 +1,7 @@
 # ONNX → .ms(MindSpore Lite)转换与鸿蒙 NPU 部署方案调研
 
+> **2026-10-30 范围说明**:本文的 u2net / skyseg 实验基于旧移植分支;v1.6.7 已用 BiRefNet / EfficientSAM3 替换这两个模型,相关转换结论不再直接适用。仍有效的只有 NIND 降噪、SAM、DepthAnything、CLIP、LaMa 部分,当前适配判定见 `docs/AI_MODELS_V1.6.7.md`。
+
 > 调研日期:2026-10-04 · 服务对象:`HARMONYOS_PORTING.md` Phase 4「(可选)MindSpore Lite / NNRt NPU 路径评估」的前置调研
 > 证据标注:`[official-doc]` 官方文档 / `[source-code]` 源码 / `[release-page]` 发布页 / `[community]` 社区 / `[inferred]` 推断 / **[未验证]** 研究未能确认
 > 所有外部结论锚定版本:**MindSpore Lite 2.10.0**(当前稳定版,2026-07-30 随 MindSpore 2.10 发布)

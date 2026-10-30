@@ -1241,7 +1241,8 @@ pub mod ms_lite {
 }
 
 // ---------------------------------------------------------------------------
-// CANN (.om / HIAI_MR) NPU backend for u2net-family masks + AI denoise
+// CANN (.om / HIAI_MR) NPU backend for the NIND denoise model
+// (mask models run on ORT; see docs/AI_MODELS_V1.6.7.md)
 // ---------------------------------------------------------------------------
 //
 // Runs omg-built `.om` models through the HiAI Foundation Model Runtime
@@ -1266,8 +1267,8 @@ pub mod ms_lite {
 //   SIGSEGV inside Run (RunV3 requires ION backing).
 // - `HIAI_HCL_ModelInitOptions_SetPerfMode`'s return value is garbage —
 //   the applied mode is verified through the Get accessor instead. Mode 4
-//   is the measured optimum for small-op-dense CNN graphs (u2net 1.9×,
-//   nind 1.8× vs default; transformers/FFC graphs keep the default 2).
+//   is the measured optimum for small-op-dense CNN graphs (NIND 1.8×,
+//   vs default; transformers/FFC graphs keep the default 2).
 // - Destroy entry points take the ADDRESS of the handle pointer.
 // - Teardown order: buffers → ModelManager_Deinit → ModelManager_Destroy
 //   → ModelInitOptions_Destroy → BuiltModel_Destroy.
@@ -1480,7 +1481,7 @@ pub mod om {
     }
 
     // SAFETY: OmModel is only accessed behind `Mutex<OmModel>` (via
-    // `DenoiseSession::Cann` / `MaskSession::Cann` in ai_processing.rs);
+    // `DenoiseSession::Cann` in ai_processing.rs);
     // predict calls are strictly serialized by the owning Mutex.
     unsafe impl Send for OmModel {}
     unsafe impl Sync for OmModel {}
@@ -1490,7 +1491,7 @@ pub mod om {
         ///
         /// `perf_mode` follows the HIAI_HCL perf-mode domain (0-4, vendor
         /// default 2); pass 4 for small-op-dense CNN graphs (the §8.4
-        /// measured optimum for u2net/nind) or a negative value to keep the
+        /// measured optimum for NIND) or a negative value to keep the
         /// default.
         pub fn new(model_path: &Path, perf_mode: i32) -> Result<Self> {
             let api = api()?;

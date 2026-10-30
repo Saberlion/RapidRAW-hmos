@@ -122,8 +122,8 @@ const DENOISE_MS_SHA256: &str = "05d7580e5a6e3c18bd286705f7524090cd69abe4b78067c
 // NCHW I/O (no NHWC conversion).
 #[cfg(target_env = "ohos")]
 const DENOISE_OM_FILENAME: &str = "nind_v2.om";
-/// HIAI_HCL perf-mode optimum for small-op-dense CNN graphs (§8.4: u2net
-/// 1.9×, nind 1.8× over the default 2; transformer/FFC graphs keep 2).
+/// HIAI_HCL perf-mode optimum for small-op-dense CNN graphs (§8.4: NIND
+/// 1.8× over the default 2; transformer/FFC graphs keep 2).
 #[cfg(target_env = "ohos")]
 const OM_PERF_MODE_CNN: i32 = 4;
 

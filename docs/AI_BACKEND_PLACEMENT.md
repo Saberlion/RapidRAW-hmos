@@ -6,6 +6,9 @@
 
 ---
 
+> **2026-10-30 更新(v1.6.7 合并后)**:上游已用 **BiRefNet** 替换 u2net、用 **EfficientSAM3** 替换 skyseg,并新增 MediaPipe 人脸与 MoGe-2 法线模型。
+> 本文件 §1 / §4.2 / §4.3 关于 u2net / skyseg / `MaskSession` 的内容仅保留为**历史记录**,当前模型清单、SHA256 与 OHOS 适配判定以 **`docs/AI_MODELS_V1.6.7.md`** 为准。
+
 ## 1. 结论速览
 
 | 模型 / 功能 | 模型文件 | 当前代码运行位置 | CANN(`.om`)可行性 | 实测最佳路线 |
