@@ -58,6 +58,11 @@ export enum Invokes {
   EstimateExportSizes = 'estimate_export_sizes',
   ExportImages = 'export_images',
   FrontendLog = 'frontend_log',
+  GetOhosColorMode = 'get_ohos_color_mode',
+  GetOhosPrivacyState = 'get_ohos_privacy_state',
+  RequestOhosPrivacyConsent = 'request_ohos_privacy_consent',
+  RevokeOhosPrivacyConsent = 'revoke_ohos_privacy_consent',
+  RevokeOhosFolderGrants = 'revoke_ohos_folder_grants',
   GenerateAiForegroundMask = 'generate_ai_foreground_mask',
   GenerateAiSkyMask = 'generate_ai_sky_mask',
   GenerateAiTextMask = 'generate_ai_text_mask',
@@ -74,6 +79,7 @@ export enum Invokes {
   ClearMetadataCache = 'clear_metadata_cache',
   GetAiJobsStatus = 'get_ai_jobs_status',
   GetFolderTree = 'get_folder_tree',
+  CheckPathsReadable = 'check_paths_readable',
   GetFolderChildren = 'get_folder_children',
   GetLogFilePath = 'get_log_file_path',
   GetOrCreateInternalLibraryRoot = 'get_or_create_internal_library_root',
@@ -86,6 +92,8 @@ export enum Invokes {
   HandleImportLegacyPresetsFromFile = 'handle_import_legacy_presets_from_file',
   ImportFiles = 'import_files',
   InvokeGenerativeReplaseWithMaskDef = 'invoke_generative_replace_with_mask_def',
+  IsOhosBuild = 'is_ohos_build',
+  ExitApp = 'exit_app',
   IsTetheringSupported = 'is_tethering_supported',
   ListImagesInDir = 'list_images_in_dir',
   ListImagesRecursive = 'list_images_recursive',
@@ -94,6 +102,11 @@ export enum Invokes {
   LoadPresets = 'load_presets',
   LoadSettings = 'load_settings',
   MoveFiles = 'move_files',
+  OpenExternalUrl = 'open_external_url',
+  PickOhosFiles = 'pick_ohos_files',
+  PickOhosFolder = 'pick_ohos_folder',
+  PickOhosSaveFile = 'pick_ohos_save_file',
+  PickWhiteBalance = 'pick_white_balance',
   ReadExifForPaths = 'read_exif_for_paths',
   RemoveTagForPaths = 'remove_tag_for_paths',
   RenameFiles = 'rename_files',
@@ -186,6 +199,7 @@ export enum Theme {
   MutedGreen = 'muted-green',
   Sepia = 'sepia',
   Snow = 'snow',
+  System = 'system',
 }
 
 export enum ThumbnailAspectRatio {
@@ -222,6 +236,7 @@ export interface AppSettings {
   aiGpuAcceleration?: boolean;
   aiProvider?: string;
   decorations?: any;
+  agreementAcceptedVersion?: string;
   editorPreviewResolution?: number;
   smallThumbnailResolution?: number;
   mediumThumbnailResolution?: number;
@@ -262,6 +277,7 @@ export interface AppSettings {
   waveformHeight?: number;
   activeWaveformChannel?: string;
   useWgpuRenderer?: boolean;
+  aiDenoiseBackend?: string;
   editorNeutralGreyBg?: boolean;
   canvasInputMode?: 'mouse' | 'trackpad';
   compareMode?: CompareMode;

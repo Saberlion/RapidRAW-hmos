@@ -605,6 +605,8 @@ pub struct AppSettings {
     #[serde(default)]
     pub use_wgpu_renderer: Option<bool>,
     #[serde(default)]
+    pub ai_denoise_backend: Option<String>,
+    #[serde(default)]
     pub editor_neutral_grey_bg: Option<bool>,
     #[serde(default)]
     pub canvas_input_mode: Option<String>,
@@ -688,6 +690,8 @@ pub struct AppSettings {
     pub workspace: WorkspaceState,
     #[serde(default)]
     pub immich: crate::immich::ImmichSettings,
+    #[serde(default)]
+    pub agreement_accepted_version: Option<String>,
 }
 
 impl Default for AppSettings {
@@ -698,9 +702,9 @@ impl Default for AppSettings {
             pinned_folders: Vec::new(),
             small_thumbnail_resolution: Some(480),
             medium_thumbnail_resolution: Some(1280),
-            #[cfg(target_os = "android")]
+            #[cfg(any(target_os = "android", target_env = "ohos"))]
             editor_preview_resolution: Some(1280),
-            #[cfg(not(target_os = "android"))]
+            #[cfg(not(any(target_os = "android", target_env = "ohos")))]
             editor_preview_resolution: Some(1920),
             enable_zoom_hifi: Some(true),
             use_full_dpi_rendering: Some(false),
@@ -708,9 +712,9 @@ impl Default for AppSettings {
             live_preview_quality: Some("high".to_string()),
             sort_criteria: None,
             filter_criteria: None,
-            theme: Some("dark".to_string()),
+            theme: Some("system".to_string()),
             font_family: None,
-            decorations: Some(false),
+            decorations: Some(true),
             ai_connector_address: None,
             last_folder_state: None,
             ui_visibility: None,
@@ -719,9 +723,9 @@ impl Default for AppSettings {
             tagging_shortcuts: default_tagging_shortcuts_option(),
             custom_ai_tags: Some(Vec::new()),
             ai_tag_count: Some(10),
-            #[cfg(target_os = "android")]
+            #[cfg(any(target_os = "android", target_env = "ohos"))]
             thumbnail_size: Some("small".to_string()),
-            #[cfg(not(target_os = "android"))]
+            #[cfg(not(any(target_os = "android", target_env = "ohos")))]
             thumbnail_size: Some("medium".to_string()),
             thumbnail_aspect_ratio: Some("contain".to_string()),
             ai_provider: Some("cpu".to_string()),
@@ -735,9 +739,9 @@ impl Default for AppSettings {
             library_view_mode: Some("flat".to_string()),
             export_presets: default_export_presets(),
             my_lenses: Some(Vec::new()),
-            #[cfg(target_os = "android")]
+            #[cfg(any(target_os = "android", target_env = "ohos"))]
             high_res_zoom_multiplier: Some(0.75),
-            #[cfg(not(target_os = "android"))]
+            #[cfg(not(any(target_os = "android", target_env = "ohos")))]
             high_res_zoom_multiplier: Some(1.0),
             enable_folder_image_counts: Some(false),
             display_edit_icon: Some(true),
@@ -751,6 +755,7 @@ impl Default for AppSettings {
             use_wgpu_renderer: Some(false),
             #[cfg(not(any(target_os = "linux", target_os = "android")))]
             use_wgpu_renderer: Some(true),
+            ai_denoise_backend: Some("cpu".to_string()),
             editor_neutral_grey_bg: Some(false),
             canvas_input_mode: Some("mouse".to_string()),
             compare_mode: None,
@@ -758,13 +763,13 @@ impl Default for AppSettings {
             zoom_speed_multiplier: Some(1.0),
             zoom_photo_to_pixel_click: Some(false),
             keybinds: HashMap::new(),
-            #[cfg(target_os = "android")]
+            #[cfg(any(target_os = "android", target_env = "ohos"))]
             thumbnail_worker_threads: Some(2),
-            #[cfg(not(target_os = "android"))]
+            #[cfg(not(any(target_os = "android", target_env = "ohos")))]
             thumbnail_worker_threads: Some(4),
-            #[cfg(target_os = "android")]
+            #[cfg(any(target_os = "android", target_env = "ohos"))]
             image_cache_size: Some(2),
-            #[cfg(not(target_os = "android"))]
+            #[cfg(not(any(target_os = "android", target_env = "ohos")))]
             image_cache_size: Some(5),
             ai_cache_limit_gb: Some(default_ai_cache_limit_gb()),
             thumbnail_cache_limit_gb: Some(default_thumbnail_cache_limit_gb()),
@@ -798,15 +803,13 @@ impl Default for AppSettings {
             adjustment_layout: AdjustmentLayout::default(),
             workspace: WorkspaceState::default(),
             immich: crate::immich::ImmichSettings::default(),
+            agreement_accepted_version: None,
         }
     }
 }
 
 pub fn get_settings_path(app_handle: &AppHandle) -> Result<PathBuf, String> {
-    let settings_dir = app_handle
-        .path()
-        .app_data_dir()
-        .map_err(|e| e.to_string())?;
+    let settings_dir = crate::app_paths::app_data_dir(app_handle).map_err(|e| e.to_string())?;
 
     if !settings_dir.exists() {
         fs::create_dir_all(&settings_dir).map_err(|e| e.to_string())?;
@@ -905,9 +908,14 @@ fn read_settings_from_disk(app_handle: &AppHandle) -> Result<AppSettings, String
 
 #[tauri::command]
 pub fn save_settings(settings: AppSettings, app_handle: AppHandle) -> Result<(), String> {
-    let previous_gpu_acceleration = load_settings(app_handle.clone())
-        .map(|previous| previous.ai_gpu_acceleration)
-        .ok();
+    let previous_settings = load_settings(app_handle.clone()).ok();
+    let previous_gpu_acceleration = previous_settings
+        .as_ref()
+        .map(|previous| previous.ai_gpu_acceleration);
+    let denoise_backend_changed = previous_settings
+        .as_ref()
+        .and_then(|previous| previous.ai_denoise_backend.clone())
+        != settings.ai_denoise_backend;
     let path = get_settings_path(&app_handle)?;
     let json_string = serde_json::to_string_pretty(&settings).map_err(|e| e.to_string())?;
     fs::write(path, json_string).map_err(|e| e.to_string())?;
@@ -926,5 +934,10 @@ pub fn save_settings(settings: AppSettings, app_handle: AppHandle) -> Result<(),
     if previous_gpu_acceleration != Some(settings.ai_gpu_acceleration) {
         crate::ai_processing::reset_ai_sessions(&state.ai_state);
     }
+
+    if denoise_backend_changed && let Some(ai) = state.ai_state.lock().unwrap().as_mut() {
+        ai.denoise_model = None;
+    }
+
     Ok(())
 }

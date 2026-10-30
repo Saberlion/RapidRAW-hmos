@@ -203,6 +203,45 @@ fn main() {
 
     let manifest_dir = PathBuf::from(env::var("CARGO_MANIFEST_DIR").unwrap());
 
+    // OpenHarmony (`target_os = "linux"` + `target_env = "ohos"`): there is no
+    // official onnxruntime build for OHOS, so nothing is downloaded here.
+    // AI features require a community-built library (e.g. from sherpa-onnx or
+    // csukuangfj/onnxruntime-libs) placed at `libs/ohos/<abi>/libonnxruntime.so`
+    // (abi = arm64-v8a | armeabi-v7a | x86_64) AND copied into
+    // `gen/ohos/entry/libs/<abi>/` so it is packaged into the HAP.
+    let target_env = env::var("CARGO_CFG_TARGET_ENV").unwrap_or_default();
+    if target_os == "linux" && target_env == "ohos" {
+        let abi = match target_arch.as_str() {
+            "aarch64" => "arm64-v8a",
+            "arm" => "armeabi-v7a",
+            arch => arch,
+        };
+        let ohos_lib = manifest_dir
+            .join("libs")
+            .join("ohos")
+            .join(abi)
+            .join("libonnxruntime.so");
+        if ohos_lib.exists() {
+            println!(
+                "cargo:warning=Using OpenHarmony ONNX Runtime library at {:?}.",
+                ohos_lib
+            );
+            println!(
+                "cargo:rustc-env=ORT_LIB_LOCATION={}",
+                ohos_lib.parent().unwrap().display()
+            );
+            println!("cargo:rustc-env=ORT_STRATEGY=manual");
+        } else {
+            println!(
+                "cargo:warning=libonnxruntime.so for OpenHarmony not found at {:?}. AI features will be unavailable at runtime until it is provided. See docs/HARMONYOS_PORTING.md (Phase 1).",
+                ohos_lib
+            );
+        }
+        println!("cargo:rerun-if-changed=build.rs");
+        tauri_build::build();
+        return;
+    }
+
     let dest_dir = if target_os == "android" {
         manifest_dir.join("libs").join("arm64-v8a")
     } else {

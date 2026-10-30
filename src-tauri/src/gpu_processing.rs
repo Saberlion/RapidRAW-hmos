@@ -263,6 +263,22 @@ pub fn get_or_init_gpu_context(
         instance_desc.backends = wgpu::Backends::PRIMARY;
     }
 
+    // OpenHarmony: neither GPU backend is currently reliable on real devices,
+    // so allow both and let adapter enumeration pick whatever loads.
+    //  - Real device (Maleoon, 2026-10-05 faultlog cppcrash-24077): the GLES
+    //    translation layer (libhvgr_v210.so) smashes the stack inside
+    //    Queue::submit on the readback path (read_texture_data_roi), and the
+    //    Vulkan loader is unreachable because ash looks for libvulkan.so.1
+    //    while OHOS ships libvulkan.so (needs the ash fork, porting doc 6.9).
+    //  - Emulator: no Vulkan stack at all — GLES (host passthrough) is the
+    //    working path there.
+    // An explicit user choice still wins because settings.processing_backend
+    // sets WGPU_BACKEND at startup before this runs (lib.rs).
+    #[cfg(target_env = "ohos")]
+    if std::env::var("WGPU_BACKEND").is_err() {
+        instance_desc.backends = wgpu::Backends::VULKAN | wgpu::Backends::GL;
+    }
+
     let flag_path = state.gpu_crash_flag_path.lock().unwrap().clone();
     if let Some(p) = &flag_path {
         if let Some(parent) = p.parent() {
@@ -556,6 +572,28 @@ pub fn get_or_init_gpu_context(
     Ok(new_context)
 }
 
+/// Compile all compute pipelines at startup with a tiny throwaway processor
+/// so the first image the user opens does not pay the driver's pipeline
+/// compilation cost (~11s on a cold Maleoon Vulkan cache, 2026-10-05; see
+/// porting doc 6.13). Pipelines are identical regardless of the processor's
+/// texture dimensions, so the processor created on demand hits a warm driver
+/// cache — only the cheap texture allocations are thrown away. The GPU
+/// context initialized here also removes the adapter-enumeration cost from
+/// the first open. OHOS-only: desktop pre-initializes the context at startup
+/// anyway and compiles in ~100ms; Android behavior is upstream's concern.
+#[cfg(target_env = "ohos")]
+pub fn warm_up_pipelines(
+    state: &tauri::State<AppState>,
+    app_handle: &tauri::AppHandle,
+) -> Result<std::time::Duration, String> {
+    let start = std::time::Instant::now();
+    let context = get_or_init_gpu_context(state, app_handle)?;
+    // 256x256 keeps the throwaway textures tiny; pipeline creation is
+    // dimension-independent.
+    GpuProcessor::new(context, 256, 256)?;
+    Ok(start.elapsed())
+}
+
 fn read_texture_data_roi(
     device: &wgpu::Device,
     queue: &wgpu::Queue,
@@ -761,6 +799,7 @@ pub struct GpuProcessor {
     high_precision_pipeline: std::sync::OnceLock<HighPrecisionPipeline>,
     high_precision_tile: std::sync::OnceLock<HighPrecisionTile>,
     tile_output_size: wgpu::Extent3d,
+    tile_size: u32,
     adjustments_buffer: wgpu::Buffer,
     dummy_blur_view: wgpu::TextureView,
     dummy_lut_view: wgpu::TextureView,
@@ -1005,6 +1044,10 @@ fn lock_or_reset<'a, T>(
         guard
     })
 }
+
+/// Context margin each tile reads beyond its output bounds so blurs and
+/// detail effects see neighbouring pixels.
+const TILE_OVERLAP: u32 = 128;
 
 impl GpuProcessor {
     pub fn new(context: GpuContext, max_width: u32, max_height: u32) -> Result<Self, String> {
@@ -1543,11 +1586,28 @@ impl GpuProcessor {
                 ..Default::default()
             });
 
-        const TILE_SIZE: u32 = 2048;
-        const TILE_OVERLAP: u32 = 128;
+        // Bigger tiles cut per-tile overhead — overlap redundancy, dispatch
+        // boundaries and synchronous readbacks — but tile-sized intermediates
+        // scale with area (~230 MiB at 2048 vs ~830 MiB at 4096 for the f16
+        // blur set plus the tile output). Only take the big tile on roomy
+        // devices whose GPU can address it; smaller machines keep the safe
+        // 2048 default.
+        let mut sys = sysinfo::System::new();
+        sys.refresh_memory();
+        let tile_size: u32 = if sys.total_memory() >= 12 * 1024 * 1024 * 1024u64
+            && device
+                .limits()
+                .max_texture_dimension_2d
+                .saturating_sub(TILE_OVERLAP * 2)
+                >= 4096
+        {
+            4096
+        } else {
+            2048
+        };
 
-        let clamped_tile_width = max_width.min(TILE_SIZE + TILE_OVERLAP * 2);
-        let clamped_tile_height = max_height.min(TILE_SIZE + TILE_OVERLAP * 2);
+        let clamped_tile_width = max_width.min(tile_size + TILE_OVERLAP * 2);
+        let clamped_tile_height = max_height.min(tile_size + TILE_OVERLAP * 2);
 
         let clamped_tile_size = wgpu::Extent3d {
             width: clamped_tile_width,
@@ -1656,6 +1716,7 @@ impl GpuProcessor {
             high_precision_pipeline: std::sync::OnceLock::new(),
             high_precision_tile: std::sync::OnceLock::new(),
             tile_output_size: clamped_tile_size,
+            tile_size,
             adjustments_buffer,
             dummy_blur_view,
             dummy_lut_view,
@@ -2455,9 +2516,6 @@ impl GpuProcessor {
             queue.submit(Some(encoder.finish()));
         }
 
-        const TILE_SIZE: u32 = 2048;
-        const TILE_OVERLAP: u32 = 128;
-
         let output_len = if output_to_display {
             0
         } else {
@@ -2468,22 +2526,22 @@ impl GpuProcessor {
             RenderOutputPrecision::SixteenBit => RenderedPixels::U16(vec![0u16; output_len]),
         };
 
-        let start_tile_x = bounds.x / TILE_SIZE;
-        let start_tile_y = bounds.y / TILE_SIZE;
-        let end_tile_x = (bounds.x + bounds.width).div_ceil(TILE_SIZE);
-        let end_tile_y = (bounds.y + bounds.height).div_ceil(TILE_SIZE);
+        let start_tile_x = bounds.x / self.tile_size;
+        let start_tile_y = bounds.y / self.tile_size;
+        let end_tile_x = (bounds.x + bounds.width).div_ceil(self.tile_size);
+        let end_tile_y = (bounds.y + bounds.height).div_ceil(self.tile_size);
 
         for tile_y in start_tile_y..end_tile_y {
             for tile_x in start_tile_x..end_tile_x {
-                let x_start_unclamped = tile_x * TILE_SIZE;
-                let y_start_unclamped = tile_y * TILE_SIZE;
+                let x_start_unclamped = tile_x * self.tile_size;
+                let y_start_unclamped = tile_y * self.tile_size;
 
                 let x_start = x_start_unclamped.max(bounds.x);
                 let y_start = y_start_unclamped.max(bounds.y);
-                let x_end = (x_start_unclamped + TILE_SIZE)
+                let x_end = (x_start_unclamped + self.tile_size)
                     .min(bounds.x + bounds.width)
                     .min(width);
-                let y_end = (y_start_unclamped + TILE_SIZE)
+                let y_end = (y_start_unclamped + self.tile_size)
                     .min(bounds.y + bounds.height)
                     .min(height);
 
@@ -2782,6 +2840,8 @@ impl GpuProcessor {
                 queue.submit(Some(main_encoder.finish()));
 
                 if !output_to_display {
+                    // Read back only the tile's core; the overlap margin was
+                    // context for the compute passes, not payload.
                     let processed_tile_data = read_texture_data_roi(
                         device,
                         queue,

@@ -28,19 +28,19 @@ use tokio::sync::Mutex as TokioMutex;
 
 use crate::face_masking::FaceAnalysis;
 
-const ENCODER_URL: &str = "https://huggingface.co/CyberTimon/RapidRAW-Models/resolve/main/sam_vit_b_01ec64_encoder.onnx?download=true";
-const DECODER_URL: &str = "https://huggingface.co/CyberTimon/RapidRAW-Models/resolve/main/sam_vit_b_01ec64_decoder.onnx?download=true";
+const ENCODER_URL: &str = "https://hf-mirror.com/CyberTimon/RapidRAW-Models/resolve/main/sam_vit_b_01ec64_encoder.onnx?download=true";
+const DECODER_URL: &str = "https://hf-mirror.com/CyberTimon/RapidRAW-Models/resolve/main/sam_vit_b_01ec64_decoder.onnx?download=true";
 const ENCODER_FILENAME: &str = "sam_vit_b_01ec64_encoder.onnx";
 const DECODER_FILENAME: &str = "sam_vit_b_01ec64_decoder.onnx";
 const SAM_INPUT_SIZE: u32 = 1024;
 const ENCODER_SHA256: &str = "16ab73d9c824886f0de2938c19df22fb9ec3deebfd0de58e65177e479213d7d1";
 const DECODER_SHA256: &str = "85d0d672cf5b7fe763edcde429e5533e62f674af4b15c7d688b7673b0ef00bf7";
 
-const BIREFNET_FP16_URL: &str = "https://huggingface.co/CyberTimon/RapidRAW-Models/resolve/main/birefnet_general_lite_fp16.onnx?download=true";
+const BIREFNET_FP16_URL: &str = "https://hf-mirror.com/CyberTimon/RapidRAW-Models/resolve/main/birefnet_general_lite_fp16.onnx?download=true";
 const BIREFNET_FP16_FILENAME: &str = "birefnet_general_lite_fp16.onnx";
 const BIREFNET_FP16_SHA256: &str =
     "3b72cb3c2138605ced0a4b271e8d13d3b3ca2483cf1665b098b6851767420fa1";
-const BIREFNET_FP32_URL: &str = "https://huggingface.co/CyberTimon/RapidRAW-Models/resolve/main/birefnet_general_lite.onnx?download=true";
+const BIREFNET_FP32_URL: &str = "https://hf-mirror.com/CyberTimon/RapidRAW-Models/resolve/main/birefnet_general_lite.onnx?download=true";
 const BIREFNET_FP32_FILENAME: &str = "birefnet_general_lite.onnx";
 const BIREFNET_FP32_SHA256: &str =
     "5600024376f572a557870a5eb0afb1e5961636bef4e1e22132025467d0f03333";
@@ -52,23 +52,23 @@ const ZOOM_MAX_FRACTION: f32 = 0.6;
 const ZOOM_MIN_SIDE: f32 = 1024.0;
 const ZOOM_FEATHER: f32 = 0.1;
 
-const ESAM3_IMAGE_ENCODER_URL: &str = "https://huggingface.co/CyberTimon/RapidRAW-Models/resolve/main/efficientsam3_ev_m_image_encoder.onnx?download=true";
+const ESAM3_IMAGE_ENCODER_URL: &str = "https://hf-mirror.com/CyberTimon/RapidRAW-Models/resolve/main/efficientsam3_ev_m_image_encoder.onnx?download=true";
 const ESAM3_IMAGE_ENCODER_FILENAME: &str = "efficientsam3_ev_m_image_encoder.onnx";
 const ESAM3_IMAGE_ENCODER_SHA256: &str =
     "2ed08306579138120dbf9f1110fd31784d1c20fe1b67fa2187a0a2a6d7c82729";
-const ESAM3_DECODER_URL: &str = "https://huggingface.co/CyberTimon/RapidRAW-Models/resolve/main/efficientsam3_ev_m_decoder.onnx?download=true";
+const ESAM3_DECODER_URL: &str = "https://hf-mirror.com/CyberTimon/RapidRAW-Models/resolve/main/efficientsam3_ev_m_decoder.onnx?download=true";
 const ESAM3_DECODER_FILENAME: &str = "efficientsam3_ev_m_decoder.onnx";
 const ESAM3_DECODER_SHA256: &str =
     "16accc22a07ee99c73ef8a14e286ec567f94c116e0d8efa1a3a6c0bc9a2596a8";
-const ESAM3_TEXT_ENCODER_URL: &str = "https://huggingface.co/CyberTimon/RapidRAW-Models/resolve/main/efficientsam3_ev_m_text_encoder.onnx?download=true";
+const ESAM3_TEXT_ENCODER_URL: &str = "https://hf-mirror.com/CyberTimon/RapidRAW-Models/resolve/main/efficientsam3_ev_m_text_encoder.onnx?download=true";
 const ESAM3_TEXT_ENCODER_FILENAME: &str = "efficientsam3_ev_m_text_encoder.onnx";
 const ESAM3_TEXT_ENCODER_SHA256: &str =
     "3065ea6116f21f6e22bc70a0c041e5da9ae05fdec7b48df953394f5657609590";
-const ESAM3_SKY_PROMPT_URL: &str = "https://huggingface.co/CyberTimon/RapidRAW-Models/resolve/main/efficientsam3_sky_prompt.bin?download=true";
+const ESAM3_SKY_PROMPT_URL: &str = "https://hf-mirror.com/CyberTimon/RapidRAW-Models/resolve/main/efficientsam3_sky_prompt.bin?download=true";
 const ESAM3_SKY_PROMPT_FILENAME: &str = "efficientsam3_sky_prompt.bin";
 const ESAM3_SKY_PROMPT_SHA256: &str =
     "b8dc43661db640f2e3881466252d154906d90896eb3ed9dbc747bec87a97d180";
-const ESAM3_FACE_PROMPT_URL: &str = "https://huggingface.co/CyberTimon/RapidRAW-Models/resolve/main/efficientsam3_face_prompt.bin?download=true";
+const ESAM3_FACE_PROMPT_URL: &str = "https://hf-mirror.com/CyberTimon/RapidRAW-Models/resolve/main/efficientsam3_face_prompt.bin?download=true";
 const ESAM3_FACE_PROMPT_FILENAME: &str = "efficientsam3_face_prompt.bin";
 const ESAM3_FACE_PROMPT_SHA256: &str =
     "8fdbe63ef853756b1da9cdc642c277a6e422452f3feaf35f4297e6aea3a1ffb9";
@@ -88,37 +88,56 @@ pub const ESAM3_SKY_REFINE_EPS: f32 = 0.001;
 pub const ESAM3_TEXT_REFINE_EPS: f32 = 0.01;
 const ESAM3_ZOOM_MIN_IOU: f32 = 0.3;
 
-const FACE_LANDMARKS_URL: &str = "https://huggingface.co/CyberTimon/RapidRAW-Models/resolve/main/mediapipe_face_landmarks.onnx?download=true";
+const FACE_LANDMARKS_URL: &str = "https://hf-mirror.com/CyberTimon/RapidRAW-Models/resolve/main/mediapipe_face_landmarks.onnx?download=true";
 const FACE_LANDMARKS_FILENAME: &str = "mediapipe_face_landmarks.onnx";
 const FACE_LANDMARKS_SHA256: &str =
     "6524d596b4d9151b0d8d590844566261f21de5186ac38125bdcd1de6974b0bb4";
-const FACE_SEGMENTER_URL: &str = "https://huggingface.co/CyberTimon/RapidRAW-Models/resolve/main/mediapipe_selfie_multiclass.onnx?download=true";
+const FACE_SEGMENTER_URL: &str = "https://hf-mirror.com/CyberTimon/RapidRAW-Models/resolve/main/mediapipe_selfie_multiclass.onnx?download=true";
 const FACE_SEGMENTER_FILENAME: &str = "mediapipe_selfie_multiclass.onnx";
 const FACE_SEGMENTER_SHA256: &str =
     "a198470a4edec350a33b8182c149e417effc5e61c0506b947f226e7a81b9a08e";
 
 const CLIP_MODEL_URL: &str =
-    "https://huggingface.co/CyberTimon/RapidRAW-Models/resolve/main/clip_model.onnx?download=true";
+    "https://hf-mirror.com/CyberTimon/RapidRAW-Models/resolve/main/clip_model.onnx?download=true";
 const CLIP_MODEL_FILENAME: &str = "clip_model.onnx";
-const CLIP_TOKENIZER_URL: &str = "https://huggingface.co/CyberTimon/RapidRAW-Models/resolve/main/clip_tokenizer.json?download=true";
+const CLIP_TOKENIZER_URL: &str = "https://hf-mirror.com/CyberTimon/RapidRAW-Models/resolve/main/clip_tokenizer.json?download=true";
 const CLIP_TOKENIZER_FILENAME: &str = "clip_tokenizer.json";
 const CLIP_MODEL_SHA256: &str = "57879bb1c23cdeb350d23569dd251ed4b740a96d747c529e94a2bb8040ac5d00";
 
-const DENOISE_URL: &str = "https://huggingface.co/CyberTimon/RapidRAW-Models/resolve/main/nind_denoise_utnet_684.onnx?download=true";
+const DENOISE_URL: &str = "https://hf-mirror.com/CyberTimon/RapidRAW-Models/resolve/main/nind_denoise_utnet_684.onnx?download=true";
 const DENOISE_FILENAME: &str = "nind_denoise_utnet_684.onnx";
 const DENOISE_SHA256: &str = "ee3586279d514df557ff3f7dec6df37fafc51ba5d3a3435b2cc9ac2d9017e7fe";
+// NPU denoise models (OpenHarmony only). The .ms build comes from
+// scripts/convert-nind-ms.ps1 (ONNX -> Pad surgery -> converter_lite 2.7.0);
+// full recipe + pinned hashes: docs/AI_DENOISE_HW_ACCELERATION.md section 5.6.
+#[cfg(target_env = "ohos")]
+const DENOISE_MS_URL: &str = "https://hf-mirror.com/CyberTimon/RapidRAW-Models/resolve/main/nind_denoise_utnet_684.ms?download=true";
+#[cfg(target_env = "ohos")]
+const DENOISE_MS_FILENAME: &str = "nind_denoise_utnet_684.ms";
+#[cfg(target_env = "ohos")]
+const DENOISE_MS_SHA256: &str = "05d7580e5a6e3c18bd286705f7524090cd69abe4b78067c2a173b322ef151b3b";
+
+// CANN (.om) denoise build, sideloaded; same nind lineage after Pad→Slice
+// surgery -> omg (504 is the fixed tile size all TileParams variants use).
+// NCHW I/O (no NHWC conversion).
+#[cfg(target_env = "ohos")]
+const DENOISE_OM_FILENAME: &str = "nind_v2.om";
+/// HIAI_HCL perf-mode optimum for small-op-dense CNN graphs (§8.4: u2net
+/// 1.9×, nind 1.8× over the default 2; transformer/FFC graphs keep 2).
+#[cfg(target_env = "ohos")]
+const OM_PERF_MODE_CNN: i32 = 4;
 
 const LAMA_URL: &str =
-    "https://huggingface.co/CyberTimon/RapidRAW-Models/resolve/main/lama_fp16.onnx?download=true";
+    "https://hf-mirror.com/CyberTimon/RapidRAW-Models/resolve/main/lama_fp16.onnx?download=true";
 const LAMA_FILENAME: &str = "lama_fp16.onnx";
 const LAMA_SHA256: &str = "2d6be6277c400d6f1b91819737f7c3da935e5c63d1b521d393be1196a2bfa82c";
 
-const DEPTH_URL: &str = "https://huggingface.co/CyberTimon/RapidRAW-Models/resolve/main/depth_anything_v2_vits.onnx?download=true";
+const DEPTH_URL: &str = "https://hf-mirror.com/CyberTimon/RapidRAW-Models/resolve/main/depth_anything_v2_vits.onnx?download=true";
 const DEPTH_FILENAME: &str = "depth_anything_v2_vits.onnx";
 const DEPTH_INPUT_SIZE: u32 = 518;
 const DEPTH_SHA256: &str = "d2b11a11c1d4a12b47608fa65a17ee9a4c605b55ee1730c8e3b526304f2562be";
 
-const NORMAL_URL: &str = "https://huggingface.co/CyberTimon/RapidRAW-Models/resolve/main/moge-2-vits-normal-onnx.onnx?download=true";
+const NORMAL_URL: &str = "https://hf-mirror.com/CyberTimon/RapidRAW-Models/resolve/main/moge-2-vits-normal-onnx.onnx?download=true";
 const NORMAL_FILENAME: &str = "moge-2-vits-normal-onnx.onnx";
 const NORMAL_MAX_SIZE: u32 = 768;
 const NORMAL_NUM_TOKENS: i64 = 2500;
@@ -680,10 +699,23 @@ pub struct CachedDepthMap {
     pub original_size: (u32, u32),
 }
 
+/// Denoise model backend. ORT is the default on every platform; on
+/// OpenHarmony the NPU backends are selected through the AI denoise
+/// backend setting (docs/AI_DENOISE_HW_ACCELERATION.md).
+pub enum DenoiseSession {
+    Ort(Mutex<Session>),
+    /// MindSpore Lite NNRT (.ms model).
+    #[cfg(target_env = "ohos")]
+    Nnrt(Mutex<crate::ohos_integration::ms_lite::MsModel>),
+    /// CANN/HIAI (.om model).
+    #[cfg(target_env = "ohos")]
+    Cann(Mutex<crate::ohos_integration::om::OmModel>),
+}
+
 #[derive(Default)]
 pub struct AiState {
     pub models: Option<Arc<AiModels>>,
-    pub denoise_model: Option<Arc<Mutex<Session>>>,
+    pub denoise_model: Option<Arc<DenoiseSession>>,
     pub clip_models: Option<Arc<ClipModels>>,
     pub lama_model: Option<Arc<Mutex<Session>>>,
     pub normal_model: Option<Arc<Mutex<Session>>>,
@@ -1238,7 +1270,7 @@ pub async fn get_or_init_denoise_model(
     app_handle: &tauri::AppHandle,
     ai_state_mutex: &Mutex<Option<AiState>>,
     ai_init_lock: &TokioMutex<()>,
-) -> Result<Arc<Mutex<Session>>> {
+) -> Result<Arc<DenoiseSession>> {
     if let Some(denoise_model) =
         cached_ai_state(ai_state_mutex, |state| state.denoise_model.clone())
     {
@@ -1254,6 +1286,72 @@ pub async fn get_or_init_denoise_model(
     }
 
     let models_dir = get_models_dir(app_handle)?;
+
+    // OpenHarmony NPU path (CANN .om first, then MindSpore Lite .ms), only
+    // when the user selected the NPU backend. Any problem falls back to ORT.
+    #[cfg(target_env = "ohos")]
+    {
+        let npu_selected = crate::app_settings::load_settings(app_handle.clone())
+            .unwrap_or_default()
+            .ai_denoise_backend
+            .as_deref()
+            .is_some_and(|backend| backend == "npu");
+        if npu_selected {
+            let om_path = models_dir.join(DENOISE_OM_FILENAME);
+            if om_path.exists() {
+                match crate::ohos_integration::om::OmModel::new(&om_path, OM_PERF_MODE_CNN) {
+                    Ok(model) if denoise_om_contract_matches(&model) => {
+                        log::info!("NPU mode: using CANN .om denoise model.");
+                        let denoise_model = Arc::new(DenoiseSession::Cann(Mutex::new(model)));
+                        crate::register_exit_handler();
+                        ai_state_mutex
+                            .lock()
+                            .unwrap()
+                            .get_or_insert_with(AiState::default)
+                            .denoise_model = Some(denoise_model.clone());
+                        return Ok(denoise_model);
+                    }
+                    Ok(_) => {
+                        log::warn!(
+                            "NPU mode: {} IO contract mismatch, trying .ms/ORT fallback.",
+                            DENOISE_OM_FILENAME
+                        );
+                    }
+                    Err(e) => {
+                        log::warn!(
+                            "NPU mode: .om denoise init failed ({e}), trying .ms/ORT fallback."
+                        );
+                    }
+                }
+            }
+
+            match try_provision_ms_model(app_handle, &models_dir).await {
+                Ok(Some(ms_path)) => match crate::ohos_integration::ms_lite::MsModel::new(&ms_path)
+                {
+                    Ok(ms_model) => {
+                        log::info!("NPU mode: using MindSpore Lite .ms denoise model.");
+                        let denoise_model = Arc::new(DenoiseSession::Nnrt(Mutex::new(ms_model)));
+                        crate::register_exit_handler();
+                        ai_state_mutex
+                            .lock()
+                            .unwrap()
+                            .get_or_insert_with(AiState::default)
+                            .denoise_model = Some(denoise_model.clone());
+                        return Ok(denoise_model);
+                    }
+                    Err(e) => {
+                        log::warn!(
+                            "NPU mode: MsModel build failed ({e}), falling back to ORT CPU."
+                        );
+                    }
+                },
+                _ => {
+                    log::warn!("NPU mode: .ms model not available, falling back to ORT CPU.");
+                }
+            }
+        }
+    }
+
     download_and_verify_model(app_handle, &models_dir, &DENOISE_ASSET).await?;
 
     let _ = ort::init().with_name("AI-Denoise").commit();
@@ -1264,7 +1362,7 @@ pub async fn get_or_init_denoise_model(
         gpu_acceleration_enabled(app_handle),
         Some(denoise_crop_as_slice),
     )?;
-    let denoise_model = Arc::new(Mutex::new(session));
+    let denoise_model = Arc::new(DenoiseSession::Ort(Mutex::new(session)));
 
     crate::register_exit_handler();
 
@@ -1463,11 +1561,12 @@ fn tile_blend_weights(params: TileParams) -> Vec<f32> {
         .collect()
 }
 
-fn run_native_denoise(
+#[allow(clippy::type_complexity)]
+fn run_tiled_denoise(
     img: &Rgb32FImage,
-    session: &Mutex<Session>,
     params: TileParams,
     on_progress: &dyn Fn(f32),
+    infer: &mut dyn FnMut(i32, i32, &Array4<f32>) -> Result<Array4<f32>>,
 ) -> Result<Rgb32FImage> {
     let (width, height) = (img.width() as usize, img.height() as usize);
     let valid = params.cs - 2 * params.margin;
@@ -1487,17 +1586,7 @@ fn run_native_denoise(
         on_progress(i as f32 / total as f32);
 
         let crop = extract_tile_mirror(img, x0, y0, params.cs);
-        let t_input = Tensor::from_array(crop.as_standard_layout().to_owned())?;
-
-        let tile = {
-            let mut sess = session.lock().unwrap();
-            let outputs = gpu_inference(sess.run(ort::inputs![t_input]))?;
-            outputs[0]
-                .try_extract_array::<f32>()?
-                .to_owned()
-                .into_dimensionality::<ndarray::Ix4>()
-                .map_err(|e| anyhow::anyhow!("Unexpected output shape: {}", e))?
-        };
+        let tile = infer(x0, y0, &crop)?;
 
         for ty in 0..valid {
             let gy = y0 + (params.margin + ty) as i32;
@@ -1533,12 +1622,140 @@ fn run_native_denoise(
     Ok(out)
 }
 
+fn run_native_denoise(
+    img: &Rgb32FImage,
+    session: &Mutex<Session>,
+    params: TileParams,
+    on_progress: &dyn Fn(f32),
+) -> Result<Rgb32FImage> {
+    run_tiled_denoise(img, params, on_progress, &mut |_x0, _y0, crop| {
+        let t_input = Tensor::from_array(crop.as_standard_layout().to_owned())?;
+        let mut sess = session.lock().unwrap();
+        let outputs = gpu_inference(sess.run(ort::inputs![t_input]))?;
+        outputs[0]
+            .try_extract_array::<f32>()?
+            .to_owned()
+            .into_dimensionality::<ndarray::Ix4>()
+            .map_err(|e| anyhow::anyhow!("Unexpected output shape: {}", e))
+    })
+}
+
+/// Fill a flat NHWC `[cs*cs*3]` tile from the image with mirror padding.
+#[cfg(target_env = "ohos")]
+fn fill_tile_nhwc(img: &Rgb32FImage, x0: i32, y0: i32, cs: usize) -> Vec<f32> {
+    let (w, h) = (img.width() as i32, img.height() as i32);
+    let mut buf = vec![0f32; cs * cs * 3];
+    for dy in 0..cs as i32 {
+        for dx in 0..cs as i32 {
+            let sx = mirror_coord(x0 + dx, w);
+            let sy = mirror_coord(y0 + dy, h);
+            let px = img.get_pixel(sx as u32, sy as u32);
+            let d = (dy as usize * cs + dx as usize) * 3;
+            buf[d] = px[0];
+            buf[d + 1] = px[1];
+            buf[d + 2] = px[2];
+        }
+    }
+    buf
+}
+
+/// MindSpore Lite NNRT tile loop: feeds NHWC input, reads NCHW output.
+#[cfg(target_env = "ohos")]
+fn run_native_denoise_ms(
+    img: &Rgb32FImage,
+    session: &Mutex<crate::ohos_integration::ms_lite::MsModel>,
+    params: TileParams,
+    on_progress: &dyn Fn(f32),
+) -> Result<Rgb32FImage> {
+    let cs = params.cs;
+    run_tiled_denoise(img, params, on_progress, &mut |x0, y0, _crop| {
+        let input_nhwc = fill_tile_nhwc(img, x0, y0, cs);
+        let out_flat = session.lock().unwrap().predict(&input_nhwc)?;
+        Array4::from_shape_vec((1, 3, cs, cs), out_flat)
+            .map_err(|e| anyhow::anyhow!("Unexpected MS output shape: {}", e))
+    })
+}
+
+/// CANN (.om) tile loop: the .om keeps NCHW I/O, so the ORT path's mirror-fill
+/// tile extraction is reused directly.
+#[cfg(target_env = "ohos")]
+fn run_native_denoise_om(
+    img: &Rgb32FImage,
+    session: &Mutex<crate::ohos_integration::om::OmModel>,
+    params: TileParams,
+    on_progress: &dyn Fn(f32),
+) -> Result<Rgb32FImage> {
+    run_tiled_denoise(img, params, on_progress, &mut |_x0, _y0, crop| {
+        let input_slice = crop
+            .as_slice()
+            .ok_or_else(|| anyhow::anyhow!("tile extraction produced non-contiguous data"))?;
+        let out_flat = {
+            let model = session.lock().unwrap();
+            model.write_input_f32(0, input_slice)?;
+            model.run()?;
+            model.read_output_f32(0)?
+        };
+        Array4::from_shape_vec((1, 3, params.cs, params.cs), out_flat)
+            .map_err(|e| anyhow::anyhow!("Unexpected OM output shape: {}", e))
+    })
+}
+
+/// Validate the CANN (.om) denoise model's IO contract: one f32 input
+/// `[1,3,504,504]` and one f32 output `[1,3,504,504]` (the app's
+/// nind_denoise_utnet_684 lineage after Pad→Slice surgery -> omg; 504 is
+/// the fixed tile size all TileParams variants use).
+#[cfg(target_env = "ohos")]
+fn denoise_om_contract_matches(model: &crate::ohos_integration::om::OmModel) -> bool {
+    let expected_bytes = 3 * 504 * 504 * std::mem::size_of::<f32>();
+    model.input_count() == 1
+        && model.output_count() == 1
+        && model
+            .input_info(0)
+            .is_some_and(|i| i.dims == [1, 3, 504, 504] && i.byte_size == expected_bytes)
+        && model
+            .output_info(0)
+            .is_some_and(|o| o.dims == [1, 3, 504, 504] && o.byte_size == expected_bytes)
+}
+
+/// Download/verify the MindSpore Lite denoise model. Any failure (bad hash,
+/// download error, IO error) results in `Ok(None)`, causing the caller to
+/// fall back to the ORT CPU path.
+#[cfg(target_env = "ohos")]
+async fn try_provision_ms_model(
+    app_handle: &tauri::AppHandle,
+    models_dir: &Path,
+) -> Result<Option<PathBuf>> {
+    let asset = ModelAsset {
+        filename: DENOISE_MS_FILENAME,
+        url: DENOISE_MS_URL,
+        sha256: Some(DENOISE_MS_SHA256),
+        name: "NIND Denoise .ms",
+    };
+    match download_and_verify_model(app_handle, models_dir, &asset).await {
+        Ok(()) => Ok(Some(models_dir.join(DENOISE_MS_FILENAME))),
+        Err(e) => {
+            log::warn!("NPU model download failed ({e}), falling back to ORT.");
+            Ok(None)
+        }
+    }
+}
+
 pub fn run_ai_denoise(
     rgb_img: &Rgb32FImage,
-    session: &Mutex<Session>,
+    session: &DenoiseSession,
     on_progress: &dyn Fn(f32),
 ) -> Result<DynamicImage> {
-    let out = run_native_denoise(rgb_img, session, DENOISE_TILE, on_progress)?;
+    let out = match session {
+        DenoiseSession::Ort(model) => run_native_denoise(rgb_img, model, DENOISE_TILE, on_progress),
+        #[cfg(target_env = "ohos")]
+        DenoiseSession::Nnrt(model) => {
+            run_native_denoise_ms(rgb_img, model, DENOISE_TILE, on_progress)
+        }
+        #[cfg(target_env = "ohos")]
+        DenoiseSession::Cann(model) => {
+            run_native_denoise_om(rgb_img, model, DENOISE_TILE, on_progress)
+        }
+    }?;
     Ok(DynamicImage::ImageRgb32F(out))
 }
 

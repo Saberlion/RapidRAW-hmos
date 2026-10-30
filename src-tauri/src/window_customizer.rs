@@ -59,7 +59,7 @@ impl<R: Runtime> Plugin<R> for PinchZoomDisablePlugin {
                 apply_macos_window_rounding(_webview.inner().cast());
             }
 
-            #[cfg(target_os = "linux")]
+            #[cfg(all(target_os = "linux", not(target_env = "ohos")))]
             unsafe {
                 use gtk::GestureZoom;
                 use gtk::glib::ObjectExt;

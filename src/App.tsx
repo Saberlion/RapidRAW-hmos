@@ -22,6 +22,7 @@ import SettingsPanel from './components/panel/SettingsPanel';
 import ExportPanel from './components/panel/right/ExportPanel';
 import GlobalTooltip from './components/ui/GlobalTooltip';
 import AppModals from './components/modals/AppModals';
+import AgreementGate, { AGREEMENT_VERSION } from './components/AgreementGate';
 
 import SidePanelArea from './components/panel/SidePanelArea';
 import { PANEL_ICONS } from './components/panel/PanelSwitcher';
@@ -145,11 +146,13 @@ function ImageDragOverlayNode({ activeItem }: { activeItem: { path: string; path
 function App() {
   const [activeImageDragItem, setActiveImageDragItem] = useState<{ path: string; paths: string[] } | null>(null);
 
-  const { appSettings, theme, osPlatform, handleSettingsChange } = useSettingsStore(
+  const { appSettings, theme, osPlatform, isOhos, isOhosKnown, handleSettingsChange } = useSettingsStore(
     useShallow((state) => ({
       appSettings: state.appSettings,
       theme: state.theme,
       osPlatform: state.osPlatform,
+      isOhos: state.isOhos,
+      isOhosKnown: state.isOhosKnown,
       handleSettingsChange: state.handleSettingsChange,
     })),
   );
@@ -855,6 +858,22 @@ function App() {
   const ActiveOverlayIcon = activeLayoutDragItem ? PANEL_ICONS[activeLayoutDragItem] : null;
   const effectiveLeftWidth = uiVisibility.leftPanel ? leftPanelWidth : 48;
   const effectiveRightWidth = uiVisibility.rightPanel ? rightPanelWidth : useWidePanels ? 58 : 48;
+
+  // First-launch consent gate (app-store compliance): until the user accepts
+  // the current agreement version, render only the gate — managers, panels,
+  // and the library (with all its effects) stay unmounted, so no file or
+  // network activity happens before consent.
+  // On OpenHarmony, AppGallery's standardized privacy-statement hosting
+  // service already collects first-launch consent with its own platform
+  // dialog, so the in-app gate must never render a second consent dialog
+  // (AppGallery review feedback). Desktop and Android keep the gate.
+  if (!appSettings || !isOhosKnown) {
+    return <div className="h-screen w-screen bg-bg-primary" />;
+  }
+
+  if (!isOhos && appSettings.agreementAcceptedVersion !== AGREEMENT_VERSION) {
+    return <AgreementGate appSettings={appSettings} onAgree={handleSettingsChange} />;
+  }
 
   return (
     <>

@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useReducer, useState } from 'react';
+import { useEffect, useMemo, useReducer, useRef, useState } from 'react';
 import {
   ArrowLeft,
   Cloud,
@@ -39,7 +39,7 @@ import Input from '../ui/Input';
 import Slider from '../ui/Slider';
 import { ThemeProps, THEMES, DEFAULT_THEME_ID } from '../../utils/themes';
 import { useTranslation } from 'react-i18next';
-import { Invokes } from '../ui/AppProperties';
+import { Invokes, Theme } from '../ui/AppProperties';
 import {
   formatKeyCode,
   getDefaultCombo,
@@ -52,9 +52,20 @@ import Text from '../ui/Text';
 import { TextColors, TextVariants, TextWeights } from '../../types/typography';
 import { useOsPlatform } from '../../hooks/useOsPlatform';
 import { useCloudUsage } from '../../hooks/useCloudUsage';
-import { open } from '@tauri-apps/plugin-shell';
 import ImmichSettings from '../immich/ImmichSettings';
 import DataManagementSettings from './settings/DataManagementSettings';
+import { openExternalUrl } from '../../utils/externalLinks';
+import { revokeOhosFolderGrants } from '../../utils/ohosGrants';
+import { useSettingsStore } from '../../store/useSettingsStore';
+import { getAgreementDocument, type AgreementDocKind } from '../AgreementGate';
+import {
+  fetchOhosPrivacyState,
+  isPrivacyHostingMissing,
+  ohosConsentOf,
+  platformPrivacyLinks,
+  requestOhosPrivacyConsent,
+  revokeOhosPrivacyConsent,
+} from '../../utils/ohosPrivacy';
 
 interface ConfirmModalState {
   confirmText: string;
@@ -354,7 +365,7 @@ const CloudDashboard = () => {
           <Button
             variant="ghost"
             className={quietButtonClass}
-            onClick={() => open('https://www.getrapidraw.com/dashboard')}
+            onClick={() => void openExternalUrl('https://www.getrapidraw.com/dashboard')}
           >
             {t('settings.processing.ai.cloud.signedIn.manage')} <ExternalLinkIcon size={14} className="ml-1" />
           </Button>
@@ -392,7 +403,7 @@ const CloudDashboard = () => {
         <Text variant={TextVariants.small}>
           {t('settings.processing.ai.cloud.signedOut.upgradeDesc')}{' '}
           <button
-            onClick={() => open('https://www.getrapidraw.com/cloud')}
+            onClick={() => void openExternalUrl('https://www.getrapidraw.com/cloud')}
             className="text-accent hover:underline focus:outline-none"
           >
             {t('settings.processing.ai.cloud.signedOut.upgradeBtn')}
@@ -511,7 +522,7 @@ export default function SettingsPanel({
   const { authStatus, clerk, user, initAuth } = useCloudStore(
     useShallow((s) => ({ authStatus: s.authStatus, clerk: s.clerk, user: s.user, initAuth: s.initAuth })),
   );
-  const { t } = useTranslation();
+  const { t, i18n } = useTranslation();
   const [confirmModalState, setConfirmModalState] = useState<ConfirmModalState>({
     confirmText: t('settings.data.modals.confirmClear'),
     confirmVariant: 'primary',
@@ -536,6 +547,7 @@ export default function SettingsPanel({
   const [tempLensModel, setTempLensModel] = useState<string>('');
 
   const osPlatform = useOsPlatform();
+  const isOhos = useSettingsStore((s) => s.isOhos);
   const [processingSettings, setProcessingSettings] = useState({
     editorPreviewResolution: appSettings?.editorPreviewResolution || 1920,
     smallThumbnailResolution: appSettings?.smallThumbnailResolution || 480,
@@ -554,16 +566,74 @@ export default function SettingsPanel({
     rawPreprocessingSharpening: appSettings?.rawPreprocessingSharpening ?? 0.35,
     applyPreprocessingToNonRaws: appSettings?.applyPreprocessingToNonRaws ?? false,
     useAppleRaw9: appSettings?.useAppleRaw9 ?? false,
+    aiDenoiseBackend: appSettings?.aiDenoiseBackend ?? 'cpu',
   });
   const [restartRequired, setRestartRequired] = useState(false);
   const [activeCategory, setActiveCategory] = useState('general');
   const [dpr, setDpr] = useState(() => (typeof window !== 'undefined' ? window.devicePixelRatio : 1));
+  const [viewingDoc, setViewingDoc] = useState<AgreementDocKind | null>(null);
+  const docViewerRef = useRef<HTMLDivElement | null>(null);
+
+  // AppGallery privacy management service state (OHOS only).
+  const ohosPrivacy = useSettingsStore((s) => s.ohosPrivacy);
+  const [privacyBusy, setPrivacyBusy] = useState(false);
+  const [privacyRevokeOpen, setPrivacyRevokeOpen] = useState(false);
+  const privacyConsent = ohosConsentOf(ohosPrivacy);
+  const privacyLinks = platformPrivacyLinks(ohosPrivacy, i18n.language);
+  // Hosting not in use (1006700003): the platform keeps no record, so both
+  // privacy actions can only fail — gate them (docs 6.20).
+  const privacyHostingMissing = isPrivacyHostingMissing(ohosPrivacy);
+
+  // The store can change the consent behind our back (its standardized dialog,
+  // or a revocation from system settings), so re-read whenever About is opened.
+  useEffect(() => {
+    if (!isOhos || activeCategory !== 'about') return;
+    fetchOhosPrivacyState()
+      .then((state) => useSettingsStore.getState().setOhosPrivacy(state))
+      .catch(() => undefined);
+  }, [isOhos, activeCategory]);
+
+  const handleRequestPrivacyConsent = async () => {
+    setPrivacyBusy(true);
+    const requested = await requestOhosPrivacyConsent();
+    const refreshed = await fetchOhosPrivacyState();
+    useSettingsStore.getState().setOhosPrivacy(refreshed.ok ? refreshed : requested);
+    setPrivacyBusy(false);
+  };
+
+  const handleRevokePrivacyConsent = async () => {
+    setPrivacyBusy(true);
+    const revoked = await revokeOhosPrivacyConsent();
+    if (revoked.ok) {
+      // The ArkTS side verifies the revoke by re-reading the platform record
+      // (docs 6.20), so `ok` means the signature is really gone. The
+      // confirmation promised that file access has to be re-authorized: withdraw
+      // the persisted folder grants too, otherwise every existing root keeps
+      // working while the UI claims consent was revoked.
+      await revokeOhosFolderGrants();
+    }
+    const refreshed = await fetchOhosPrivacyState();
+    // Reflect what the PLATFORM reports. Forcing "not accepted" here used to
+    // make a revoke the store never confirmed (service not in use, or the
+    // signature still on file) look successful until the next launch — the
+    // "revoke does nothing" report.
+    useSettingsStore.getState().setOhosPrivacy(refreshed.ok ? refreshed : revoked);
+    setPrivacyBusy(false);
+    setPrivacyRevokeOpen(false);
+  };
+
+  // The doc viewer renders below the settings rows; without this, opening it
+  // from a "View" button is invisible (content grows below the fold).
+  useEffect(() => {
+    if (viewingDoc) docViewerRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+  }, [viewingDoc]);
 
   const settingCategories = useMemo(
     () => [
       { id: 'general', label: t('settings.categories.general'), icon: SlidersHorizontal },
       { id: 'processing', label: t('settings.categories.processing'), icon: Cpu },
       { id: 'shortcuts', label: t('settings.categories.shortcuts'), icon: Keyboard },
+      { id: 'about', label: t('settings.categories.about'), icon: Info },
     ],
     [t],
   );
@@ -598,6 +668,14 @@ export default function SettingsPanel({
       return true;
     });
   }, [t, osPlatform]);
+
+  const denoiseBackendOptions = useMemo<OptionItem<string>[]>(
+    () => [
+      { value: 'cpu', label: t('settings.processing.aiDenoiseBackendCpu') },
+      { value: 'npu', label: t('settings.processing.aiDenoiseBackendNpu') },
+    ],
+    [t],
+  );
 
   const linearRawOptions = useMemo<OptionItem<string>[]>(
     () => [
@@ -668,6 +746,7 @@ export default function SettingsPanel({
       rawPreprocessingSharpening: appSettings?.rawPreprocessingSharpening ?? 0.35,
       applyPreprocessingToNonRaws: appSettings?.applyPreprocessingToNonRaws ?? false,
       useAppleRaw9: appSettings?.useAppleRaw9 ?? false,
+      aiDenoiseBackend: appSettings?.aiDenoiseBackend ?? 'cpu',
     });
     setRestartRequired(false);
   }, [appSettings]);
@@ -866,6 +945,16 @@ export default function SettingsPanel({
   return (
     <>
       <ConfirmModal {...confirmModalState} onClose={closeConfirmModal} />
+      {/* AppGallery privacy consent revocation (OHOS About section). */}
+      <ConfirmModal
+        isOpen={privacyRevokeOpen}
+        title={t('settings.privacy.revoke')}
+        message={t('settings.privacy.revokeConfirm')}
+        confirmVariant="destructive"
+        confirmText={t('settings.privacy.revoke')}
+        onConfirm={handleRevokePrivacyConsent}
+        onClose={() => setPrivacyRevokeOpen(false)}
+      />
       <LayoutGroup id="settings-panel">
         <div className="flex flex-col h-full w-full text-text-primary">
           <header className="shrink-0 flex flex-wrap items-center justify-between gap-y-4 mb-8 pt-4">
@@ -934,10 +1023,13 @@ export default function SettingsPanel({
                       <SettingItem label={t('settings.general.theme')} description={t('settings.general.themeDesc')}>
                         <Dropdown
                           onChange={(value: any) => onSettingsChange({ ...appSettings, theme: value })}
-                          options={THEMES.map((theme: ThemeProps) => ({
-                            value: theme.id,
-                            label: t(theme.name as any),
-                          }))}
+                          options={[
+                            { value: Theme.System, label: t('settings.themes.system') },
+                            ...THEMES.map((theme: ThemeProps) => ({
+                              value: theme.id,
+                              label: t(theme.name as any),
+                            })),
+                          ]}
                           value={appSettings?.theme || DEFAULT_THEME_ID}
                           triggerClassName="bg-bg-primary"
                         />
@@ -1091,7 +1183,7 @@ export default function SettingsPanel({
                           description={t('settings.general.nativeTitlebarDesc')}
                         >
                           <Switch
-                            checked={appSettings?.decorations ?? false}
+                            checked={appSettings?.decorations ?? true}
                             id="native-titlebar-toggle"
                             label={t('settings.general.enableOsTitlebar')}
                             onChange={(checked) => {
@@ -1267,7 +1359,7 @@ export default function SettingsPanel({
                                     <Text variant={TextVariants.small}>
                                       {t('settings.processing.ai.cloud.signedOut.noAccount')}{' '}
                                       <button
-                                        onClick={() => open('https://www.getrapidraw.com/cloud')}
+                                        onClick={() => void openExternalUrl('https://www.getrapidraw.com/cloud')}
                                         className="text-accent hover:underline focus:outline-none"
                                       >
                                         {t('settings.processing.ai.cloud.signedOut.signup')}
@@ -1967,6 +2059,26 @@ export default function SettingsPanel({
                         />
                       </SettingItem>
 
+                      {isOhos && (
+                        <SettingItem
+                          label={t('settings.processing.aiDenoiseBackend')}
+                          description={t('settings.processing.aiDenoiseBackendDesc')}
+                        >
+                          <Dropdown
+                            onChange={(value: string) => handleProcessingSettingChange('aiDenoiseBackend', value)}
+                            options={denoiseBackendOptions}
+                            value={
+                              denoiseBackendOptions.some(
+                                (option) => option.value === processingSettings.aiDenoiseBackend,
+                              )
+                                ? processingSettings.aiDenoiseBackend
+                                : 'cpu'
+                            }
+                            triggerClassName="bg-bg-primary"
+                          />
+                        </SettingItem>
+                      )}
+
                       {osPlatform !== 'macos' && osPlatform !== 'windows' && (
                         <SettingItem
                           label={t('settings.processing.linuxCompat')}
@@ -2431,6 +2543,153 @@ export default function SettingsPanel({
                           {t('settings.controls.resetDefaults')}
                         </Button>
                       </div>
+                    </div>
+                  </div>
+                </motion.div>
+              )}
+              {activeCategory === 'about' && (
+                <motion.div
+                  key="about"
+                  initial={{ opacity: 0, x: 10 }}
+                  animate={{ opacity: 1, x: 0 }}
+                  exit={{ opacity: 0, x: -10 }}
+                  transition={{ duration: 0.2 }}
+                  className="space-y-10"
+                >
+                  <div className="p-6 bg-surface rounded-xl shadow-md">
+                    <Text variant={TextVariants.title} color={TextColors.accent} className="mb-8">
+                      {t('settings.about.title')}
+                    </Text>
+                    <div className="divide-y divide-border-color">
+                      {isOhos ? (
+                        <>
+                          <SettingItem
+                            label={t('settings.privacy.status')}
+                            description={t('settings.privacy.managedNotice')}
+                          >
+                            <Text variant={TextVariants.small} color={TextColors.secondary}>
+                              {privacyConsent === 'granted'
+                                ? t('settings.privacy.statusGranted')
+                                : privacyConsent === 'denied'
+                                  ? t('settings.privacy.statusDenied')
+                                  : privacyHostingMissing
+                                    ? t('settings.privacy.notIntegrated')
+                                    : t('settings.privacy.statusUnknown')}
+                            </Text>
+                          </SettingItem>
+                          {privacyLinks.map((link) => (
+                            <SettingItem key={link.url} label={t(link.labelKey)}>
+                              <a
+                                href={link.url}
+                                target="_blank"
+                                rel="noopener noreferrer"
+                                className="font-semibold text-accent hover:underline break-all"
+                              >
+                                {t('settings.about.view')}
+                              </a>
+                            </SettingItem>
+                          ))}
+                          <SettingItem
+                            label={t('settings.privacy.requestConsent')}
+                            description={t('settings.privacy.requestConsentDesc')}
+                          >
+                            {/* Both actions need the hosted statement to be in
+                                use: without a platform record a revoke can only
+                                fail, and the old UI reported success anyway
+                                (docs 6.20). Disabled rather than hidden so the
+                                feature stays discoverable. */}
+                            <Button
+                              className="bg-surface"
+                              disabled={privacyBusy || privacyHostingMissing}
+                              onClick={handleRequestPrivacyConsent}
+                            >
+                              {t('settings.privacy.requestConsent')}
+                            </Button>
+                          </SettingItem>
+                          <SettingItem
+                            label={t('settings.privacy.revoke')}
+                            description={t('settings.privacy.revokeDesc')}
+                          >
+                            <Button
+                              className="bg-surface"
+                              disabled={privacyBusy || privacyHostingMissing}
+                              onClick={() => setPrivacyRevokeOpen(true)}
+                            >
+                              {t('settings.privacy.revoke')}
+                            </Button>
+                          </SettingItem>
+                        </>
+                      ) : (
+                        <>
+                          <SettingItem
+                            label={t('settings.about.privacyPolicy')}
+                            description={t('settings.about.privacyPolicyDesc')}
+                          >
+                            <Button
+                              className="bg-surface"
+                              onClick={() => setViewingDoc(viewingDoc === 'privacy' ? null : 'privacy')}
+                            >
+                              {t('settings.about.view')}
+                            </Button>
+                          </SettingItem>
+                          <SettingItem
+                            label={t('settings.about.userAgreement')}
+                            description={t('settings.about.userAgreementDesc')}
+                          >
+                            <Button
+                              className="bg-surface"
+                              onClick={() => setViewingDoc(viewingDoc === 'terms' ? null : 'terms')}
+                            >
+                              {t('settings.about.view')}
+                            </Button>
+                          </SettingItem>
+                        </>
+                      )}
+                      <SettingItem
+                        label={t('settings.about.openSourceLicense')}
+                        description={t('settings.about.licenseDesc')}
+                      >
+                        <a
+                          href="https://www.gnu.org/licenses/agpl-3.0.en.html"
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          className="font-semibold text-accent hover:underline"
+                        >
+                          {t('settings.about.view')}
+                        </a>
+                      </SettingItem>
+                      <SettingItem
+                        label={t('settings.about.sourceCode')}
+                        description={t('settings.about.sourceCodeDesc')}
+                      >
+                        <a
+                          href="https://github.com/Saberlion/RapidRAW-hmos"
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          className="font-semibold text-accent hover:underline"
+                        >
+                          GitHub
+                        </a>
+                      </SettingItem>
+                    </div>
+                    {viewingDoc && !isOhos && (
+                      <div ref={docViewerRef} className="mt-6">
+                        <Text variant={TextVariants.heading} className="mb-2">
+                          {t(
+                            viewingDoc === 'privacy' ? 'settings.about.privacyPolicy' : 'settings.about.userAgreement',
+                          )}
+                        </Text>
+                        <div className="max-h-80 overflow-y-auto custom-scrollbar bg-bg-primary rounded-md p-4">
+                          <Text className="whitespace-pre-wrap leading-relaxed">
+                            {getAgreementDocument(viewingDoc, i18n.language)}
+                          </Text>
+                        </div>
+                      </div>
+                    )}
+                    <div className="mt-6">
+                      <Text variant={TextVariants.small} color={TextColors.secondary}>
+                        {t('settings.about.agplNotice')}
+                      </Text>
                     </div>
                   </div>
                 </motion.div>

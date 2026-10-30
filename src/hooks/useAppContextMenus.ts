@@ -57,6 +57,7 @@ import { useLibraryStore } from '../store/useLibraryStore';
 import { JobKind, useProcessStore } from '../store/useProcessStore';
 import { useUIStore } from '../store/useUIStore';
 import { useSettingsStore } from '../store/useSettingsStore';
+import { revokeOhosFolderGrants } from '../utils/ohosGrants';
 import {
   Invokes,
   ImageFlag,
@@ -980,6 +981,13 @@ export function useAppContextMenus(latestProps: UseAppContextMenusProps) {
                 onClick: () => {
                   const newRoots = rootPaths.filter((r: string) => r !== targetPath);
                   const newFolderTrees = folderTrees.filter((t: any) => t.path !== targetPath);
+
+                  // The folder grant lives in the platform (persisted FileKit
+                  // permission + the ability's grant record, re-activated on
+                  // every launch), so removing the root must withdraw it too —
+                  // otherwise the OS keeps authorizing a folder the user just
+                  // removed (docs 6.20).
+                  void revokeOhosFolderGrants([targetPath]);
 
                   const isCurrentInTarget =
                     currentFolderPath === targetPath ||

@@ -12,7 +12,7 @@
       {
         "label": "main",
         "create": false,
-        "title": "RapidRAW",
+        "title": "LightRaw",
         "width": 1280,
         "height": 720,
         "minWidth": 800,
@@ -26,7 +26,10 @@
       "capabilities": ["default", "desktop-cloud"],
       "assetProtocol": {
         "enable": true,
-        "scope": ["$APPCACHE/thumbnails/*"]
+        "scope": [
+          "$APPCACHE/thumbnails/*",
+          "/data/storage/el2/base/cache/thumbnails/*"
+        ]
       }
     },
     "macOSPrivateApi": true

@@ -2,7 +2,7 @@ const SERVICE: &str = "io.github.CyberTimon.RapidRAW.immich";
 const ACCOUNT: &str = "api-key";
 
 #[cfg(any(
-    target_os = "linux",
+    all(target_os = "linux", not(target_env = "ohos")),
     target_os = "macos",
     target_os = "windows",
     target_os = "android"
@@ -13,7 +13,7 @@ mod store {
     fn init() -> bool {
         static READY: OnceLock<bool> = OnceLock::new();
         *READY.get_or_init(|| {
-            #[cfg(target_os = "linux")]
+            #[cfg(all(target_os = "linux", not(target_env = "ohos")))]
             let store = zbus_secret_service_keyring_store::Store::new();
             #[cfg(target_os = "macos")]
             let store = apple_native_keyring_store::keychain::Store::new();
@@ -52,7 +52,7 @@ mod store {
 }
 
 #[cfg(any(
-    target_os = "linux",
+    all(target_os = "linux", not(target_env = "ohos")),
     target_os = "macos",
     target_os = "windows",
     target_os = "android"
@@ -80,7 +80,7 @@ pub fn save(api_key: &str) -> bool {
 }
 
 #[cfg(any(
-    target_os = "linux",
+    all(target_os = "linux", not(target_env = "ohos")),
     target_os = "macos",
     target_os = "windows",
     target_os = "android"
@@ -97,7 +97,7 @@ pub fn load() -> Option<String> {
 }
 
 #[cfg(not(any(
-    target_os = "linux",
+    all(target_os = "linux", not(target_env = "ohos")),
     target_os = "macos",
     target_os = "windows",
     target_os = "android"
@@ -107,7 +107,7 @@ pub fn save(_api_key: &str) -> bool {
 }
 
 #[cfg(not(any(
-    target_os = "linux",
+    all(target_os = "linux", not(target_env = "ohos")),
     target_os = "macos",
     target_os = "windows",
     target_os = "android"

@@ -49,10 +49,7 @@ use crate::preset_converter;
 use crate::tagging::COLOR_TAG_PREFIX;
 
 fn resolve_thumbnail_cache_dir(app_handle: &AppHandle) -> std::result::Result<PathBuf, String> {
-    let cache_dir = app_handle
-        .path()
-        .app_cache_dir()
-        .map_err(|e| e.to_string())?;
+    let cache_dir = crate::app_paths::app_cache_dir(app_handle).map_err(|e| e.to_string())?;
     let thumb_cache_dir = cache_dir.join("thumbnails");
     if !thumb_cache_dir.exists() {
         fs::create_dir_all(&thumb_cache_dir).map_err(|e| e.to_string())?;
@@ -856,10 +853,7 @@ pub enum AlbumItem {
 }
 
 fn get_albums_path(app_handle: &AppHandle) -> Result<PathBuf, String> {
-    let data_dir = app_handle
-        .path()
-        .app_data_dir()
-        .map_err(|e| e.to_string())?;
+    let data_dir = crate::app_paths::app_data_dir(app_handle).map_err(|e| e.to_string())?;
     let albums_dir = data_dir.join("albums");
     if !albums_dir.exists() {
         fs::create_dir_all(&albums_dir).map_err(|e| e.to_string())?;
@@ -1292,6 +1286,21 @@ pub async fn get_folder_children(
         Ok(Err(e)) => Err(e),
         Err(e) => Err(format!("Task failed: {}", e)),
     }
+}
+
+/// Returns whether each given directory is readable (a bare `read_dir` probe).
+/// The tree/children scanners swallow read_dir errors, so they cannot detect
+/// this: on OpenHarmony, a FileKit grant revoked by an app reinstall leaves
+/// the folder's metadata readable while read_dir fails with EPERM. The
+/// frontend probes saved library roots before restoring a session and
+/// re-requests the picker grant for the dead ones (porting doc 6.14).
+#[tauri::command]
+pub async fn check_paths_readable(paths: Vec<String>) -> Result<Vec<bool>, String> {
+    tauri::async_runtime::spawn_blocking(move || {
+        paths.iter().map(|p| std::fs::read_dir(p).is_ok()).collect()
+    })
+    .await
+    .map_err(|e| format!("Task failed: {}", e))
 }
 
 #[tauri::command]
@@ -2368,7 +2377,11 @@ pub fn rename_folder(path: String, new_name: String, app_handle: AppHandle) -> R
 
 #[tauri::command]
 pub fn delete_folder(path: String, app_handle: AppHandle) -> Result<(), String> {
-    #[cfg(any(target_os = "windows", target_os = "macos", target_os = "linux"))]
+    #[cfg(any(
+        target_os = "windows",
+        target_os = "macos",
+        all(target_os = "linux", not(target_env = "ohos"))
+    ))]
     {
         if let Err(trash_error) = trash::delete(&path) {
             log::warn!(
@@ -2379,7 +2392,11 @@ pub fn delete_folder(path: String, app_handle: AppHandle) -> Result<(), String> 
         }
     }
 
-    #[cfg(not(any(target_os = "windows", target_os = "macos", target_os = "linux")))]
+    #[cfg(not(any(
+        target_os = "windows",
+        target_os = "macos",
+        all(target_os = "linux", not(target_env = "ohos"))
+    )))]
     {
         fs::remove_dir_all(&path).map_err(|e| e.to_string())?;
     }
@@ -3339,9 +3356,7 @@ pub async fn load_metadata(path: String, app_handle: AppHandle) -> Result<ImageM
 }
 
 fn get_presets_path(app_handle: &AppHandle) -> Result<std::path::PathBuf, String> {
-    let presets_dir = app_handle
-        .path()
-        .app_data_dir()
+    let presets_dir = crate::app_paths::app_data_dir(app_handle)
         .map_err(|e| e.to_string())?
         .join("presets");
 
@@ -3372,9 +3387,7 @@ pub fn save_presets(presets: Vec<PresetItem>, app_handle: AppHandle) -> Result<(
 fn get_internal_library_root_path(app_handle: &AppHandle) -> Result<std::path::PathBuf, String> {
     #[cfg(not(target_os = "android"))]
     {
-        let library_dir = app_handle
-            .path()
-            .app_data_dir()
+        let library_dir = crate::app_paths::app_data_dir(app_handle)
             .map_err(|e| e.to_string())?
             .join("library");
 
@@ -3643,10 +3656,7 @@ pub fn clear_all_sidecars(root_path: String) -> Result<usize, String> {
 
 #[tauri::command]
 pub fn clear_thumbnail_cache(app_handle: AppHandle) -> Result<(), String> {
-    let cache_dir = app_handle
-        .path()
-        .app_cache_dir()
-        .map_err(|e| e.to_string())?;
+    let cache_dir = crate::app_paths::app_cache_dir(&app_handle).map_err(|e| e.to_string())?;
     let thumb_cache_dir = cache_dir.join("thumbnails");
 
     if thumb_cache_dir.exists() {
@@ -3683,7 +3693,7 @@ pub fn show_in_finder(path: String) -> Result<(), String> {
             .map_err(|e| e.to_string())?;
     }
 
-    #[cfg(target_os = "linux")]
+    #[cfg(all(target_os = "linux", not(target_env = "ohos")))]
     {
         if let Some(parent) = source_path.parent() {
             Command::new("xdg-open")
@@ -3698,6 +3708,11 @@ pub fn show_in_finder(path: String) -> Result<(), String> {
     #[cfg(target_os = "android")]
     {
         return Err("Show in File Manager is not natively supported via CLI on Android.".into());
+    }
+
+    #[cfg(target_env = "ohos")]
+    {
+        return Err("Show in File Manager is not supported on OpenHarmony yet.".into());
     }
 
     #[cfg(target_os = "ios")]
@@ -3748,7 +3763,11 @@ pub fn delete_files_from_disk(paths: Vec<String>, app_handle: AppHandle) -> Resu
 
     let final_paths_to_delete: Vec<PathBuf> = files_to_trash.into_iter().collect();
 
-    #[cfg(any(target_os = "windows", target_os = "macos", target_os = "linux"))]
+    #[cfg(any(
+        target_os = "windows",
+        target_os = "macos",
+        all(target_os = "linux", not(target_env = "ohos"))
+    ))]
     if let Err(trash_error) = trash::delete_all(&final_paths_to_delete) {
         log::warn!(
             "Failed to move files to trash: {}. Falling back to permanent delete.",
@@ -3767,7 +3786,11 @@ pub fn delete_files_from_disk(paths: Vec<String>, app_handle: AppHandle) -> Resu
         }
     }
 
-    #[cfg(not(any(target_os = "windows", target_os = "macos", target_os = "linux")))]
+    #[cfg(not(any(
+        target_os = "windows",
+        target_os = "macos",
+        all(target_os = "linux", not(target_env = "ohos"))
+    )))]
     for path in final_paths_to_delete {
         if path.is_file() {
             if let Err(e) = fs::remove_file(&path) {
@@ -3869,7 +3892,11 @@ pub fn delete_files_with_associated(
 
     let final_paths_to_delete: Vec<PathBuf> = files_to_trash.into_iter().collect();
 
-    #[cfg(any(target_os = "windows", target_os = "macos", target_os = "linux"))]
+    #[cfg(any(
+        target_os = "windows",
+        target_os = "macos",
+        all(target_os = "linux", not(target_env = "ohos"))
+    ))]
     if let Err(trash_error) = trash::delete_all(&final_paths_to_delete) {
         log::warn!(
             "Failed to move files to trash: {}. Falling back to permanent delete.",
@@ -3884,7 +3911,11 @@ pub fn delete_files_with_associated(
         }
     }
 
-    #[cfg(not(any(target_os = "windows", target_os = "macos", target_os = "linux")))]
+    #[cfg(not(any(
+        target_os = "windows",
+        target_os = "macos",
+        all(target_os = "linux", not(target_env = "ohos"))
+    )))]
     for path in final_paths_to_delete {
         if path.is_file() {
             if let Err(e) = fs::remove_file(&path) {
@@ -3899,10 +3930,7 @@ pub fn delete_files_with_associated(
 }
 
 pub fn get_thumb_cache_dir(app_handle: &AppHandle) -> Result<PathBuf, String> {
-    let cache_dir = app_handle
-        .path()
-        .app_cache_dir()
-        .map_err(|e| e.to_string())?;
+    let cache_dir = crate::app_paths::app_cache_dir(app_handle).map_err(|e| e.to_string())?;
     let thumb_cache_dir = cache_dir.join("thumbnails");
     if !thumb_cache_dir.exists() {
         fs::create_dir_all(&thumb_cache_dir).map_err(|e| e.to_string())?;
@@ -4109,7 +4137,11 @@ pub async fn import_files(
                 }
 
                 if settings.delete_after_import {
-                    #[cfg(any(target_os = "windows", target_os = "macos", target_os = "linux"))]
+                    #[cfg(any(
+                        target_os = "windows",
+                        target_os = "macos",
+                        all(target_os = "linux", not(target_env = "ohos"))
+                    ))]
                     {
                         if let Err(trash_error) = trash::delete(&source_path) {
                             log::warn!(
@@ -4137,7 +4169,7 @@ pub async fn import_files(
                     #[cfg(not(any(
                         target_os = "windows",
                         target_os = "macos",
-                        target_os = "linux"
+                        all(target_os = "linux", not(target_env = "ohos"))
                     )))]
                     {
                         fs::remove_file(&source_path).map_err(|e| e.to_string())?;

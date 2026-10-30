@@ -89,7 +89,7 @@ impl DenoiseMethod {
     }
 }
 
-type Session = Arc<Mutex<ort::session::Session>>;
+type Session = Arc<crate::ai_processing::DenoiseSession>;
 
 pub fn cache_epoch() -> u64 {
     cache().epoch

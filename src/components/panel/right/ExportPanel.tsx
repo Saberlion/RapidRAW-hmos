@@ -32,6 +32,7 @@ import { useOsPlatform } from '../../../hooks/useOsPlatform';
 import Text from '../../ui/Text';
 import { TextColors, TextVariants, TextWeights } from '../../../types/typography';
 import { useEditorStore } from '../../../store/useEditorStore';
+import { useSettingsStore } from '../../../store/useSettingsStore';
 import { useUIStore } from '../../../store/useUIStore';
 import ImmichExportOptions, { useImmichExportAvailable, useImmichExportChoice } from '../../immich/ImmichExportOptions';
 import { prepareImmichExport } from '../../immich/immichApi';
@@ -348,8 +349,30 @@ export default function ExportPanel({
     [appSettings, currentSettingsObject, onSettingsChange],
   );
 
-  const padRatioWidthField = useParsedTextField(padRatioWidth, setPadRatioWidth, parseRatio);
-  const padRatioHeightField = useParsedTextField(padRatioHeight, setPadRatioHeight, parseRatio);
+  // OHOS exports write straight into a user-granted public folder (the same
+  // grant model the library roots use), remembered between exports.
+  const [ohosExportFolder, setOhosExportFolder] = useState<string | null>(null);
+
+  useEffect(() => {
+    setOhosExportFolder(
+      appSettings?.exportPresets?.find((p) => p.id === '__last_used__')?.lastExportPath ?? null,
+    );
+  }, [appSettings]);
+
+  const handlePickExportFolder = useCallback(async (): Promise<string | null> => {
+    try {
+      const folder = (await invoke(Invokes.PickOhosFolder)) as string | null;
+      if (folder) {
+        setOhosExportFolder(folder);
+        saveLastUsedPreset(folder);
+      }
+      return folder ?? null;
+    } catch {
+      return null;
+    }
+  }, [saveLastUsedPreset]);
+
+  const padRatioWidthField = useParsedTextField(padRatioWidth, setPadRatioWidth, parseRatio);  const padRatioHeightField = useParsedTextField(padRatioHeight, setPadRatioHeight, parseRatio);
   const padColorField = useParsedTextField(padColor, setPadColor, normalizeHexColor);
 
   const padRatioWidthValue = padRatioWidthField.parsed;
@@ -386,6 +409,10 @@ export default function ExportPanel({
   const filenameInputRef = useRef<HTMLInputElement>(null);
   const osPlatform = useOsPlatform();
   const isAndroid = osPlatform === 'android';
+  const isOhos = useSettingsStore((s) => s.isOhos);
+  // OHOS exports write directly into a user-granted public folder (folder
+  // picker + remembered path); Android keeps the gallery/MediaStore flow.
+  const isMobile = osPlatform === 'android' || isOhos;
   const canExportToImmich = useImmichExportAvailable() && !isAndroid;
   const destination = destinationType === 'immich' && !canExportToImmich ? 'customFolder' : destinationType;
   const immichExport = useImmichExportChoice();
@@ -619,21 +646,29 @@ export default function ExportPanel({
 
       let outputFolderOrFile = '';
       const isOriginalFolder = destination === 'originalFolder';
+      // OHOS writes into a user-granted public folder with folder semantics
+      // (the Rust side derives the file name from the template and dedups),
+      // so it never uses the single-file / filename-only sentinels.
       const isImmich = destination === 'immich';
-      const shouldChooseOutputFile = numImages === 1 && !preserveFolders && !isOriginalFolder && !isImmich;
+      const shouldChooseOutputFile =
+        !isOhos && numImages === 1 && !preserveFolders && !isOriginalFolder && !isImmich;
 
       if (isImmich) {
         exportSettings.preserveFolders = false;
         outputFolderOrFile = await prepareImmichExport(immichExport.album, immichExport.withOriginal);
       } else if (isOriginalFolder) {
         outputFolderOrFile = 'originalFolderDummy';
+      } else if (isOhos) {
+        const folder = ohosExportFolder ?? (await handlePickExportFolder());
+        if (!folder) return;
+        outputFolderOrFile = folder;
       } else if (shouldChooseOutputFile) {
         const originalFilename = pathsToExport[0].split(/[\\/]/).pop() || '';
         const stem = originalFilename.substring(0, originalFilename.lastIndexOf('.')) || originalFilename;
         const suggestedName = (filenameTemplate || '').replace('{original_filename}', stem);
         const outputFileName = `${suggestedName}.${selectedFormat.extensions[0]}`;
 
-        outputFolderOrFile = isAndroid
+        outputFolderOrFile = isMobile
           ? outputFileName
           : ((await save({
               title: t('export.dialog.saveEditedImageTitle'),
@@ -647,7 +682,7 @@ export default function ExportPanel({
               ],
             })) as string);
       } else {
-        outputFolderOrFile = isAndroid
+        outputFolderOrFile = isMobile
           ? ''
           : ((await open({
               title: t('export.dialog.selectFolderTitle', { count: numImages }),
@@ -656,8 +691,8 @@ export default function ExportPanel({
             })) as string);
       }
 
-      if (isAndroid || outputFolderOrFile) {
-        if (!isAndroid) {
+      if (isMobile || outputFolderOrFile) {
+        if (!isMobile) {
           if (isOriginalFolder || isImmich) {
             saveLastUsedPreset(lastExportPath || '');
           } else {
@@ -811,6 +846,22 @@ export default function ExportPanel({
                       value={subfolder || ''}
                       placeholder={t('export.destination.subfolderPlaceholder')}
                     />
+                  </div>
+                )}
+
+                {isOhos && destinationType !== 'originalFolder' && (
+                  <div className="flex items-center gap-3 pl-2 border-l-2 border-surface">
+                    <Text variant={TextVariants.label} className="whitespace-nowrap min-w-[70px]">
+                      {t('export.destination.exportFolder')}
+                    </Text>
+                    <button
+                      type="button"
+                      className="w-full text-left bg-surface border border-transparent rounded-md px-3 py-2 text-sm text-text-primary hover:border-accent transition-colors truncate disabled:opacity-50"
+                      disabled={isExporting}
+                      onClick={() => void handlePickExportFolder()}
+                    >
+                      {ohosExportFolder || t('export.destination.chooseFolder')}
+                    </button>
                   </div>
                 )}
               </div>

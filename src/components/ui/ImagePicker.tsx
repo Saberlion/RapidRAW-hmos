@@ -1,7 +1,10 @@
+import { invoke } from '@tauri-apps/api/core';
 import { open } from '@tauri-apps/plugin-dialog';
 import { X } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 import Text from './Text';
+import { Invokes } from './AppProperties';
+import { useSettingsStore } from '../../store/useSettingsStore';
 import { TextVariants } from '../../types/typography';
 
 interface ImagePickerProps {
@@ -16,17 +19,30 @@ export default function ImagePicker({ imageName, onImageSelect, onClear, label }
 
   const handleSelectFile = async () => {
     try {
-      const selected = await open({
-        multiple: false,
-        filters: [
-          {
-            name: t('ui.imagePicker.filterLabel'),
-            extensions: ['png'],
-          },
-        ],
-      });
-      if (typeof selected === 'string') {
-        onImageSelect(selected);
+      const { isOhos } = useSettingsStore.getState();
+      let selectedPath: string | null = null;
+      if (isOhos) {
+        const paths = await invoke<string[]>(Invokes.PickOhosFiles, {
+          supportedExtensions: ['png'],
+          maxSelect: 1,
+        });
+        selectedPath = paths.length > 0 ? paths[0] : null;
+      } else {
+        const selected = await open({
+          multiple: false,
+          filters: [
+            {
+              name: t('ui.imagePicker.filterLabel'),
+              extensions: ['png'],
+            },
+          ],
+        });
+        if (typeof selected === 'string') {
+          selectedPath = selected;
+        }
+      }
+      if (selectedPath) {
+        onImageSelect(selectedPath);
       }
     } catch (err) {
       console.error('Failed to open image file dialog:', err);

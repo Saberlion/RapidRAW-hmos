@@ -1,7 +1,13 @@
-#[cfg(not(all(target_os = "windows", target_arch = "aarch64")))]
+#[cfg(not(any(
+    all(target_os = "windows", target_arch = "aarch64"),
+    target_env = "ohos"
+)))]
 use mimalloc::MiMalloc;
 
-#[cfg(not(all(target_os = "windows", target_arch = "aarch64")))]
+#[cfg(not(any(
+    all(target_os = "windows", target_arch = "aarch64"),
+    target_env = "ohos"
+)))]
 #[global_allocator]
 static GLOBAL: MiMalloc = MiMalloc;
 
@@ -26,6 +32,7 @@ mod ai_denoise;
 mod ai_jobs;
 mod ai_processing;
 mod android_integration;
+mod app_paths;
 mod app_settings;
 mod app_state;
 mod apple_raw;
@@ -60,6 +67,7 @@ mod mask_generation;
 mod memory_budget;
 mod multi_exposure;
 mod negative_conversion;
+mod ohos_integration;
 mod panorama_stitching;
 mod panorama_utils;
 mod preset_converter;
@@ -1797,7 +1805,16 @@ async fn generate_preview_for_path(
 }
 
 fn setup_logging(app_handle: &tauri::AppHandle) {
-    let log_dir = match app_handle.path().app_log_dir() {
+    // OpenHarmony: the tauri fork's desktop path resolver would point
+    // app_log_dir() into the FUSE user storage (EPERM on real devices);
+    // `app_paths::app_log_dir` redirects it to the process sandbox at
+    // /data/storage/el2/base, which is always mounted and writable (the
+    // webview keeps its data under files/__arkweb there). From the host
+    // shell the log is readable at
+    // /data/app/el2/100/base/<bundle>/files/logs/app.log. stdout/stderr are
+    // wired to /dev/null on real devices (verified via faultlog OPEN_FILES,
+    // 2026-10-05), so the log file is the only output channel there.
+    let log_dir = match crate::app_paths::app_log_dir(app_handle) {
         Ok(dir) => dir,
         Err(e) => {
             eprintln!("Failed to get app log directory: {}", e);
@@ -1871,7 +1888,7 @@ fn setup_logging(app_handle: &tauri::AppHandle) {
 
 #[tauri::command]
 fn get_log_file_path(app_handle: tauri::AppHandle) -> Result<String, String> {
-    let log_dir = app_handle.path().app_log_dir().map_err(|e| e.to_string())?;
+    let log_dir = crate::app_paths::app_log_dir(&app_handle).map_err(|e| e.to_string())?;
     let log_file_path = log_dir.join("app.log");
     Ok(log_file_path.to_string_lossy().to_string())
 }
@@ -1910,7 +1927,7 @@ struct MonitorBounds {
     height: u32,
 }
 
-#[cfg(not(target_os = "android"))]
+#[cfg(not(any(target_os = "android", target_env = "ohos")))]
 fn available_monitor_bounds(window: &tauri::WebviewWindow) -> Vec<MonitorBounds> {
     window
         .available_monitors()
@@ -1932,7 +1949,7 @@ fn available_monitor_bounds(window: &tauri::WebviewWindow) -> Vec<MonitorBounds>
         .unwrap_or_default()
 }
 
-#[cfg(target_os = "android")]
+#[cfg(any(target_os = "android", target_env = "ohos"))]
 fn available_monitor_bounds(_window: &tauri::WebviewWindow) -> Vec<MonitorBounds> {
     Vec::new()
 }
@@ -1980,10 +1997,10 @@ fn frontend_ready(
     let is_first_run = !state
         .window_setup_complete
         .swap(true, std::sync::atomic::Ordering::Relaxed);
-    #[cfg(target_os = "android")]
+    #[cfg(any(target_os = "android", target_env = "ohos"))]
     let _ = (is_first_run, &window, &app_handle);
 
-    #[cfg(not(target_os = "android"))]
+    #[cfg(not(any(target_os = "android", target_env = "ohos")))]
     {
         #[cfg(any(windows, target_os = "linux"))]
         let mut should_maximize = false;
@@ -1993,7 +2010,7 @@ fn frontend_ready(
         let _ = (&app_handle, is_first_run);
 
         #[cfg(any(windows, target_os = "linux"))]
-        if is_first_run && let Ok(config_dir) = app_handle.path().app_config_dir() {
+        if is_first_run && let Ok(config_dir) = crate::app_paths::app_config_dir(&app_handle) {
             let path = config_dir.join("window_state.json");
 
             if let Ok(contents) = std::fs::read_to_string(&path)
@@ -2054,14 +2071,14 @@ pub fn run() {
 
     let mut builder = tauri::Builder::default();
 
-    #[cfg(target_os = "linux")]
+    #[cfg(all(target_os = "linux", not(target_env = "ohos")))]
     {
         if !is_headless {
             builder = builder.plugin(tauri_plugin_wayland_nvidia_quirk::init());
         }
     }
 
-    #[cfg(not(any(target_os = "android", target_os = "ios")))]
+    #[cfg(not(any(target_os = "android", target_os = "ios", target_env = "ohos")))]
     {
         if !is_headless {
             builder = builder.plugin(tauri_plugin_single_instance::init(|app, argv, _cwd| {
@@ -2084,7 +2101,11 @@ pub fn run() {
         }
     }
 
-    #[cfg(any(target_os = "windows", target_os = "macos", target_os = "linux"))]
+    #[cfg(any(
+        target_os = "windows",
+        target_os = "macos",
+        all(target_os = "linux", not(target_env = "ohos"))
+    ))]
     {
         builder = builder
             .plugin(tauri_plugin_store::Builder::new().build())
@@ -2096,10 +2117,17 @@ pub fn run() {
             );
     }
 
+    // tauri-plugin-dialog has no OpenHarmony support (its rfd backend links GTK
+    // on Linux targets); the frontend uses OHOS-native file pickers instead
+    // (porting doc, Phase 2).
+    #[cfg(not(target_env = "ohos"))]
+    {
+        builder = builder.plugin(tauri_plugin_dialog::init());
+    }
+
     builder
         .plugin(tauri_plugin_os::init())
         .plugin(tauri_plugin_fs::init())
-        .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_process::init())
         .plugin(tauri_plugin_shell::init())
         .plugin(tauri_plugin_http::init())
@@ -2157,7 +2185,7 @@ pub fn run() {
                 crate::immich::start(&app_handle);
             }
 
-            if let Ok(cache_dir) = app_handle.path().app_cache_dir() {
+            if let Ok(cache_dir) = crate::app_paths::app_cache_dir(&app_handle) {
                 crate::ai_denoise::initialize_cache_dir(cache_dir.clone());
                 crate::effect_maps::initialize_cache_dir(cache_dir.clone());
                 crate::exif_processing::initialize_cache_dir(cache_dir.clone());
@@ -2173,7 +2201,8 @@ pub fn run() {
                 });
             }
 
-            let config_dir = app_handle.path().app_config_dir().expect("Failed to get config dir");
+            let config_dir = crate::app_paths::app_config_dir(&app_handle)
+                .expect("Failed to get config dir");
             let crash_flag_path = config_dir.join(".gpu_init_crash_flag");
 
             {
@@ -2209,7 +2238,7 @@ pub fn run() {
                         std::env::set_var("WGPU_BACKEND", backend);
                     }
 
-                #[cfg(target_os = "linux")]
+                #[cfg(all(target_os = "linux", not(target_env = "ohos")))]
                 {
                     if settings.linux_gpu_optimization.unwrap_or(false) {
                         std::env::set_var("WEBKIT_DISABLE_DMABUF_RENDERER", "1");
@@ -2220,24 +2249,36 @@ pub fn run() {
 
                 #[cfg(not(target_os = "android"))]
                 {
-                    let resource_path = app_handle
-                        .path()
-                        .resolve("resources", tauri::path::BaseDirectory::Resource)
-                        .expect("failed to resolve resource directory");
+                    #[cfg(target_env = "ohos")]
+                    {
+                        // On OpenHarmony, native libraries live inside the HAP's
+                        // library directory; a bare soname lets dlopen resolve
+                        // `libonnxruntime.so` from there (see build.rs).
+                        std::env::set_var("ORT_DYLIB_PATH", "libonnxruntime.so");
+                        println!("Set ORT_DYLIB_PATH to: libonnxruntime.so");
+                    }
 
-                    let ort_library_name = {
-                        #[cfg(target_os = "windows")]
-                        { "onnxruntime.dll" }
-                        #[cfg(target_os = "linux")]
-                        { "libonnxruntime.so" }
-                        #[cfg(target_os = "macos")]
-                        { "libonnxruntime.dylib" }
-                        #[cfg(not(any(windows, target_os = "linux", target_os = "macos")))]
-                        { "libonnxruntime.so" }
-                    };
-                    let ort_library_path = resource_path.join(ort_library_name);
-                    std::env::set_var("ORT_DYLIB_PATH", &ort_library_path);
-                    cli_println!("Set ORT_DYLIB_PATH to: {}", ort_library_path.display());
+                    #[cfg(not(target_env = "ohos"))]
+                    {
+                        let resource_path = app_handle
+                            .path()
+                            .resolve("resources", tauri::path::BaseDirectory::Resource)
+                            .expect("failed to resolve resource directory");
+
+                        let ort_library_name = {
+                            #[cfg(target_os = "windows")]
+                            { "onnxruntime.dll" }
+                            #[cfg(all(target_os = "linux", not(target_env = "ohos")))]
+                            { "libonnxruntime.so" }
+                            #[cfg(target_os = "macos")]
+                            { "libonnxruntime.dylib" }
+                            #[cfg(not(any(windows, target_os = "linux", target_os = "macos")))]
+                            { "libonnxruntime.so" }
+                        };
+                        let ort_library_path = resource_path.join(ort_library_name);
+                        std::env::set_var("ORT_DYLIB_PATH", &ort_library_path);
+                        cli_println!("Set ORT_DYLIB_PATH to: {}", ort_library_path.display());
+                    }
                 }
             }
 
@@ -2248,7 +2289,7 @@ pub fn run() {
                     log::info!("Applied processing backend setting: {}", backend);
                 }
 
-            #[cfg(target_os = "linux")]
+            #[cfg(all(target_os = "linux", not(target_env = "ohos")))]
             if settings.linux_gpu_optimization.unwrap_or(false) {
                 log::info!("Applied Linux Compatibility Mode (forced software compositing).");
             } else {
@@ -2290,7 +2331,7 @@ pub fn run() {
 
             let window_cfg = app.config().app.windows.first().unwrap().clone();
             let decorations = settings.decorations.unwrap_or(window_cfg.decorations);
-            #[cfg(target_os = "android")]
+            #[cfg(any(target_os = "android", target_env = "ohos"))]
             let _ = decorations;
 
             let main_window_cfg = app
@@ -2306,7 +2347,7 @@ pub fn run() {
                 tauri::WebviewWindowBuilder::from_config(app.handle(), &main_window_cfg)
                     .unwrap();
 
-            #[cfg(not(target_os = "android"))]
+            #[cfg(not(any(target_os = "android", target_env = "ohos")))]
             {
                 window_builder = window_builder.decorations(decorations).visible(false);
             }
@@ -2316,7 +2357,37 @@ pub fn run() {
             #[cfg(target_os = "android")]
             android_integration::initialize_android(&window);
 
-            #[cfg(not(target_os = "android"))]
+            #[cfg(target_env = "ohos")]
+            ohos_integration::initialize_ohos(&window);
+
+            #[cfg(target_env = "ohos")]
+            {
+                // Pipeline warmup: the Maleoon Vulkan driver takes ~11s to
+                // compile the five compute pipelines on a cold cache (first
+                // launch or after a WGSL change, 2026-10-05) — that used to
+                // stall the first image opened. Compile them at startup in
+                // the background with a tiny throwaway processor; pipelines
+                // are dimension-independent, so the processor created on
+                // demand hits a warm driver cache.
+                let warmup_handle = app.handle().clone();
+                std::thread::Builder::new()
+                    .name("pipeline-warmup".into())
+                    .spawn(move || {
+                        let state = warmup_handle.state::<AppState>();
+                        match gpu_processing::warm_up_pipelines(&state, &warmup_handle) {
+                            Ok(elapsed) => {
+                                log::info!("[pipeline-warmup] completed in {elapsed:.2?}")
+                            }
+                            Err(e) => log::warn!(
+                                "[pipeline-warmup] failed (first image open may stall): {}",
+                                e
+                            ),
+                        }
+                    })
+                    .expect("failed to spawn pipeline warmup thread");
+            }
+
+            #[cfg(not(any(target_os = "android", target_env = "ohos")))]
             {
                 let app_state = app.state::<AppState>();
                 if let Err(error) = get_or_init_gpu_context(&app_state, app.handle()) {
@@ -2333,7 +2404,7 @@ pub fn run() {
                 let mut initial_normal_rect = (default_w, default_h, 100i32, 100i32);
                 let mut state_loaded = false;
 
-                if let Ok(config_dir) = app.path().app_config_dir() {
+                if let Ok(config_dir) = crate::app_paths::app_config_dir(app) {
                     let path = config_dir.join("window_state.json");
                     if let Ok(contents) = std::fs::read_to_string(&path)
                         && let Ok(state) = serde_json::from_str::<WindowState>(&contents)
@@ -2404,7 +2475,8 @@ pub fn run() {
                         };
 
                         if let Some(state) = state_to_save
-                            && let Ok(config_dir) = app_handle_for_saver.path().app_config_dir()
+                            && let Ok(config_dir) =
+                                crate::app_paths::app_config_dir(&app_handle_for_saver)
                         {
                             let path = config_dir.join("window_state.json");
                             let _ = std::fs::create_dir_all(&config_dir);
@@ -2558,6 +2630,18 @@ pub fn run() {
             update_wgpu_transform,
             release_original_preview,
             android_integration::resolve_android_content_uri_name,
+            ohos_integration::ohos_window_control,
+            ohos_integration::is_ohos_build,
+  ohos_integration::exit_app,
+            ohos_integration::get_ohos_color_mode,
+                ohos_integration::pick_ohos_folder,
+                ohos_integration::pick_ohos_files,
+                ohos_integration::pick_ohos_save_file,
+                ohos_integration::open_external_url,
+                ohos_integration::revoke_ohos_folder_grants,
+                ohos_integration::get_ohos_privacy_state,
+                ohos_integration::request_ohos_privacy_consent,
+                ohos_integration::revoke_ohos_privacy_consent,
             cache_utils::clear_session_caches,
             cache_utils::clear_image_caches,
             app_settings::load_settings,
@@ -2609,6 +2693,7 @@ pub fn run() {
             file_management::get_folder_tree,
             file_management::get_folder_children,
             file_management::get_pinned_folder_trees,
+            file_management::check_paths_readable,
             file_management::update_thumbnail_queue,
             file_management::create_folder,
             file_management::delete_folder,

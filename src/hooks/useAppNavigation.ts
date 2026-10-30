@@ -550,7 +550,7 @@ export function useAppNavigation({ clearThumbnailQueue, refs }: AppNavigationPro
   }, [handleSelectSubfolder, handleSelectAlbum]);
 
   const handleOpenFolder = useCallback(async () => {
-    const { osPlatform, appSettings, handleSettingsChange } = useSettingsStore.getState();
+    const { osPlatform, isOhos, appSettings, handleSettingsChange } = useSettingsStore.getState();
     const { rootPaths, folderTrees, setLibrary } = useLibraryStore.getState();
     const isAndroid = osPlatform === 'android';
 
@@ -558,6 +558,11 @@ export function useAppNavigation({ clearThumbnailQueue, refs }: AppNavigationPro
       let selectedPath = '';
       if (isAndroid) {
         selectedPath = await invoke<string>(Invokes.GetOrCreateInternalLibraryRoot);
+      } else if (isOhos) {
+        // OHOS: tauri-plugin-dialog is excluded (its rfd backend has no
+        // OpenHarmony support); the ArkTS DocumentViewPicker bridge returns
+        // the picked folder path (null when the user cancelled).
+        selectedPath = (await invoke<string | null>(Invokes.PickOhosFolder)) ?? '';
       } else {
         const selected = await open({ directory: true, multiple: false, defaultPath: await homeDir() });
         if (typeof selected === 'string') {
@@ -599,10 +604,10 @@ export function useAppNavigation({ clearThumbnailQueue, refs }: AppNavigationPro
 
   const handleContinueSession = () => {
     const restore = async () => {
-      const { appSettings } = useSettingsStore.getState();
+      const { appSettings, isOhos, handleSettingsChange } = useSettingsStore.getState();
       const { setLibrary } = useLibraryStore.getState();
 
-      const rootFolders = appSettings?.rootFolders?.length
+      let rootFolders = appSettings?.rootFolders?.length
         ? appSettings.rootFolders
         : appSettings?.lastRootPath
           ? [appSettings.lastRootPath]
@@ -611,7 +616,54 @@ export function useAppNavigation({ clearThumbnailQueue, refs }: AppNavigationPro
       if (rootFolders.length === 0) return;
 
       const folderState = appSettings?.lastFolderState;
-      const pathToSelect = folderState?.currentFolderPath || rootFolders[0];
+      let pathToSelect = folderState?.currentFolderPath || rootFolders[0];
+
+      // OpenHarmony: FileKit picker grants do not survive app reinstalls, so
+      // saved roots turn unreadable until the user re-picks them — and the
+      // tree/children scanners swallow the read_dir EPERM, which would
+      // restore into an empty library (porting doc 6.13). Probe the roots
+      // first and re-request authorization for the dead ones.
+      if (isOhos) {
+        let aliveRoots: string[] | null = null;
+        try {
+          const readable = await invoke<boolean[]>(Invokes.CheckPathsReadable, { paths: rootFolders });
+          aliveRoots = rootFolders.filter((_, i) => readable[i] === true);
+        } catch (err) {
+          console.warn('Failed to probe library root readability, skipping re-grant flow', err);
+        }
+
+        if (aliveRoots !== null && aliveRoots.length < rootFolders.length) {
+          const alive = aliveRoots;
+          console.warn(
+            'Library roots unreadable (FileKit grant revoked?), requesting re-grant:',
+            rootFolders.filter((r) => !alive.includes(r)),
+          );
+          toast.info('Library folder access must be re-granted — please select your folder again.');
+          const repicked = await invoke<string | null>(Invokes.PickOhosFolder);
+
+          if (repicked) {
+            const underRoot = (p: string, root: string) =>
+              p === root || p.startsWith(root.endsWith('/') ? root : root + '/');
+            rootFolders = alive.filter((r) => !underRoot(r, repicked) && !underRoot(repicked, r));
+            rootFolders.push(repicked);
+            if (!pathToSelect.startsWith('Album: ') && !rootFolders.some((r) => underRoot(pathToSelect, r))) {
+              pathToSelect = repicked;
+            }
+            // The startup preload resolved against dead roots (empty trees);
+            // drop it so the restore below loads fresh data.
+            preloadedDataRef.current = undefined;
+            if (appSettings) {
+              await handleSettingsChange({ ...appSettings, rootFolders });
+            }
+          } else if (alive.length === 0) {
+            toast.error('Failed to restore session. A folder may have been moved or deleted.');
+            handleGoHome();
+            return;
+          } else {
+            rootFolders = alive;
+          }
+        }
+      }
 
       setLibrary({ rootPaths: rootFolders });
 

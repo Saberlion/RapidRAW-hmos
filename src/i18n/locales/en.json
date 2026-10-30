@@ -67,13 +67,13 @@
       "whiteBalance": "White Balance"
     },
     "curves": {
-      "channelTitle": "{{channel}} Channel",
       "channels": {
         "blue": "Blue",
         "green": "Green",
         "luma": "Luma",
         "red": "Red"
       },
+      "channelTitle": "{{channel}} Channel",
       "copyParametric": "Copy {{channel}} Parametric Curve",
       "copyPoint": "Copy {{channel}} Point Curve",
       "curveDataUnavailable": "Curve data not available.",
@@ -97,12 +97,12 @@
     },
     "details": {
       "aiDenoise": "AI Denoise",
-      "classicDenoise": "Classic Denoise",
       "aiDenoiseDetail": "Detail",
       "blueYellow": "Blue/Yellow",
       "centre": "Centré",
       "chromaticAberration": "Chromatic Aberration",
       "clarity": "Clarity",
+      "classicDenoise": "Classic Denoise",
       "color": "Color",
       "convertNegative": "Convert Negative",
       "dehaze": "Dehaze",
@@ -157,8 +157,8 @@
       "relightIntensity": "Intensity",
       "relightLight": "Light {{index}}",
       "relightRemoveLight": "Remove Light",
-      "relightShadowSoftness": "Shadow Softness",
       "relightShadows": "Shadows",
+      "relightShadowSoftness": "Shadow Softness",
       "relightShine": "Shine",
       "relightSoftness": "Softness",
       "relightType": "Light Type",
@@ -303,6 +303,8 @@
       "collage_other": "Create Collage",
       "confirmDelete": "Confirm Delete",
       "confirmDeleteVc": "Confirm Delete + Virtual Copies",
+      "convertNegative_one": "Convert Negative",
+      "convertNegative_other": "Convert Negatives",
       "copyImage_one": "Copy Image",
       "copyImage_other": "Copy {{count}} Images",
       "cullImage_one": "Auto Cull",
@@ -465,7 +467,9 @@
         "quickErase": "Quick Erase {{count}}",
         "quickErase_one": "Quick Erase {{count}}",
         "quickErase_other": "Quick Erase {{count}}",
-        "retouch": "Retouch {{count}}"
+        "retouch": "Retouch {{count}}",
+        "retouch_one": "Retouch {{count}}",
+        "retouch_other": "Retouch {{count}}"
       },
       "resetInpaintingTooltip": "Reset Inpainting",
       "settings": {
@@ -505,8 +509,8 @@
         "hPlaceholder": "H",
         "hTooltip": "Height",
         "removeTooltip": "Remove saved aspect ratio",
-        "saveTooltip": "Save aspect ratio as preset",
         "savedTooltip": "Saved aspect ratio {{ratio}}",
+        "saveTooltip": "Save aspect ratio as preset",
         "wPlaceholder": "W",
         "wTooltip": "Width"
       },
@@ -706,8 +710,8 @@
         "copySectionSettings": "Copy {{section}} Settings",
         "faceParts": {
           "bodySkin": "Body Skin",
-          "eyeWhites": "Eye Whites",
           "eyebrows": "Eyebrows",
+          "eyeWhites": "Eye Whites",
           "faceSkin": "Face Skin",
           "hair": "Hair",
           "iris": "Iris & Pupil",
@@ -779,8 +783,8 @@
       "organization": {
         "addTagPlaceholder": "Add tag...",
         "colorLabel": "Color Label",
-        "noTags": "No tags",
         "none": "None",
+        "noTags": "No tags",
         "rating": "Rating",
         "ratingLabels": "Rating & Labels",
         "tags": "Tags",
@@ -797,7 +801,7 @@
         "importPresetsTitle": "Import Presets",
         "legacyPreset": "Legacy Preset",
         "presetFile": "Preset File",
-        "rapidRawPreset": "RapidRAW Preset"
+        "rapidRawPreset": "LightRaw Preset"
       },
       "menu": {
         "configurePreset": "Configure Preset",
@@ -859,6 +863,8 @@
         "fullscreen": "Toggle Fullscreen (F)",
         "iso": "ISO",
         "redo": "Redo (Ctrl+Y) or History (Right-click)",
+        "showEdited": "Show Edited (B)",
+        "showOriginal": "Show Original (B)",
         "shutterSpeed": "Shutter Speed",
         "undo": "Undo (Ctrl+Z) or History (Right-click)"
       },
@@ -894,7 +900,9 @@
       "tb": "TB"
     },
     "destination": {
+      "chooseFolder": "Choose folder…",
       "customFolder": "Custom folder",
+      "exportFolder": "Export folder",
       "originalFolder": "Original image folder",
       "subfolder": "Subfolder",
       "subfolderPlaceholder": "e.g. final, WebP"
@@ -960,12 +968,12 @@
       "estimatedSize": "Estimated file size: ~{{size}}",
       "estimatedTotalSize": "Estimated total size: ~{{size}}",
       "estimatingSize": "Estimating size...",
+      "exporting": "Exporting…",
+      "exportingProgress": "Exporting… ({{current}}/{{total}})",
       "exportMultiple": "Export {{count}} {{label}}",
       "exportMultiple_one": "Export {{count}} {{label}}",
       "exportMultiple_other": "Export {{count}} {{label}}",
       "exportSingle": "Export {{label}}",
-      "exporting": "Exporting…",
-      "exportingProgress": "Exporting… ({{current}}/{{total}})",
       "failed": "Export failed",
       "noImageSelected": "No image selected for export.",
       "noImagesSelected": "No images selected.",
@@ -997,7 +1005,7 @@
     "close": {
       "cancel": "Cancel",
       "closeAnyway": "Close anyway",
-      "message": "Edits waiting for Immich: {{number}}. They stay on this computer and are sent the next time RapidRAW runs and Immich is reachable.",
+      "message": "Edits waiting for Immich: {{number}}. They stay on this computer and are sent the next time LightRaw runs and Immich is reachable.",
       "title": "Edits not in Immich yet"
     },
     "export": {
@@ -1108,8 +1116,8 @@
       "iso": "ISO",
       "metadata": "Metadata",
       "noMetadataAvailable": "No metadata available",
-      "noTagsAdded": "No tags added",
       "none": "None",
+      "noTagsAdded": "No tags added",
       "rateAndLabel": "Rate & Label",
       "rating": "Rating",
       "selectImagesToCompare": "Select images to compare",
@@ -1120,9 +1128,9 @@
       "vc": "VC"
     },
     "filterExit": {
-      "hiddenSingle": "{{name}} no longer matches the filter",
       "hiddenMultiple_one": "{{count}} images no longer match the filter",
       "hiddenMultiple_other": "{{count}} images no longer match the filter",
+      "hiddenSingle": "{{name}} no longer matches the filter",
       "undo": "Undo"
     },
     "filters": {
@@ -1225,11 +1233,6 @@
         "filterByFileType": "Filter by File Type",
         "filterByFlag": "Filter by Flag",
         "filterByRating": "Filter by Rating",
-        "ratingOperator": {
-          "eq": "Exactly this rating",
-          "gte": "This rating or higher",
-          "lte": "This rating or lower"
-        },
         "groupEditedFiles": "Include edited files in groups",
         "groupIgnoreMetadata": "Ignore mismatched EXIF dates",
         "groupOff": "Off",
@@ -1240,6 +1243,11 @@
         "metadataHover": "On Hover",
         "metadataOff": "Off",
         "noLabel": "No Label",
+        "ratingOperator": {
+          "eq": "Exactly this rating",
+          "gte": "This rating or higher",
+          "lte": "This rating or lower"
+        },
         "recursive": "Recursive",
         "showMetadata": "Show Metadata",
         "sortAscending": "Sort Ascending",
@@ -1250,14 +1258,19 @@
         "title": "View Options"
       }
     },
+    "import": {
+      "complete": "Import Complete!",
+      "failed": "Import Failed!",
+      "progress": "Importing... ({{current}}/{{total}})"
+    },
     "items": {
       "cloudPlaceholder": "Stored in iCloud — not downloaded",
-      "immichPlaceholder": "Stored in Immich — not downloaded",
       "collapseFolder": "Collapse Folder",
       "currentFolder": "Current Folder",
       "expandFolder": "Expand Folder",
       "imagesCount_one": "1 image",
       "imagesCount_other": "{{count}} images",
+      "immichPlaceholder": "Stored in Immich — not downloaded",
       "rejected": "Rejected",
       "tooltipAperture": "Aperture",
       "tooltipFocalLength": "Focal Length",
@@ -1315,7 +1328,7 @@
     },
     "splash": {
       "addFolder": "Add Folder",
-      "brand": "RapidRAW",
+      "brand": "LightRaw",
       "continueSession": "Continue Session",
       "contribute": "Contribute on GitHub",
       "descriptionAndroid": "A blazingly fast, GPU-accelerated RAW image editor. Open the library to begin.",
@@ -1356,6 +1369,11 @@
       "goHome": "Go to Home",
       "importImages": "Import Images",
       "select": "Select"
+    },
+    "viewMode": {
+      "culling": "Culling View",
+      "grid": "Grid View",
+      "list": "List View"
     }
   },
   "masks": {
@@ -1443,6 +1461,7 @@
         "colorMixer": "Color Mixer",
         "cropAspectRatio": "Crop & Aspect Ratio",
         "curves": "Curves",
+        "exposureToneMapper": "Exposure & Tone Mapper",
         "fog": "Fog",
         "grain": "Grain",
         "guidedPerspective": "Guided Perspective",
@@ -1457,6 +1476,7 @@
         "presence": "Presence",
         "relight": "Relight",
         "sharpness": "Sharpness",
+        "tone": "Tone",
         "transformRotation": "Transform & Rotation",
         "vignette": "Vignette",
         "whiteBalance": "White Balance"
@@ -1489,9 +1509,9 @@
       "applyButton_one": "Apply to 1 image",
       "applyButton_other": "Apply to {{count}} images",
       "bestImage": "Best Image",
+      "blurryImagesTab": "Blurry Images",
       "blurThreshold": "Blur Threshold",
       "blurThresholdDesc": "Images with a sharpness score below this value are flagged. Higher is stricter.",
-      "blurryImagesTab": "Blurry Images",
       "cancel": "Cancel",
       "close": "Close",
       "cullingFailed": "Culling Failed",
@@ -1513,6 +1533,36 @@
       "startCulling": "Start Culling",
       "starting": "Starting...",
       "title": "Cull Images"
+    },
+    "denoise": {
+      "batchProgressText": "Denoising {{current}} of {{total}}...",
+      "btnBatchDenoise": "Batch Denoise & Save",
+      "btnRetry": "Retry",
+      "btnSave": "Save",
+      "btnStart": "Start",
+      "cancel": "Cancel",
+      "close": "Close",
+      "denoised": "Denoised",
+      "denoisingProgress": "Denoising in Progress",
+      "description": "Remove noise from your image using AI-powered or traditional denoising.",
+      "downloadingText": "Downloading {{status}}...",
+      "gpuWarningTooltip": "NIND Denoise does not yet support GPU acceleration due to dependency limitations.",
+      "initializing": "Initializing...",
+      "methodAi": "NIND (AI - Best for RAW)",
+      "methodBm3d": "BM3D (Traditional - All formats)",
+      "methodLabel": "Method",
+      "methodRaw9": "Apple RAW 9 (Neural Engine)",
+      "openInEditor": "Open in Editor",
+      "original": "Original",
+      "panZoomEnabled": "Pan & Zoom enabled",
+      "processingFailed": "Processing Failed",
+      "qualityTileSizeLabel": "Quality / Tile Size",
+      "reset": "Reset",
+      "saveSuccess": "Image Saved Successfully!",
+      "speedNotice": "This may take a few minutes depending on image size and selected method.",
+      "strengthLabel": "Strength",
+      "titleBatch": "Denoise Images",
+      "titleSingle": "Denoise Image"
     },
     "focusStack": {
       "cancel": "Cancel",
@@ -1596,6 +1646,30 @@
       "zoomInTooltip": "Zoom In",
       "zoomOutTooltip": "Zoom Out"
     },
+    "negativeConversion": {
+      "blueWeight": "Blue (Yellow)",
+      "cancel": "Cancel",
+      "colorTiming": "Color Timing",
+      "compareTooltip": "Hold to View Original",
+      "contrast": "Contrast (Grade)",
+      "convertAndSave": "Convert & Save",
+      "convertAndSaveAll": "Convert & Save All ({{count}})",
+      "convertAndSaveAll_one": "Convert & Save All ({{count}})",
+      "convertAndSaveAll_other": "Convert & Save All ({{count}})",
+      "converting": "Converting",
+      "convertingProgress": "Converting {{current}}/{{total}}",
+      "exposure": "Exposure",
+      "greenWeight": "Green (Magenta)",
+      "noticeText": "Inversion logic inspired by <0>NegPy</0> created by marcinz606 (<1>GPL-3.0</1>).",
+      "originalLabel": "Original Negative",
+      "printGrade": "Print Grade",
+      "redWeight": "Red (Cyan)",
+      "resetTooltip": "Reset",
+      "resetViewTooltip": "Reset View",
+      "title": "Negative Conversion",
+      "zoomInTooltip": "Zoom In",
+      "zoomOutTooltip": "Zoom Out"
+    },
     "panorama": {
       "cancel": "Cancel",
       "close": "Close",
@@ -1667,7 +1741,21 @@
     }
   },
   "settings": {
+    "about": {
+      "agplNotice": "This application is free software licensed under the GNU AGPL-3.0. The full license text and source code are available via the links above.",
+      "licenseDesc": "LightRaw is licensed under AGPL-3.0",
+      "openSourceLicense": "Open Source License",
+      "privacyPolicy": "Privacy Policy",
+      "privacyPolicyDesc": "How LightRaw handles your data",
+      "sourceCode": "Source Code",
+      "sourceCodeDesc": "LightRaw is open source — contributions welcome",
+      "title": "About LightRaw",
+      "userAgreement": "User Agreement",
+      "userAgreementDesc": "Terms of use for LightRaw",
+      "view": "View"
+    },
     "categories": {
+      "about": "About",
       "general": "General",
       "processing": "Processing",
       "shortcuts": "Controls"
@@ -1697,11 +1785,21 @@
       "allTags": "Clear All Tags",
       "allTagsDesc": "Removes AI-generated and user-added tags from all images in your root folders. Color labels are kept.",
       "clear": "Clear",
+      "clearSidecars": "Clear All Sidecar Files",
+      "clearSidecarsButton": "Clear",
+      "clearSidecarsDesc": "This will delete all .rrdata files (containing your edits) within your root folders:",
+      "clearThumbnail": "Clear Thumbnail Cache",
+      "clearThumbnailButton": "Clear",
+      "clearThumbnailDesc": "This will delete all cached thumbnail images. They will be regenerated automatically as you browse your library.",
       "delete": "Delete",
       "deleteEdits": "Delete All Edits",
       "deleteEditsDesc": "Removes every .rrdata sidecar (your edits) in all root folders. This cannot be undone.",
       "libraryAndWorkspace": "Library & Workspace",
       "limit": "Limit",
+      "loading": "Loading...",
+      "logs": "View Application Logs",
+      "logsButton": "Open",
+      "logsDesc": "View the application's log file for troubleshooting. The log is located at:",
       "modals": {
         "aiDenoiseMessage": "Are you sure you want to clear the AI Denoise cache?\n\nImages with AI Denoise enabled will need to be denoised again, which can take several minutes per image.",
         "aiMapsMessage": "Are you sure you want to clear the depth & normal maps?\n\nImages using Lens Blur, Fog or Relight will regenerate their maps the next time they are opened.",
@@ -1710,9 +1808,11 @@
         "cacheMessage": "Are you sure you want to clear the thumbnail cache?\n\nAll thumbnails will need to be regenerated, which may be slow for large folders.",
         "confirmAiTitle": "Confirm AI Tag Deletion",
         "confirmAllTitle": "Confirm All Tag Deletion",
+        "confirmCacheTitle": "Confirm Cache Deletion",
         "confirmClear": "Clear",
         "confirmClearAi": "Clear AI Tags",
         "confirmClearAll": "Clear All Tags",
+        "confirmClearCache": "Clear Cache",
         "confirmDeleteAllEdits": "Delete All Edits",
         "confirmResetLayout": "Reset Layout",
         "confirmResetLayoutTitle": "Reset Workspace Layout",
@@ -1726,6 +1826,7 @@
       "noFolders": "No folders selected",
       "refresh": "Refresh",
       "reset": "Reset",
+      "resetLayoutButton": "Reset Layout",
       "resetLayoutDesc": "Restore panel docks, side splitters, heights, and panel switchers to the default layout.",
       "resetLayoutTitle": "Reset Workspace Layout",
       "show": "Show",
@@ -1739,7 +1840,14 @@
         "allSuccess_other": "{{count}} files updated. All non-color tags removed.",
         "cacheSuccess": "Thumbnail cache cleared successfully.",
         "cleared": "Cleared successfully.",
+        "clearingAi": "Clearing AI tags from all sidecar files...",
+        "clearingAll": "Clearing all tags from sidecar files...",
+        "clearingCache": "Clearing thumbnail cache...",
+        "deleting": "Deleting sidecar files, please wait...",
+        "failedToGetPath": "Could not retrieve log file path.",
         "layoutResetSuccess": "Workspace layout reset to default.",
+        "processing": "Processing...",
+        "resettingLayout": "Resetting workspace...",
         "sidecarSuccess": "{{count}} sidecar files deleted successfully.",
         "sidecarSuccess_one": "{{count}} sidecar file deleted successfully.",
         "sidecarSuccess_other": "{{count}} sidecar files deleted successfully."
@@ -1762,7 +1870,7 @@
       },
       "storageTitle": "Storage",
       "title": "Data Management",
-      "totalUsed": "RapidRAW is using {{size}} on this device."
+      "totalUsed": "LightRaw is using {{size}} on this device."
     },
     "general": {
       "createXmp": "Create Missing XMP Files",
@@ -1782,7 +1890,7 @@
       "font": "Font",
       "fontDesc": "Change the application font.",
       "nativeTitlebar": "Native Titlebar",
-      "nativeTitlebarDesc": "Use your system's default window titlebar instead of RapidRAW's custom one.",
+      "nativeTitlebarDesc": "Use your system's default window titlebar instead of LightRaw's custom one.",
       "neutralGreyCanvas": "Neutral Grey Canvas",
       "neutralGreyCanvasDesc": "Use a neutral grey canvas for more accurate color and exposure grading without changing the app theme.",
       "poppins": "Poppins",
@@ -1878,18 +1986,38 @@
       "saved": "Saved Lenses",
       "title": "My Lenses"
     },
+    "privacy": {
+      "managedNotice": "This app uses AppGallery's managed privacy statement; the first-launch privacy dialog is provided by AppGallery.",
+      "notIntegrated": "Not enabled",
+      "requestConsent": "Request consent",
+      "requestConsentDesc": "Show AppGallery's standardized privacy dialog",
+      "revoke": "Revoke consent",
+      "revokeConfirm": "Revoke the recorded privacy consent? The AppGallery privacy dialog will be shown again on the next launch, and file access will need to be re-authorized.",
+      "revokeDesc": "Clear the recorded consent; the next launch asks again",
+      "status": "Consent status",
+      "statusDenied": "Not accepted",
+      "statusGranted": "Accepted",
+      "statusUnknown": "Unknown"
+    },
     "processing": {
       "advanced": {
-        "heading": "Advanced",
-        "headingDesc": "Performance tuning for thumbnails, caching and exports. The defaults work well for most users.",
-        "title": "Advanced Settings",
         "auto": "Auto",
+        "exportMemoryLimit": "Export Memory Limit",
+        "exportMemoryLimitDesc": "Share of free RAM that batch exports may use. Lower it to keep other apps responsive during large exports.",
         "exportThreads": "Parallel Exports",
         "exportThreadsDesc": "Number of images exported at the same time. Auto picks a value based on your CPU. Lower it if large exports fail or your GPU has little memory.",
-        "exportMemoryLimit": "Export Memory Limit",
-        "exportMemoryLimitDesc": "Share of free RAM that batch exports may use. Lower it to keep other apps responsive during large exports."
+        "heading": "Advanced",
+        "headingDesc": "Performance tuning for thumbnails, caching and exports. The defaults work well for most users.",
+        "title": "Advanced Settings"
       },
       "ai": {
+        "aiFree": {
+          "description": "Turn off every AI feature. All AI-related controls are hidden from the interface so LightRaw works as a purely traditional RAW editor.",
+          "feature1": "No AI masks, lens blur or generative edits in the UI",
+          "feature2": "Existing AI edits still render normally",
+          "feature3": "A cleaner, more focused interface",
+          "title": "AI-Free"
+        },
         "cloud": {
           "description": "For those who want a simpler solution, an optional subscription provides the same high-quality results as self-hosting without any hassle. This is the most convenient option and the best way to support the project.",
           "feature1": "Maximum convenience, no setup",
@@ -1919,7 +2047,7 @@
         "connector": {
           "address": "AI Connector Address",
           "addressDesc": "Enter the address and port of your running AI Connector instance. Required for generative AI features.",
-          "description": "For users with a capable GPU who want maximum control, connect RapidRAW to your own Connector server. This gives you full control for technical workflows.",
+          "description": "For users with a capable GPU who want maximum control, connect LightRaw to your own Connector server. This gives you full control for technical workflows.",
           "failed": "Connection failed.",
           "feature1": "Use your own ComfyUI instance",
           "feature2": "Cost-free advanced generative edits",
@@ -1927,10 +2055,10 @@
           "success": "Connection successful!",
           "test": "Test",
           "testing": "Testing...",
-          "title": "Self-Hosted (RapidRAW AI Connector)"
+          "title": "Self-Hosted (LightRaw AI Connector)"
         },
         "cpu": {
-          "description": "Integrated directly into RapidRAW, these features run entirely on your computer. They are fast, free, and require no setup, making them ideal for everyday workflow acceleration.",
+          "description": "Integrated directly into LightRaw, these features run entirely on your computer. They are fast, free, and require no setup, making them ideal for everyday workflow acceleration.",
           "feature1": "AI Masking (Subject, Sky, Foreground)",
           "feature2": "Automatic Image Tagging",
           "feature3": "Simple on-device Generative Replace",
@@ -1939,14 +2067,7 @@
           "gpuAccelerationLabel": "Use GPU for AI models",
           "title": "Built-in AI"
         },
-        "aiFree": {
-          "description": "Turn off every AI feature. All AI-related controls are hidden from the interface so RapidRAW works as a purely traditional RAW editor.",
-          "feature1": "No AI masks, lens blur or generative edits in the UI",
-          "feature2": "Existing AI edits still render normally",
-          "feature3": "A cleaner, more focused interface",
-          "title": "AI-Free"
-        },
-        "description": "RapidRAW's AI is built for flexibility. Choose your ideal workflow, from fast local tools to powerful self-hosting.",
+        "description": "LightRaw's AI is built for flexibility. Choose your ideal workflow, from fast local tools to powerful self-hosting.",
         "providers": {
           "aiConnector": "AI Connector",
           "aiFree": "AI-Free",
@@ -1955,6 +2076,10 @@
         },
         "title": "Generative AI"
       },
+      "aiDenoiseBackend": "AI Denoise Backend",
+      "aiDenoiseBackendCpu": "CPU (ONNX Runtime)",
+      "aiDenoiseBackendDesc": "Selects the inference backend for AI denoise (NIND). NPU runs on the device's NPU hardware (~5x faster) and falls back to CPU (ONNX Runtime) automatically if the NPU or model is unavailable.",
+      "aiDenoiseBackendNpu": "NPU (on-device)",
       "alwaysDecodeRaw": "Always Decode RAW",
       "alwaysDecodeRawDesc": "Force full RAW decoding for thumbnails instead of using embedded JPEG previews. Enable this if your thumbnails look different in color or contrast compared to the opened image.",
       "alwaysDecodeRawLabel": "Always decode RAW for thumbnails",
@@ -2035,6 +2160,7 @@
       "previewResDesc": "Determines the maximum resolution of the preview. Lower values significantly improve performance.",
       "previewStrategy": "Preview Rendering Strategy",
       "qualities": {
+        "full": "Full Resolution",
         "high": "High Quality",
         "performance": "Performance"
       },
@@ -2062,16 +2188,21 @@
     "tagging": {
       "addCustomPlaceholder": "Add custom AI tags (comma separated)...",
       "addCustomTooltip": "Add AI tag",
-      "addShortcutTooltip": "Add Shortcut",
       "addShortcutsPlaceholder": "Add shortcuts (comma separated)...",
+      "addShortcutTooltip": "Add Shortcut",
       "aiTagging": "AI Tagging",
       "aiTaggingDesc": "Enables automatic image tagging using an AI (CLIP) model. This will download an additional model and impact performance while browsing folders. Tags are used for searching a folder.",
       "amount": "Amount",
       "automaticAiTagging": "Automatic AI Tagging",
+      "clearAiTagsButton": "Clear",
+      "clearAiTagsDesc": "This will remove all AI-generated tags from your .rrdata files in all active root folders. User-added tags will be kept.",
+      "clearAiTagsTitle": "Clear AI Tags",
+      "clearAllTagsDesc": "This will remove all AI-generated and user-added tags from your .rrdata files in all active root folders. Color labels will be kept.",
+      "clearAllTagsTitle": "Clear All Tags",
       "clearCustomTooltip": "Clear AI Tag List",
       "clearShortcutsTooltip": "Clear Shortcuts Tag List",
       "customList": "Custom AI Tag List",
-      "customListDesc": "If provided, the AI will ONLY use tags from this list, overriding RapidRAW’s built-in list. Tagging works only in English.",
+      "customListDesc": "If provided, the AI will ONLY use tags from this list, overriding LightRaw’s built-in list. Tagging works only in English.",
       "maxAiTags": "Maximum AI Tags",
       "maxAiTagsDesc": "The maximum number of tags to generate per image.",
       "noCustomTags": "No custom AI tags (Using built-in list)",
@@ -2083,7 +2214,7 @@
       "title": "Tagging"
     },
     "thanks": {
-      "description": "A huge thank you to the following projects that were very important in the development of RapidRAW:",
+      "description": "A huge thank you to the following projects that were very important in the development of LightRaw:",
       "list": {
         "birefnet": "For the high-resolution segmentation model that powers the AI foreground detection.",
         "darktable": "For some reference implementations that guided parts of this work.",
@@ -2091,14 +2222,15 @@
         "efficientsam3": "For the efficient promptable segmentation model distilled from SAM 3 that powers the AI sky and text masks.",
         "lama": "For the powerful & simple image inpainting model, which enables content-aware fill and object removal.",
         "lensfun": "For its invaluable open-source library and comprehensive database for automatic lens correction.",
-        "libgphoto2": "For the comprehensive camera communication library powering RapidRAW's tethering and remote capture subsystem.",
+        "libgphoto2": "For the comprehensive camera communication library powering LightRaw's tethering and remote capture subsystem.",
         "mediapipe": "For the fast face landmark and segmentation models that power the AI face masks.",
         "negpy": "For the inspiration behind the negative conversion logic.",
-        "nind": "For providing AI models that power the AI noise reduction capabilities in RapidRAW.",
+        "nind": "For providing AI models that power the AI noise reduction capabilities in LightRaw.",
         "rawler": "For the excellent Rust crate that provides the foundation for RAW file processing in this project.",
         "sam2": "For providing the foundation model used for the AI subject detection capabilities.",
-        "spektrafilm": "For the spectrally-based film emulation LUTs by Andrea Volpato, used to power RapidRAW's built-in film emulations. Licensed CC BY-SA 4.0.",
-        "you": "For using and supporting RapidRAW. Your interest keeps this project alive and evolving.",
+        "spektrafilm": "For the spectrally-based film emulation LUTs by Andrea Volpato, used to power LightRaw's built-in film emulations. Licensed CC BY-SA 4.0.",
+        "u2net": "For providing the robust architecture used for the AI sky and foreground detection capabilities.",
+        "you": "For using and supporting LightRaw. Your interest keeps this project alive and evolving.",
         "youLabel": "You"
       },
       "title": "Special Thanks"
@@ -2106,7 +2238,8 @@
     "themes": {
       "dark": "Dark",
       "grey": "Grey",
-      "light": "Light"
+      "light": "Light",
+      "system": "System"
     },
     "title": "Settings",
     "tooltips": {
@@ -2167,6 +2300,18 @@
     "whiteBalance": "White Balance"
   },
   "ui": {
+    "agreement": {
+      "agree": "Agree & Continue",
+      "back": "Back",
+      "confirmExit": "Exit",
+      "decline": "Decline",
+      "exitMessage": "You can only use LightRaw after accepting the User Agreement and Privacy Policy.",
+      "exitTitle": "Exit LightRaw?",
+      "privacyTab": "Privacy Policy",
+      "subtitle": "Please read and accept the User Agreement and Privacy Policy to continue",
+      "termsTab": "User Agreement",
+      "title": "Welcome to LightRaw"
+    },
     "bottomBar": {
       "imagesSelected": "{{current}} of {{total}} images selected",
       "tooltips": {
