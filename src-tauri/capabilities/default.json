@@ -13,6 +13,7 @@
     "core:window:allow-toggle-maximize",
     "process:default",
     "os:allow-os-type",
+    "os:allow-locale",
     "core:window:allow-set-fullscreen",
     "core:window:allow-set-decorations",
     "shell:default",

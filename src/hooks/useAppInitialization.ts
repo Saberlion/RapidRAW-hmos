@@ -1,6 +1,7 @@
 import { useEffect, useRef } from 'react';
 import { invoke } from '@tauri-apps/api/core';
 import { listen } from '@tauri-apps/api/event';
+import { locale } from '@tauri-apps/plugin-os';
 import { useShallow } from 'zustand/react/shallow';
 import { useSettingsStore } from '../store/useSettingsStore';
 import { useUIStore, reconcileWorkspace } from '../store/useUIStore';
@@ -10,6 +11,7 @@ import { useProcessStore } from '../store/useProcessStore';
 import { THEMES, DEFAULT_THEME_ID, ThemeProps, resolveThemeId } from '../utils/themes';
 import { fetchOhosPrivacyState } from '../utils/ohosPrivacy';
 import { COPYABLE_ADJUSTMENT_KEYS, withAdjustmentLayout } from '../utils/adjustments';
+import { detectSystemLanguage, resolveLanguageTag, type SupportedLanguage } from '../i18n';
 import {
   FilterCriteria,
   Invokes,
@@ -33,20 +35,19 @@ interface UseAppInitializationProps {
   setLibraryViewMode: (mode: LibraryViewMode) => void;
 }
 
-const getDefaultLanguage = (i18nInstance: any): string => {
-  const browserLang = navigator.language || (navigator as any).userLanguage || 'en';
-  const shortLang = browserLang.split('-')[0].toLowerCase();
-  const supportedLanguages = Object.keys(i18nInstance.options.resources || {});
-  const fallbackLang =
-    typeof i18nInstance.options.fallbackLng === 'string'
-      ? i18nInstance.options.fallbackLng
-      : i18nInstance.options.fallbackLng?.[0] || 'en';
-
-  return supportedLanguages.includes(browserLang)
-    ? browserLang
-    : supportedLanguages.includes(shortLang)
-      ? shortLang
-      : fallbackLang;
+/**
+ * Read the system locale once (authoritative source: plugin-os, which reports the
+ * real OS locale on OHOS). `navigator` stays as a fallback for builds where the
+ * plugin or its permission is unavailable.
+ */
+const readSystemLanguage = async (): Promise<SupportedLanguage> => {
+  try {
+    const resolved = resolveLanguageTag(await locale());
+    if (resolved) return resolved;
+  } catch {
+    // Fall through to the navigator-based detection.
+  }
+  return detectSystemLanguage();
 };
 
 export const useAppInitialization = ({
@@ -219,8 +220,16 @@ export const useAppInitialization = ({
         }
 
         if (!settings.language) {
-          settings.language = getDefaultLanguage(i18n);
+          // First run: read the OS locale once and persist it as the default.
+          settings.language = await readSystemLanguage();
           handleSettingsChange(settings);
+        } else {
+          // Normalize legacy/invalid saved tags (e.g. `zh`, `en-US`) to a shipped id.
+          const normalized = resolveLanguageTag(settings.language);
+          if (normalized && normalized !== settings.language) {
+            settings.language = normalized;
+            handleSettingsChange(settings);
+          }
         }
 
         const savedRawStatus = settings?.filterCriteria?.rawStatus as string | undefined;
