@@ -58,6 +58,7 @@
 
 ### 3.2 SAM / DepthAnything / CLIP / LaMa —— 无需适配
 - 文件与哈希均未变;旧结论(NPU 收益有限或不可行)继续成立,保持 ORT CPU。
+- SAM3(上游 2026-10-07 新增的量化原件,当前应用未引用)的移植状态与三路线判定见 **`docs/SAM3_PORTING_STATUS.md`**;同类应用 darktable 的 AI 算法选型对照见 **`docs/DARKTABLE_AI_ANALYSIS.md`**。
 
 ### 3.3 BiRefNet 前景 —— 需要重点评估(**当前是 CPU 回退**)
 - OHOS 的 `gpu_execution_provider()` 返回 `None`(无 DirectML/CoreML),因此 `gpu_inference()` 为 false,`AiMaskModel::Foreground` 会选择 **FP32 213.6 MB** 模型,而不是 FP16。
