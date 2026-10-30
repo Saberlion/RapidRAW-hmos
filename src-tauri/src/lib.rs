@@ -2107,14 +2107,7 @@ pub fn run() {
         all(target_os = "linux", not(target_env = "ohos"))
     ))]
     {
-        builder = builder
-            .plugin(tauri_plugin_store::Builder::new().build())
-            .plugin(
-                tauri_plugin_clerk::ClerkPluginBuilder::new()
-                    .publishable_key("pk_live_Y2xlcmsuZ2V0cmFwaWRyYXcuY29tJA".to_string())
-                    .with_tauri_store()
-                    .build(),
-            );
+        builder = builder.plugin(tauri_plugin_store::Builder::new().build())
     }
 
     // tauri-plugin-dialog has no OpenHarmony support (its rfd backend links GTK
@@ -2125,19 +2118,11 @@ pub fn run() {
         builder = builder.plugin(tauri_plugin_dialog::init());
     }
 
-    let mut builder = builder
+    let builder = builder
         .plugin(tauri_plugin_os::init())
         .plugin(tauri_plugin_fs::init())
         .plugin(tauri_plugin_process::init())
         .plugin(tauri_plugin_shell::init());
-
-    // tauri-plugin-http resolves app_cache_dir() with desktop XDG semantics on
-    // OHOS (FUSE user storage → EPERM) and aborts plugin setup. Cloud/Clerk is
-    // desktop-only already, so skip the plugin on OpenHarmony.
-    #[cfg(not(target_env = "ohos"))]
-    {
-        builder = builder.plugin(tauri_plugin_http::init());
-    }
 
     builder
         .plugin(PinchZoomDisablePlugin)
