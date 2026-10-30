@@ -82,7 +82,11 @@
 若未来一定要上 NPU,需要同时做:重新导出 **int32 + 静态 shape(≤4 维)** 的模型、保住 `pos_2` 输出、重新验证精度。投入产出比低,当前建议保持 CPU;优先保证功能可用与内存可控。
 
 ### 3.5 MediaPipe 人脸(landmarks / selfie)—— **已验证可落地(双机 PoC 通过)**
-- 两者都是纯 CNN,已转换并在 **X90 与 XE90** restore+Run 通过:face_landmarks ~4 ms(X90)/ 5.5 ms(XE90),selfie_multiclass 58–77 ms(X90)/ **13.4 ms(XE90)**;selfie 需先做 Resize 模式手术,两者尚待真实图像精度对比。
+- 生产 `.om` 已构建并完成**双机真实输入验证**(3840×2400 实拍照片,与应用侧同预处理,ORT CPU 为参考;详见 `docs/CANN_MODEL_MIGRATION.md` §6.5):
+  - face_landmarks:关键点误差 max 0.61 / 0.93 px(X90/XE90),**亚像素级**;presence 误差 ≤1.1e-4。
+  - selfie_multiclass:argmax 类别一致率 **99.90% / 99.88%**,logits mean_abs ≈0.002;Resize 手术在该输入上与原模型逐位一致。
+  - 时延:face ~4–5 ms(双机);selfie ~58 ms(X90)/ 14–15 ms(XE90)。
+  - 产物、源 ONNX 与评估脚本统一在 `npu-models/`(README 记录来源与 SHA256)。
 - 落地次序仍放在 ESAM3 之后:它们只占人脸链路的一小部分(主要耗时在 ESAM3 encoder/decoder),单独加速收益有限。
 
 ### 3.6 MoGe-2 法线 —— 保持 CPU
@@ -102,7 +106,7 @@
 1. **P0 真机基准**:分别触发前景(BiRefNet)、天空/文本/人脸(ESAM3)、法线,记录首帧耗时、稳态耗时与 PSS;确认 ORT CPU 下没有 int64/算子不支持错误。
 2. **P0 内存验证**:在 4 GB / 8 GB 设备上连续切换 SAM → 前景 → 天空 → 人脸,确认不触发 LowMemoryKill;必要时增加按需卸载/模型互斥。
 3. **P1 前景优化**:BiRefNet `.om` PoC 已完成——转换期被拒(GatherND/多输入 Sum 映射缺失),维持 CPU;若 CPU 明显慢于旧 u2net NPU(~50 ms),评估轻量替代模型而非继续图手术。
-4. **P2 人脸小模型**:MediaPipe selfie/landmarks 的 `.om` 双机 PoC 已通过(见 §3.5);待 ESAM3 稳定后接入,落地前补真实图像精度对比。
+4. **P2 人脸小模型**:生产 `.om` 已构建并完成双机真实输入精度验证(见 §3.5);下一步是接入 `MaskSession` 的 Cann 后端与 face 链路。
 5. **文档维护**:`AI_BACKEND_PLACEMENT.md` 的 u2net/skyseg 章节与 `HARMONYOS_PORTING.md` §6.16 已标记为历史记录;后续 NPU 结论统一更新到本文。
 
 ---

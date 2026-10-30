@@ -33,8 +33,8 @@ npu-models/
 | `.om` | 源 | 转换配方 | 状态 |
 |---|---|---|---|
 | `nind_v2.om` | NIND ONNX | **Pad→Slice 手术** → omg(历史配方,`DENOISE_OM_FILENAME` 侧载名;504 tile,NCHW,perfmode 4) | ✅ 已在 X90 接入 |
-| `face_landmarks.om` | face ONNX | onnxsim → omg,`--input_shape` 固定 batch=1 | 🚧 生产构建中(POC 版在 `om/poc/`,双机 Run 通过) |
-| `selfie_multiclass.om` | selfie ONNX | **Resize 手术**(`tf_half_pixel_for_nn`→`half_pixel`、`floor`→`round_prefer_floor`)→ omg | 🚧 生产构建中(POC 版 `selfie_fix2.om`,双机 Run 通过) |
+| `face_landmarks.om` | face ONNX | onnxsim → omg,`--input_shape` 固定 batch=1 | ✅ 生产构建完成;双机真实输入验证通过(关键点误差 <1 px,亚像素) |
+| `selfie_multiclass.om` | selfie ONNX | **Resize 手术**(`tf_half_pixel_for_nn`→`half_pixel`、`floor`→`round_prefer_floor`)→ omg | ✅ 生产构建完成;双机真实输入验证通过(argmax 一致率 99.9%) |
 
 转换命令(WSL,CANN Kit DDK 6.1.1.0;loader 包装见 `docs/CANN_MODEL_MIGRATION.md` §6.3):
 
@@ -47,7 +47,9 @@ omg --framework=5 --model=<onnx> --output=<out> --platform=kirinx90 \
 
 真实照片 → 按应用侧预处理契约生成输入(`face:/255`、`selfie:/127.5-1`,均 NHWC `[1,256,256,3]`;NIND NCHW `[1,3,504,504]`)→
 ① WSL onnxruntime 跑源 ONNX 得参考输出;② `.om` 在 X90/XE90 用 `hiai_probe`(HIAI_MR 直连)跑同输入;
-③ 对比 `max_abs / mean_abs`,selfie 另算 argmax 类别一致率,NIND 另算 PSNR。结果记录在 `docs/CANN_MODEL_MIGRATION.md`。
+③ 对比 `max_abs / mean_abs`,selfie 另算 argmax 类别一致率,NIND 另算 PSNR。结果记录在 `docs/CANN_MODEL_MIGRATION.md` §6.5。
+
+首轮结果(2026-10-30,3840×2400 实拍照片,双机):face 关键点 max 0.61/0.93 px;selfie argmax 一致率 99.90%/99.88%;NIND PSNR 69.6/69.4 dB。脚本:`prepare_eval.py`(生成输入 + ORT 参考)、`compare_outputs.py`(对比设备输出)。
 
 ## 4. 注意事项
 

@@ -237,13 +237,43 @@ hdc shell "/data/local/tmp/hiai_mr_test7 /data/local/tmp/msmodels/v167/<out>.om 
 
 ---
 
+### 6.5 生产构建与真实输入可用性验证(2026-10-30,X90 + XE90)
+
+按 §6.2 配方完成生产构建;产物、源 ONNX 与评估脚本统一存放在 **`npu-models/`**(见其 README,二进制不入库):
+
+| `.om`(`om/kirinx90/`) | 大小 | 源(均与代码 SHA256 常量一致) | 配方 |
+|---|---|---|---|
+| `face_landmarks.om` | 2.6 MB | `mediapipe_face_landmarks.onnx` | onnxsim(222 节点)→ omg,`input_12:1,256,256,3` |
+| `selfie_multiclass.om` | 8.4 MB | `mediapipe_selfie_multiclass.onnx` | Resize 手术(9 处属性)→ omg,`input_29:1,256,256,3` |
+| `nind_v2.om` | 62 MB | `nind_denoise_utnet_684.onnx` | 既有 Pad→Slice 手术配方(侧载名 `nind_v2.om`) |
+
+**真实输入验证**:3840×2400 实拍照片,预处理与应用侧一致(face `/255`、selfie `/127.5−1`,NHWC;NIND `/255` NCHW);ORT CPU 为参考。输入/输出/对比脚本在 `npu-models/eval/`(`prepare_eval.py` / `compare_outputs.py`)。
+
+| 模型 | 指标 | X90 | XE90 | 判定 |
+|---|---|---|---|---|
+| face_landmarks | 关键点 max / mean 误差(px,256 帧) | **0.61 / 0.10** | **0.93 / 0.17** | ✅ 亚像素级 |
+| face_landmarks | presence 误差 | 1.5e-6 | 1.1e-4 | ✅ |
+| selfie | logits max_abs / mean_abs | 0.086 / 0.0018 | 0.100 / 0.0026 | ✅ |
+| selfie | argmax 类别一致率 | **99.90%** | **99.88%** | ✅(65 536 px 中约 250 px 不同) |
+| NIND | max_abs / mean_abs | 0.0021 / 0.00026 | 0.0018 / 0.00026 | ✅ |
+| NIND | PSNR | **69.6 dB** | **69.4 dB** | ✅(8bit 可见阈值 48 dB,12bit 72 dB) |
+
+时延(3 次稳态):face 3.7–4.9 ms(X90)/ 4.5–5.2 ms(XE90);selfie ~58 ms(X90)/ **14–15 ms(XE90)**;NIND ~127 ms(X90)/ ~156 ms(XE90)。
+
+补充:
+- Resize 手术(`tf_half_pixel_for_nn`→`half_pixel`、`floor`→`round_prefer_floor`)在本输入上与原模型**逐位一致**(ORT 上 surgery vs original = 0),此前担心的亚像素差异未出现;手术仍需保留(omg 拒收原属性)。
+- 误差量级与 `.om` 内部 fp16 执行一致(NIND PSNR ≈69.5 dB、关键点亚像素、selfie logits ~1e-3)。
+- **三个生产模型在两台设备上均通过真实输入可用性验证,可进入应用接入**(`MaskSession` 的 Cann 后端 + face 链路)。
+
+---
+
 ## 7. 修正后的结论
 
 | 模型 | 结论 | 建议 |
 |---|---|---|
-| NIND 降噪 | 保持 | 无需改动 |
-| MediaPipe face_landmarks | **可落地** | 优先接入,1–2 天 |
-| MediaPipe selfie_multiclass | **可落地(需精度验证)** | 修正 Resize 语义后接入 |
+| NIND 降噪 | 保持(生产 `.om` 已归档 `npu-models/`) | 无需改动 |
+| MediaPipe face_landmarks | **已验证(双机真实输入,亚像素级)** | 接入 face 链路;产物见 `npu-models/om/kirinx90/` |
+| MediaPipe selfie_multiclass | **已验证(双机,argmax 一致率 99.9%)** | 接入;Resize 手术已并入生产构建 |
 | ESAM3 image encoder | **可运行,但不完整** | 解决 `pos_2` 输出后再评估;单独编码器收益有限 |
 | ESAM3 decoder/text encoder | **不可行(int64/动态 shape 链)** | 保持 ORT CPU;单算子层面大多可过 |
 | BiRefNet foreground | **不可行(omg 映射缺失:GatherND/Sum)** | 保持 ORT CPU;除非换模型或大规模图手术 |
