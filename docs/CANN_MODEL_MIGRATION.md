@@ -249,4 +249,4 @@ hdc shell "/data/local/tmp/hiai_mr_test7 /data/local/tmp/msmodels/v167/<out>.om 
 | BiRefNet foreground | **不可行(omg 映射缺失:GatherND/Sum)** | 保持 ORT CPU;除非换模型或大规模图手术 |
 | SAM/Depth/CLIP/LaMa/MoGe | 保持 CPU | 旧结论不变 |
 
-**总体**:新模型里真正能落地的只有两个 MediaPipe CNN;ESAM3 编码器可转但输出/混合执行问题未解;BiRefNet 与 ESAM3 transformer 部分在 Kirin X90 的 omg/NPUCL 上不可行。此前“全量迁移”的预期应下调为“两个小 CNN 的局部加速”。2026-10-30 双机逐算子验证(§6.4)进一步表明:X90 与 XE90 对 `kirinx90` `.om` 的算子接受度完全一致,真正的边界在转换期(GatherND/多输入 Sum/NMS/5D)与设备期(Cast→int64)。
+**总体**:新模型里真正能落地的只有两个 MediaPipe CNN;ESAM3 编码器可转但输出/混合执行问题未解;BiRefNet 与 ESAM3 transformer 部分在 Kirin X90 的 omg/NPUCL 上不可行。此前“全量迁移”的预期应下调为“两个小 CNN 的局部加速”。2026-10-30 双机逐算子验证(§6.4)进一步表明:X90 与 XE90 对 `kirinx90` `.om` 的算子接受度完全一致,真正的边界在转换期(GatherND/多输入 Sum/NMS/5D)与设备期(Cast→int64)。**上表结论对 XE90 同样成立**(模型级双机 POC 见 `docs/KIRIN_XE90_SUPPORT.md`:5 个 CNN 全部可跑,selfie 在 XE90 快约 4×)。

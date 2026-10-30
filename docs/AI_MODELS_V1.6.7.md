@@ -35,7 +35,7 @@
 
 ---
 
-> 将模型迁移到 CANN(`.om`)的逐模型可行性、改造清单与**全量 POC 实测结果**见 **`docs/CANN_MODEL_MIGRATION.md`**:MediaPipe face_landmarks / selfie 已转换并真机跑通,ESAM3 image encoder 可转但输出裁剪,ESAM3 text encoder 设备端被 NPUCL 拒绝,decoder 与 BiRefNet 转换失败。
+> 将模型迁移到 CANN(`.om`)的逐模型可行性、改造清单与**全量 POC 实测结果**见 **`docs/CANN_MODEL_MIGRATION.md`**(含 §6.4 双机逐算子验证):MediaPipe face_landmarks / selfie 已转换并在 **X90 + XE90 双机**跑通;ESAM3 image encoder 可转可跑但输出被裁剪(`pos_2` 缺失);ESAM3 text encoder 转换成功但设备 restore NULL(**int64 Cast 链**,单算子实证;Erf/Equal/LayerNorm 等单算子均可过);ESAM3 decoder 与 BiRefNet 在 **omg 转换期**失败(GatherND/多输入 Sum 映射缺失、5D/动态 shape),与设备无关。
 
 ## 2. 与旧移植分支的差异
 
@@ -62,9 +62,9 @@
 ### 3.3 BiRefNet 前景 —— 需要重点评估(**当前是 CPU 回退**)
 - OHOS 的 `gpu_execution_provider()` 返回 `None`(无 DirectML/CoreML),因此 `gpu_inference()` 为 false,`AiMaskModel::Foreground` 会选择 **FP32 213.6 MB** 模型,而不是 FP16。
 - 模型 IO 是静态 `[1,3,1024,1024] f32`(符合 CANN 的 f32/静态要求),但图内是 **Transformer 风格**:16400 个节点,大量 `Shape/Slice/Gather/Reshape/Transpose/MatMul/Where`,并非纯 CNN。
-- 结论:
+- 结论(2026-10-30 PoC 后更新):
   - **不要强行让 OHOS CPU 使用 FP16 版本**——ORT CPU EP 对 fp16 算子支持有限,通常会插入 Cast 或直接不支持,收益不确定。
-  - 若前景遮罩在真机上明显慢于旧 u2net NPU(旧实测 ~50 ms),再做 **CANN `.om` PoC**:静态 1024² 输入是加分项,但 16k 节点 + MatMul/Shape 运算可能触发大量 CPU 分区或转换失败;必须先跑 `omg` 转换与真机基准,不能直接承诺收益。
+  - **CANN `.om` PoC 已做,转换失败**:`omg` 预检查拒收 100 个节点(`GatherND` × 80 + 多输入 `Sum` × 20),集中在 `squeeze_module/*/dec_att/aspp*`(可变形注意力)。这是 **omg 的 ONNX 类型映射缺失**,不是设备缺算子(设备端带 `GatherNd`/`ReduceSum` 实现,归约 `ReduceSum` 单算子可跑);但可变形注意力是 BiRefNet 的核心结构,Sum→Add / GatherND→Gather 的图手术代价高且精度风险大——**保持 ORT CPU,除非换模型**。
   - 备选:保留一个更轻量的前景模型(上游未提供),或在前景/天空/人脸之间复用 ESAM3 encoder 以降低内存。
 
 ### 3.4 ESAM3(天空 / 文本 / 人脸)—— 不建议走 CANN,保持 ORT CPU
@@ -74,11 +74,16 @@
 - **image encoder** 的 `fpn_*` / `pos_*` 输出使用符号维度(dynamic),CANN 需要固定 shape;
 - 图内包含 LayerNormalization / MatMul / Softmax 等 ViT 算子,NPU 分区收益低。
 
-若未来一定要上 NPU,需要同时做:重新导出 int32/静态 shape 的模型、扩展 `OmModel` 支持 int64/int32、重新验证精度。投入产出比低,当前建议保持 CPU;优先保证功能可用与内存可控。
+**2026-10-30 PoC 修正**(详见 `docs/CANN_MODEL_MIGRATION.md` §6.2/§6.4):真正的阻塞**不是 ViT 算子本身**——LayerNorm/MatMul/Softmax/Erf/Equal 单算子在 X90/XE90 上全部可跑且数值正确;是:
+- **int64 链**:`Cast` 产出 int64 在两台设备 restore NULL(text encoder 实测根因);Gather 的 int64 **输入**索引其实可用,缺的是"产出 int64"这条边;
+- **动态/5 维张量**:`Reshape(dimInfo)`、`Permute realdimCnt>4`(5D 图在 omg 转换期即被拒);
+- image encoder:onnxsim(1100→262 节点)后可转可跑(X90 193–227 ms / XE90 219 ms),但 `pos_*` 输出被 omg 裁剪,decoder 依赖的 `pos_2` 缺失,单独上 NPU 意义有限。
 
-### 3.5 MediaPipe 人脸(landmarks / selfie)
-- 两者都是纯 CNN,`selfie_multiclass` 为静态 `[1,256,256,3]`,landmarks 仅 batch 维动态,是 **CANN `.om` / `.ms` 的低风险候选**。
-- 但它们只占人脸链路的一小部分(主要耗时仍在 ESAM3 encoder/decoder),单独加速收益有限;可在 ESAM3 优化之后再考虑。
+若未来一定要上 NPU,需要同时做:重新导出 **int32 + 静态 shape(≤4 维)** 的模型、保住 `pos_2` 输出、重新验证精度。投入产出比低,当前建议保持 CPU;优先保证功能可用与内存可控。
+
+### 3.5 MediaPipe 人脸(landmarks / selfie)—— **已验证可落地(双机 PoC 通过)**
+- 两者都是纯 CNN,已转换并在 **X90 与 XE90** restore+Run 通过:face_landmarks ~4 ms(X90)/ 5.5 ms(XE90),selfie_multiclass 58–77 ms(X90)/ **13.4 ms(XE90)**;selfie 需先做 Resize 模式手术,两者尚待真实图像精度对比。
+- 落地次序仍放在 ESAM3 之后:它们只占人脸链路的一小部分(主要耗时在 ESAM3 encoder/decoder),单独加速收益有限。
 
 ### 3.6 MoGe-2 法线 —— 保持 CPU
 - 新增 134.3 MB ViT 系模型;NPU 转换风险与 ESAM3 同类,当前无适配计划。
@@ -96,8 +101,8 @@
 
 1. **P0 真机基准**:分别触发前景(BiRefNet)、天空/文本/人脸(ESAM3)、法线,记录首帧耗时、稳态耗时与 PSS;确认 ORT CPU 下没有 int64/算子不支持错误。
 2. **P0 内存验证**:在 4 GB / 8 GB 设备上连续切换 SAM → 前景 → 天空 → 人脸,确认不触发 LowMemoryKill;必要时增加按需卸载/模型互斥。
-3. **P1 前景优化**:若 BiRefNet CPU 明显慢于旧 u2net NPU,做 `.om` 转换 PoC(静态 1024²);失败则评估轻量替代模型。
-4. **P2 人脸小模型**:在 ESAM3 稳定后,再评估 MediaPipe selfie/landmarks 的 `.om`/`.ms`。
+3. **P1 前景优化**:BiRefNet `.om` PoC 已完成——转换期被拒(GatherND/多输入 Sum 映射缺失),维持 CPU;若 CPU 明显慢于旧 u2net NPU(~50 ms),评估轻量替代模型而非继续图手术。
+4. **P2 人脸小模型**:MediaPipe selfie/landmarks 的 `.om` 双机 PoC 已通过(见 §3.5);待 ESAM3 稳定后接入,落地前补真实图像精度对比。
 5. **文档维护**:`AI_BACKEND_PLACEMENT.md` 的 u2net/skyseg 章节与 `HARMONYOS_PORTING.md` §6.16 已标记为历史记录;后续 NPU 结论统一更新到本文。
 
 ---
@@ -108,3 +113,4 @@
 - `generate_ai_foreground_mask`:OHOS 无 GPU EP,实际下载并加载 **BiRefNet FP32(214 MB)**;ORT CPU 推理成功,返回约 89 KB 的蒙版 Base64。说明新前景模型在 OHOS 上可用,但走的是 CPU/FP32 路径。
 - 设备 `files/appdata/models` 已出现 `efficientsam3_ev_m_{image_encoder,decoder}.onnx`、`efficientsam3_sky_prompt.bin` 与 `nind_denoise_utnet_684.onnx`,说明新模型下载链路正常。
 - 待补:天空/文本/人脸与法线的真机耗时、PSS 峰值,以及 BiRefNet 与旧 u2net NPU(~50 ms)的量化对比。
+- CANN `.om` 侧的 PoC 结论(转换 + 双机 restore/Run + 逐算子验证)统一记录在 `docs/CANN_MODEL_MIGRATION.md`(§6/§6.4)与 `docs/KIRIN_XE90_SUPPORT.md`;本文 §3 的判定已按其修正。
