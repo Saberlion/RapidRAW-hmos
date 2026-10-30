@@ -35,6 +35,8 @@
 
 ---
 
+> 将模型迁移到 CANN(`.om`)的逐模型可行性、改造清单、验证方法与工作量估算,见 **`docs/CANN_MODEL_MIGRATION.md`**。
+
 ## 2. 与旧移植分支的差异
 
 | 能力 | 旧(`feature/harmonyos-port` 基线) | 新(v1.6.7) | 影响 |
