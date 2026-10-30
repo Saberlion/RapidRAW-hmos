@@ -1,0 +1,4 @@
+[submodule "src-tauri/vendor/onnxruntime"]
+	path = src-tauri/vendor/onnxruntime
+	url = https://github.com/microsoft/onnxruntime
+	branch = v1.22.0

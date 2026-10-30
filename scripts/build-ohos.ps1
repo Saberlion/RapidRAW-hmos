@@ -4,7 +4,7 @@
 # from this script's location. Machine-local prerequisites still apply (porting doc
 # docs/HARMONYOS_PORTING.md section 8): DevEco Studio, ohos-devstudio junctions,
 # ~/.cargo/bin clang wrappers, cargo-tauri (feat/open-harmony fork), ohrs,
-# and src-tauri/libs/ohos/<abi>/libonnxruntime.so (gitignored, per machine).
+# and the ONNX Runtime source submodule (git submodule update --init --recursive).
 #
 # Design goals:
 #   1. FAIL FAST  — preflight checks stop before the long build if the environment is broken;
@@ -26,7 +26,9 @@ param(
   [string[]]$ExtraArgs = @(),
   [string]$Target = 'aarch64',   # aarch64 (devices) | x86_64 (DevEco emulator) | armv7
   [switch]$Release,              # release profile; default is debug (-d). ORT injection is always target-ABI-only and foreign ABI dirs are purged.
-  [switch]$SkipBuild             # skip the cargo stage; only inject ORT + report (HAP must already exist)
+  [switch]$SkipBuild,            # skip the cargo stage; only inject ORT + report (HAP must already exist)
+  [switch]$SkipOrtBuild,         # do not build ONNX Runtime from source (use an existing libs/ohos/<abi>/libonnxruntime.so)
+  [switch]$RebuildOrt            # force a clean ONNX Runtime source build
 )
 $ErrorActionPreference = 'Stop'
 $repo = (Split-Path -Parent $PSScriptRoot)
@@ -108,10 +110,29 @@ if (-not (Get-Command ninja -ErrorAction SilentlyContinue)) { Fail "ninja not on
 if (-not (Test-Path "$env:OHOS_NDK_HOME\llvm\bin\clang.exe")) { Fail "OHOS NDK clang unreachable via $env:OHOS_NDK_HOME (junction broken?)" }
 if (-not (Test-Path "$env:USERPROFILE\.cargo\bin\$_triple-clang.cmd")) { Fail "missing wrapper $_triple-clang.cmd in ~/.cargo/bin (see docs 6.1)" }
 if (-not (Test-Path "$env:DEVECO_SDK_HOME\default\sdk-pkg.json")) { Fail "DEVECO_SDK_HOME has no default\sdk-pkg.json — hvigor will hit 00303312" }
+if (-not $SkipOrtBuild -and -not (Test-Path "$repo\src-tauri\vendor\onnxruntime\cmake\CMakeLists.txt")) {
+  Fail "ONNX Runtime source submodule missing - run: git submodule update --init --recursive"
+}
 # env.rs derives DEVECO_SDK_HOME as parent3(OHOS_HOME) — verify that exact computation
 $p3 = Split-Path (Split-Path (Split-Path $env:OHOS_HOME -Parent) -Parent) -Parent
 if (-not (Test-Path "$p3\default\sdk-pkg.json")) { Fail "parent3(OHOS_HOME) = $p3 is not a valid SDK root — env.rs DEVECO_SDK_HOME derivation will break (junction ohos-devstudio\default missing?)" }
 Write-Host "preflight OK"
+
+# ---------- 2.5 ONNX Runtime from source (pinned submodule) ----------
+$targetAbi = @{ 'aarch64' = 'arm64-v8a'; 'armv7' = 'armeabi-v7a'; 'x86_64' = 'x86_64' }[$Target]
+if (-not $SkipOrtBuild) {
+  $ortSo = "$repo\src-tauri\libs\ohos\$targetAbi\libonnxruntime.so"
+  $ortStamp = "$repo\src-tauri\libs\ohos\$targetAbi\onnxruntime-source.txt"
+  # The stamp marks a library produced by build-ort-ohos.ps1. A .so without it
+  # is a leftover prebuilt binary, which this branch no longer supports.
+  if ($RebuildOrt -or -not (Test-Path $ortSo) -or -not (Test-Path $ortStamp)) {
+    $ortCmd = 'powershell -NoProfile -ExecutionPolicy Bypass -File "' + "$repo\scripts\build-ort-ohos.ps1" + '" -Target ' + $Target
+    if ($RebuildOrt) { $ortCmd += ' -Clean' }
+    Invoke-Stage -Name 'ort-build' -Cmd $ortCmd -StageTimeoutSec 5400
+  } else {
+    Write-Host "using existing source-built ONNX Runtime: $ortSo (pass -RebuildOrt to rebuild)"
+  }
+}
 
 # ---------- 3. build (single cargo stage; cargo/ohrs/hvigor failures all surface via exit code) ----------
 if (-not $SkipBuild) {
@@ -126,14 +147,14 @@ if (-not $SkipBuild) {
   Invoke-Stage -Name 'ohos-build' -Cmd $buildArgs -StageTimeoutSec $TimeoutSec
 }
 
-# ---------- 3.5 inject prebuilt ORT into the HAP (target ABI only) ----------
+# ---------- 3.5 inject ORT into the HAP (target ABI only) ----------
 # ohrs build WIPES entry/libs/<abi>/ before copying the cargo dylib, so a .so placed
 # there never survives into the HAP. The only channel is post-package zip injection.
-# Machine-local ORT lives at src-tauri/libs/ohos/<abi>/libonnxruntime.so (gitignored).
+# ORT is built from the pinned source submodule by section 2.5 and installed at
+# src-tauri/libs/ohos/<abi>/libonnxruntime.so.
 # Only the build target's ABI gets ORT; foreign ABI dirs (stale .so left behind by
 # earlier builds of other targets, e.g. x86_64 emulator libs inside an aarch64
 # package) are purged so store submissions ship clean and single-ABI.
-$targetAbi = @{ 'aarch64' = 'arm64-v8a'; 'armv7' = 'armeabi-v7a'; 'x86_64' = 'x86_64' }[$Target]
 # hvigor emits *-unsigned.hap when no signingConfig applies, or *-signed.hap when the
 # build-profile signingConfig makes SignHap run. Entry content is identical either way
 # (the signing block lives outside the zip entries). The ORT injection below rewrites
@@ -163,7 +184,7 @@ try {
   # ArkTS build packages ets/sourceMaps.map (EntryAbility sourcemap) into the
   # HAP. Store submissions must not carry it - delete the entry when present
   # (release buildMode usually omits it; this is the deterministic guarantee).
-  # Note: the machine-local libonnxruntime.so under src-tauri/libs/ohos/<abi>/
+  # Note: the source-built libonnxruntime.so under src-tauri/libs/ohos/<abi>/
   # must also be stripped (llvm-strip --strip-unneeded) - AGC scans .so files
   # for DWARF sections; a backup of the unstripped original sits beside it.
   $srcMap = $zip.GetEntry('ets/sourceMaps.map')
@@ -187,7 +208,7 @@ try {
     }
     Write-Host "ORT injected into HAP libs/$targetAbi/"
   } else {
-    Write-Host "no machine-local libonnxruntime.so under src-tauri/libs/ohos/$targetAbi - HAP ships without ORT (AI degrades gracefully)"
+    Write-Host "no source-built libonnxruntime.so under src-tauri/libs/ohos/$targetAbi - HAP ships without ORT (AI degrades gracefully)"
   }
   # CANN vendor libs (machine-local, same provisioning channel as ORT).
   # The HCL facade AND libai_fmk_tensor.so ride in the HAP, each with its

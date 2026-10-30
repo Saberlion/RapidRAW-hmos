@@ -85,7 +85,7 @@ RapidRAW 的架构对鸿蒙移植异常友好——它已经完成了最贵的�
 | 文件 | 变更 |
 |---|---|
 | `src-tauri/Cargo.toml` | 桌面三平台段(trash/single-instance/reqwest)、gphoto2 段、linux 段(gtk/webkit2gtk/wayland-quirk)全部排除 OHOS;新增 `[target.'cfg(target_env = "ohos")']` 段(reqwest);mimalloc 移入 `not(ohos)` 段 |
-| `src-tauri/build.rs` | 新增 OHOS 分支:不自动下载 ORT(无官方 OHOS 构建产物),校验开发者自备的 `src-tauri/libs/ohos/arm64-v8a/libonnxruntime.so`,缺失时告警但不断构建(AI 功能运行时降级) |
+| `src-tauri/build.rs` | 新增 OHOS 分支:不自动下载 ORT(无官方 OHOS 构建产物),校验 `src-tauri/libs/ohos/<abi>/libonnxruntime.so`(由 `scripts/build-ort-ohos.ps1` 从固定 submodule 源码编译),缺失时告警但不断构建(AI 功能运行时降级) |
 | `src-tauri/src/ohos_integration.rs` | 新建模块骨架:`initialize_ohos()` 入口 + Phase 2 待办清单(文件桥/证书校验/相册导出) |
 | `src-tauri/src/lib.rs` | mimalloc cfg 扩展;`mod ohos_integration`;window-state/wayland/单实例/monitor 等桌面逻辑排除 OHOS;OHOS 走移动端路径(`initialize_ohos` 调用、跳过窗口状态恢复);`ORT_DYLIB_PATH` 在 OHOS 指向 HAP 内裸 soname |
 | `src-tauri/src/app_settings.rs` | 5 对移动端默认值(preview 分辨率/缩略图/zoom 倍率/worker 线程/缓存)扩展到 OHOS |
@@ -103,7 +103,7 @@ RapidRAW 的架构对鸿蒙移植异常友好——它已经完成了最贵的�
 **三项关键配方**(均已实证):
 
 1. **aws-lc-sys**:cmake-rs 无 OHOS 内建支持,默认回退 MSVC 生成器必失败。设置 `CMAKE_TOOLCHAIN_FILE=<仓库>/src-tauri/ohos/ohos-toolchain.cmake`(已提交入库,经 `OHOS_NDK_HOME` 环境变量参数化;CMakeCache 已实证记录该文件、`OHOS_ARCH=arm64-v8a` 与 Ninja 生成器)+ `CMAKE_GENERATOR=Ninja`(CMake 与 Ninja 需在 PATH)。
-2. **ort-sys**:上游无 OHOS 预编译产物。设置 `ORT_SKIP_DOWNLOAD=1` + `ORT_DYLIB_PATH=libonnxruntime.so`(裸 soname;Phase 1 自备 so 放入 `src-tauri/libs/ohos/arm64-v8a/` 并打包进 HAP)。
+2. **ort-sys**:上游无 OHOS 预编译产物。设置 `ORT_SKIP_DOWNLOAD=1` + `ORT_DYLIB_PATH=libonnxruntime.so`(裸 soname)。ORT 不再使用预编译/下载库:构建前由 `scripts/build-ort-ohos.ps1` 从固定 v1.22.0 submodule 源码交叉编译到 `src-tauri/libs/ohos/<abi>/libonnxruntime.so`,`build-ohos.ps1` 自动调用并注入 HAP。
 3. **archmage 版本错配隐患(jxl-encoder 依赖链)**:`archmage-macros` 必须与 `archmage` 严格配套。全新依赖解析会拉到 archmage-macros 0.9.29,其 `#[arcane]` 宏展开生成 `__ARCHMAGE_ASSERT_TIER_*` 断言调用,而 archmage ≤0.9.28 预生成的 arm.rs 缺这些常量,导致**所有 aarch64 目标(含 Android)编译失败**。主仓受 Cargo.lock 冻结的自洽三件套(archmage 0.9.28 + archmage-macros 0.9.28 + magetypes 0.9.26)保护;`cargo update` 若触及 archmage 三件套,须整体核对 aarch64 可编译性。
 
 **注意**:cargo `[env]` 为全局注入,上述变量**不可**写入 `.cargo/config.toml`(会污染宿主构建——宿主 ort-sys 依赖 build.rs 下载 onnxruntime.dll)。交叉构建时在 shell 中设置;本地 `src-tauri/.cargo/config.toml`(gitignored)仅含链接器与 CC/CXX/AR 包装器变量(按目标三元组命名,天然不影响宿主构建)。
@@ -522,7 +522,7 @@ demosaic 输出         f32 RGB   734MB
 
 **修复 1(ai_processing.rs `persist_downloaded_asset`)**:fsync 降级 best-effort(下载后 sha256 复验使其对正确性冗余)+ rename 失败回退纯字节拷贝(`File::create`+`io::copy`,只用已验证可行的读写路径,避开元数据操作)。验证:5 个模型(SAM enc/dec、u2net、skyseg、depth,合计 ~560MB)全部落盘,3 次 rename EACCES 均由拷贝回退救回(app.log WARN 铁证);skyseg 落盘时 rename 又恰好成功——FUSE 行为不稳定,回退必须常驻。
 
-**修复 2(ORT 运行库从未进 HAP——连带缺口)**:`ohrs build --dist entry/libs` 会**清空目标 ABI 目录**再放入 cargo 产物,手动放置的 .so 活不过构建;而 ort 为 load-dynamic(运行时按裸 soname `libonnxruntime.so` dlopen,见 lib.rs ORT_DYLIB_PATH 设置)。症状:模型全部就绪后 `Session::builder` PANIC `Error loading shared library libc++_shared.so (needed by .../libs/x86_64/libonnxruntime.so)`。修复 = `build-ohos.ps1` 新增打包后注入阶段:从 `src-tauri/libs/ohos/<abi>/` 注入 libonnxruntime.so + NDK 对应 ABI 的 `libc++_shared.so`(ORT 的 DT_NEEDED;cmake 只给 arm64 出了一份);`-SkipBuild` 开关可单独重注入。x86_64 ORT v1.28.2 取自 csukuangfj/onnxruntime-libs "ohos" release(与 ort rc.10 绑定经 C API 版本协商向后兼容);build.rs 查找路径由硬编码 arm64-v8a 升级为按 ABI 映射(aarch64→arm64-v8a / arm→armeabi-v7a / x86_64→x86_64)。
+**修复 2(ORT 运行库从未进 HAP——连带缺口)**:`ohrs build --dist entry/libs` 会**清空目标 ABI 目录**再放入 cargo 产物,手动放置的 .so 活不过构建;而 ort 为 load-dynamic(运行时按裸 soname `libonnxruntime.so` dlopen,见 lib.rs ORT_DYLIB_PATH 设置)。症状:模型全部就绪后 `Session::builder` PANIC `Error loading shared library libc++_shared.so (needed by .../libs/x86_64/libonnxruntime.so)`。修复 = `build-ohos.ps1` 新增打包后注入阶段:从 `src-tauri/libs/ohos/<abi>/` 注入 libonnxruntime.so + NDK 对应 ABI 的 `libc++_shared.so`(ORT 的 DT_NEEDED;cmake 只给 arm64 出了一份);`-SkipBuild` 开关可单独重注入。ORT 已改为从固定 v1.22.0 源码 submodule 交叉编译(`scripts/build-ort-ohos.ps1`),不再使用 csukuangfj/onnxruntime-libs 预编译包;build.rs 查找路径由硬编码 arm64-v8a 升级为按 ABI 映射(aarch64→arm64-v8a / arm→armeabi-v7a / x86_64→x86_64)。
 
 **已知边界(非缺陷,与 6.10 同构)**:4GB 模拟器装不下 5 模型 AI 蒙版栈——SAM enc+dec+u2net+skyseg+depth 会话 ≈560MB + 编辑器基线,大图小图两次触发 LowMemoryKill(hilog 20:49:40 / 20:55:54);真机 8GB+ 在预算内。
 
@@ -932,7 +932,7 @@ hdc shell "hilog -x | grep -iE 'RapidRAW.+(privacy|consent)'"
 ### Phase 1 — 构建管道(2~3 周)
 - [x] 接入 tauri-cli `feat/open-harmony` 分支:`cargo install tauri-cli --git https://github.com/tauri-apps/tauri --branch feat/open-harmony`(v2.11.4,含 `ohos` 子命令)
 - [x] `[patch.crates-io]` 指向 wry/tao/tauri 的 ohos 分支(实际方案:补丁直接提交进主 `src-tauri/Cargo.toml` + vendored openharmony-ability 入库——本仓即 OHOS 构建工作区,独立清单反而割裂;风险由 Cargo.lock 冻结与 6.2 风险登记控制)
-- [x] 自备 OHOS 版 `libonnxruntime.so` 放入 `src-tauri/libs/ohos/arm64-v8a/`(v1.26.0;目录 gitignored,各构建机自备)
+- [x] ONNX Runtime 改为源码编译集成:`src-tauri/vendor/onnxruntime` 固定 v1.22.0 submodule,`scripts/build-ort-ohos.ps1` 交叉编译到 `src-tauri/libs/ohos/<abi>/libonnxruntime.so`(目录 gitignored);`build-ohos.ps1` 自动构建并注入
 - [x] 主仓 `cargo check --target aarch64-unknown-linux-ohos` 全量通过 + 宿主无回归(见 6.2)
 - [x] `cargo tauri ohos init` 生成 `gen/ohos` 工程(2026-10-03;产物 gitignored,未引入跟踪文件变更)
 - [x] lensfun_db / resources 打包进 HAP(2026-10-03:include_dir 嵌入 .so 随 HAP 打包,镜像 Android 路径,commit `0b11a54a`;宿主+OHOS 双目标 cargo check 通过;HAP 体积已复验(2026-10-03 22:53 全链路重建 EXIT=0):52.4→57.4MB,+5.0MB 与 lensfun_db 4.99MB 载荷吻合,`<lensdatabase` 标记已在 .so 二进制内确证。`src-tauri/resources/` 仅含 gitignored 的 ORT 二进制,无需打包;OHOS 版 `libonnxruntime.so` 走 `libs/ohos/` 各机自备)

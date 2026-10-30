@@ -18,6 +18,11 @@ if(NOT OHOS_TOOLCHAIN)
   set(OHOS_TOOLCHAIN "C:/Program Files/Huawei/DevEco Studio/sdk/default/openharmony/native")
 endif()
 
+# Normalize Windows backslashes to CMake-style forward slashes: ORT embeds
+# CMAKE_CXX_FLAGS into onnxruntime_config.h as a C string literal, and a
+# sysroot like C:\Users\... produces invalid escape sequences ("\U", "\d").
+file(TO_CMAKE_PATH "${OHOS_TOOLCHAIN}" OHOS_TOOLCHAIN)
+
 # Tolerate both OHOS_NDK_HOME conventions: NDK root (llvm/ sits directly
 # inside) vs SDK root (llvm/ sits inside native/). Normalize to the NDK root
 # so the compiler/sysroot paths below work either way.
@@ -62,6 +67,22 @@ set(CMAKE_ASM_COMPILER_TARGET ${OHOS_LLVM_TRIPLE})
 set(CMAKE_C_FLAGS_INIT   "--target=${OHOS_LLVM_TRIPLE} --sysroot=${OHOS_TOOLCHAIN}/sysroot -D__MUSL__")
 set(CMAKE_CXX_FLAGS_INIT "--target=${OHOS_LLVM_TRIPLE} --sysroot=${OHOS_TOOLCHAIN}/sysroot -D__MUSL__")
 set(CMAKE_ASM_FLAGS_INIT "--target=${OHOS_LLVM_TRIPLE} --sysroot=${OHOS_TOOLCHAIN}/sysroot")
+
+# ONNX Runtime's MLAS headers assume the ARMv8.2 FP16/BF16 extensions are
+# visible on aarch64 Linux (bfloat16_t comes from arm_neon.h only when the
+# target feature is enabled). Enable them for the whole translation unit; only
+# the dedicated BF16/FP16 kernels actually emit those instructions.
+if(OHOS_ARCH STREQUAL "aarch64")
+  string(APPEND CMAKE_C_FLAGS_INIT " -march=armv8.2-a+fp16+bf16")
+  string(APPEND CMAKE_CXX_FLAGS_INIT " -march=armv8.2-a+fp16+bf16")
+  string(APPEND CMAKE_ASM_FLAGS_INIT " -march=armv8.2-a+fp16+bf16")
+endif()
+
+# OpenHarmony lacks glibc's pthread_setaffinity_np (ONNX Runtime calls it on
+# every non-Android Linux). The shim maps it to sched_setaffinity(0, ...).
+if(EXISTS "${CMAKE_CURRENT_LIST_DIR}/ort-ohos-compat.h")
+  string(APPEND CMAKE_CXX_FLAGS_INIT " -include ${CMAKE_CURRENT_LIST_DIR}/ort-ohos-compat.h")
+endif()
 
 # Cross builds cannot link+run host executables: probe with static libs instead.
 set(CMAKE_TRY_COMPILE_TARGET_TYPE STATIC_LIBRARY)
