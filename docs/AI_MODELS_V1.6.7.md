@@ -35,7 +35,7 @@
 
 ---
 
-> 将模型迁移到 CANN(`.om`)的逐模型可行性、改造清单、验证方法与工作量估算,见 **`docs/CANN_MODEL_MIGRATION.md`**。
+> 将模型迁移到 CANN(`.om`)的逐模型可行性、改造清单与**全量 POC 实测结果**见 **`docs/CANN_MODEL_MIGRATION.md`**:MediaPipe face_landmarks / selfie 已转换并真机跑通,ESAM3 image encoder 可转但输出裁剪,ESAM3 text encoder 设备端被 NPUCL 拒绝,decoder 与 BiRefNet 转换失败。
 
 ## 2. 与旧移植分支的差异
 

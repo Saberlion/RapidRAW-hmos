@@ -6,6 +6,8 @@
 
 ---
 
+> **2026-10-30 实测更新**:已完成全部新模型候选的 `omg` 转换与真机加载/运行 PoC。前文 §3/§5 是基于 ONNX 结构的**预判**;以 **§6/§7 的实测结论为准**。
+
 ## 1. 现有 CANN 接入的硬约束
 
 代码:`src-tauri/src/ohos_integration.rs` 的 `OmModel` + `src-tauri/src/ai_processing.rs` 的 `DenoiseSession::Cann`。
@@ -127,3 +129,80 @@
 **总体判断**:新版本里真正值得尝试 CANN 的只有 **BiRefNet(前景)** 和两个 **MediaPipe CNN**。ESAM3 的核心价值在 decoder/text 的 transformer 部分,而现有 `OmModel` 和 CANN 算子覆盖都不适合,强行迁移的工程成本远高于收益;NIND 降噪继续沿用已验证的 `.om` 即可。
 
 > 注:本分析未执行 `omg` 转换(本机/设备均无 `omg` 工具链),结论基于 ONNX 算子结构、现有 `OmModel` 契约和旧版 §8.4 的实测经验;P1 PoC 需要在具备 CANN Kit/`omg` 的机器上完成后再定稿。
+
+---
+
+## 6. 全量 POC 实测结果(2026-10-30)
+
+工具链:CANN Kit DDK 6.1.1.0(WSL)+ `omg --platform=kirinx90`;设备:HUAWEI MateBook Pro(HAD-W24,3XB0124617000013);运行器:既有 `hiai_mr_test7`(HIAI_MR 直连,ION buffer,perfmode 4)。
+
+### 6.1 汇总
+
+| 模型 | omg 转换 | 设备 restore/run | 实测(合成输入) | 结论 |
+|---|---|---|---|---|
+| NIND 降噪(既有) | 已完成 | PASS | ~130 ms/tile(历史) | 保持 |
+| MediaPipe face_landmarks | **成功**(`--input_shape` 固定 batch=1) | **PASS** | restore 500 ms;run 3.9–4.3 ms | 可用 |
+| MediaPipe selfie_multiclass | **成功**(Resize 模式手术) | **PASS** | restore 146 ms;run 58–77 ms | 可用,需验证精度 |
+| EfficientSAM3 image encoder | **成功**(onnxsim 1100→262 节点) | **PASS** | restore 658 ms;run 193–227 ms | 可用,但输出被裁剪 |
+| EfficientSAM3 text encoder | **成功**(onnxsim + int64→int32) | **FAIL** | restore NULL | NPUCL 设备端不支持 |
+| EfficientSAM3 decoder | **失败** | — | — | 需多次图手术,未完成 |
+| BiRefNet foreground | **失败** | — | — | GatherND/Sum 不支持 |
+
+### 6.2 逐模型细节
+
+**MediaPipe face_landmarks — PASS**
+- 转换:`onnxsim` 后 `omg` 直接成功(2.6 MB);输入 `input_12 [1,256,256,3] f32`,3 个输出。
+- 设备:restore 499.7 ms,perfmode 4,run 4.3 / 4.0 / 3.9 ms,输出维度与 ONNX 一致(`1434` 关键点 + 2 个标量)。
+- 结论:可直接作为新模型 CANN 链路的第一个落地项。
+
+**MediaPipe selfie_multiclass — PASS(需注意语义修改)**
+- 原始模型被 `omg` 拒绝:`Resize` 的 `coordinate_transformation_mode=tf_half_pixel_for_nn` / `nearest_mode=floor` 不支持。
+- 手术:改为 `half_pixel` + `round_prefer_floor` 后转换成功(8.4 MB)。
+- 设备:restore 145.6 ms,run 77.3 / 58.4 / 58.3 ms,输出 `[1,256,256,6]`。
+- 风险:Resize 模式改变会带来亚像素级差异,接入前必须与 ORT 输出对比(尤其边缘/小目标)。58 ms 对 256² CNN 偏慢,存在 CPU 分区。
+
+**EfficientSAM3 image encoder — PASS,但输出不完整**
+- 直接 `omg` 在 `position_encoding_2/Concat` 动态 shape 推断失败;`onnxsim` 把 1100 节点折到 262 后转换成功(42.8 MB)。
+- 设备:restore 657.5 ms,run 192.5 / 204.5 / 227.0 ms。
+- **关键缺口**:ONNX 有 6 个输出(`fpn_0/1/2` + `pos_0/1/2`),`.om` 只剩 `fpn_0/1/2`。`pos_*` 被 omg 当作常量折叠/裁剪,而 ESAM3 decoder 需要 `pos_2`。
+- 结论:编码器本身可上 NPU,但必须解决 `pos_2` 的来源(从 ONNX 预计算后随模型常量下发,或加 dummy 输出强制保留),否则无法替换 ORT 编码器。
+
+**EfficientSAM3 text encoder — 转换成功、设备失败**
+- 图手术:onnxsim(239→170 节点)+ `tokens` int64→int32(否则 `GatherV2D` 拒绝 int64 索引),`omg` 产出 135 MB `.om`。
+- 设备 restore 直接返回 NULL。hilog 证据:`NPUCL` 不支持 `Erf`、`Reshape`(dimInfo)、`Permute`(realdimCnt > 4)、`Equal`(bool)、`CastT` 等,`PreGraphSaveOptimize` 失败 → `no runtime support the Model`。
+- 结论:**转换成功不代表可运行**;该 transformer 模型在 Kirin X90 NPUCL 上不可用,继续停留在 ORT CPU。
+
+**EfficientSAM3 decoder — 转换未完成**
+- 已完成两步手术:Einsum(`bqc,bchw->bqhw`)拆成 Reshape+MatMul+Reshape;bool `Gather` 前后加 int32 Cast。
+- 仍被 int64 路径挡住:`geometry_encoder/ReduceSum` 输入 int64、随后 `Concat` 动态类型不一致;把 `exemplar_labels` 改 int32、Cast 改 int32 后又出现新的 shape 链问题。
+- 即使转换成功,其 278 MatMul / 68 LayerNorm / 37 Softmax 与 text encoder 同类,设备端 NPUCL 大概率同样拒绝;继续投入的 ROI 很低。
+
+**BiRefNet foreground — 转换失败**
+- `omg` 预检查失败:100 个不支持节点,`GatherND` × 80 + `Sum` × 20,集中在 `squeeze_module/*/dec_att/aspp*`(可变形注意力)。
+- 这些是 decoder 的核心算子,拆解/替换工作量大且精度风险高;当前版本不具备迁移条件。
+
+### 6.3 复现命令
+
+```bash
+# WSL: CANN Kit omg(本机二进制解释器已丢失,用系统 loader 启动)
+bash /mnt/c/Users/fxre/AppData/Local/Temp/opencode/run_omg.sh \
+  --framework=5 --model=<model.onnx> --output=<out> \
+  --platform=kirinx90 --check_report=<out>.report.json
+
+# 设备:加载 + 合成输入运行
+hdc shell "/data/local/tmp/hiai_mr_test7 /data/local/tmp/msmodels/v167/<out>.om --iters 3 --fill 0 --perfmode 4"
+```
+
+## 7. 修正后的结论
+
+| 模型 | 结论 | 建议 |
+|---|---|---|
+| NIND 降噪 | 保持 | 无需改动 |
+| MediaPipe face_landmarks | **可落地** | 优先接入,1–2 天 |
+| MediaPipe selfie_multiclass | **可落地(需精度验证)** | 修正 Resize 语义后接入 |
+| ESAM3 image encoder | **可运行,但不完整** | 解决 `pos_2` 输出后再评估;单独编码器收益有限 |
+| ESAM3 decoder/text encoder | **不可行(当前 NPUCL)** | 保持 ORT CPU |
+| BiRefNet foreground | **不可行(算子缺失)** | 保持 ORT CPU;除非换模型或大规模图手术 |
+| SAM/Depth/CLIP/LaMa/MoGe | 保持 CPU | 旧结论不变 |
+
+**总体**:新模型里真正能落地的只有两个 MediaPipe CNN;ESAM3 编码器可转但输出/混合执行问题未解;BiRefNet 与 ESAM3 transformer 部分在 Kirin X90 的 omg/NPUCL 上不可行。此前“全量迁移”的预期应下调为“两个小 CNN 的局部加速”。
