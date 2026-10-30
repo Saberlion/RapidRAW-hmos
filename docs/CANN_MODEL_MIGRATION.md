@@ -133,7 +133,7 @@
 ---
 
 > X90 芯片/固件层面的支持范围、性能基线与跨芯片限制,见 **`docs/KIRIN_X90_SUPPORT.md`**。
-> Kirin XE90(MateBook Pro S)是另一款芯片,当前工具链无 `kirinxe90` 平台配置,详见 **`docs/KIRIN_XE90_SUPPORT.md`**。
+> Kirin XE90(MateBook Pro S)是另一款芯片。实测 **`kirinx90` 的 CNN `.om` 可直接在 XE90 运行**(face/selfie/u2net/NIND/ESAM3 encoder 全部 PASS),transformer 限制不变;详见 **`docs/KIRIN_XE90_SUPPORT.md`**。
 
 ## 6. 全量 POC 实测结果(2026-10-30)
 
