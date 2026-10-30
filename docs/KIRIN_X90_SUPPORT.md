@@ -1,6 +1,6 @@
 # Kirin X90(XE90)NPU/CANN 支持情况分析
 
-> 说明:仓库与设备日志中的芯片名为 **Kirin X90**(`NPU_ohos.boot.hardware.KirinX90_v2_0`,`omg --platform=kirinx90`)。本文按 **XE90 = Kirin X90** 理解;若指的是其他型号请指出。
+> 说明:本文只讨论 **Kirin X90**(`NPU_ohos.boot.hardware.KirinX90_v2_0`,`omg --platform=kirinx90`)。**Kirin XE90 是另一款芯片(MateBook Pro S,Maleoon 935),不在本文范围内**,其支持情况见 **`docs/KIRIN_XE90_SUPPORT.md`**。
 > 分析日期:2026-10-30 · 依据:本机 CANN Kit DDK 6.1.1.0 实测、设备 `3XB0124617000013`(HUAWEI MateBook Pro / HAD-W24,HarmonyOS 7.0.0.17,API 26)以及既有 `MINDSPORE_LITE_NPU_EVAL.md` §8.4 战役数据。
 
 ---
