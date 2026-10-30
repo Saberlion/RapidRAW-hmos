@@ -51,5 +51,15 @@ src-tauri/libs/
 # bench/replay.js result dumps
 bench/out/
 
+# NPU model artifacts: binaries only (source ONNX, .om builds, surgery
+# intermediates, eval data). Layout + provenance: npu-models/README.md.
+npu-models/onnx/
+npu-models/om/
+npu-models/work/
+npu-models/eval/**/*.bin
+npu-models/eval/**/*.npy
+npu-models/eval/**/*.onnx
+npu-models/eval/**/*.jpg
+
 # agent-session scratch data (plans / run-continuation / ultraresearch)
 .omo/
