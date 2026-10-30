@@ -42,14 +42,18 @@
 - **纯 CNN 小模型**:u2net、NIND、MediaPipe face_landmarks、MediaPipe selfie(Resize 模式修正后)、ESAM3 image encoder(onnxsim 后)。
 - IO 要求:**f32 + 静态 shape + ION/DMA buffer**;多输入/多输出可用,但需逐槽管理。
 
-### 3.2 设备端明确不支持(2026-10-30 POC 实测)
-| 类别 | 具体算子/现象 | 影响 |
+### 3.2 算子边界(2026-10-30 双机逐算子验证后修正)
+
+单算子最小图(`omg --platform=kirinx90` → 设备 restore+Run)在 **X90 与 XE90 上结果完全一致**,完整表格与方法见 `docs/CANN_MODEL_MIGRATION.md` §6.4。修正后的边界:
+
+| 阶段 | 算子/现象 | 说明 |
 |---|---|---|
-| 可变形注意力 | `GatherND`、`Sum` | BiRefNet 预检查失败(80+20 节点) |
-| Transformer 算子 | `Erf`、`Reshape`(dimInfo)、`Permute`(realdim > 4)、`Equal`(bool)、`CastT` | ESAM3 text encoder restore NULL(`no runtime support the Model`) |
-| 索引/类型 | int64 输入/索引、int32→int64 Cast(kernelId 589827 未注册) | ESAM3 decoder 的 `exemplar_labels`/shape 链受阻 |
-| ROI 类 | `RoiAlignV2` | 固件类型级封杀(即使宿主 pre-check 通过) |
-| 量化算子 | `DynamicQuantizeLinear`/`MatMulInteger` | omg 拒收量化模型,只能 fp32 重建 |
+| ✅ 设备端可用(静态 shape) | `Softmax`、`MatMul`、`LayerNorm`、`Erf`(数值精确)、`Equal`(bool 输出,f32/i32)、`Where`、`ReduceSum`、`Gather`(int64/int32 索引)、`Permute 4D`、`MirrorPad`、`Floor`、`Sin`、`InstanceNorm`、`Cast f32→i32` | 此前“NPUCL 不支持 Erf/Equal”为过度概括 |
+| ❌ 设备级硬阻塞 | **`Cast` 产出 int64**(两台设备 restore NULL) | ESAM3 text encoder restore NULL 的实证根因 |
+| ❌ 转换级(omg) | `GatherND`(类型映射缺失)、多输入 `Sum`、`NonMaxSuppression`(int64 输出 verify 拒)、5 维张量(`TensorDesc is invalid`) | BiRefNet 预检查失败的 80+20 节点即前两者 |
+| ❌ 固件/类型级 | `RoiAlignV2` | 固件类型级封杀(即使宿主 pre-check 通过) |
+| ❌ 量化 | `DynamicQuantizeLinear`/`MatMulInteger` | omg 拒收量化模型,只能 fp32 重建 |
+| ⚠️ 未单测 | `Reshape`(dimInfo 动态)、`Permute realdimCnt>4`(5D 图转换期即拒) | 与 int64 链一起构成 transformer 图的主要阻塞 |
 
 ### 3.3 性能基线(X90)
 | 模型 | NPU | CPU | 结论 |
@@ -76,9 +80,9 @@
 | MediaPipe face_landmarks | ✅ | ✅ | **优先落地** |
 | MediaPipe selfie | ✅(Resize 手术) | ✅ | 可落地,需精度验证 |
 | ESAM3 image encoder | ✅(onnxsim) | ✅(输出裁剪) | 需补 `pos_2` 后再评估 |
-| ESAM3 text encoder | ✅ | ❌ NPUCL 拒绝 | 保持 CPU |
+| ESAM3 text encoder | ✅ | ❌ restore NULL(int64 Cast 链) | 保持 CPU |
 | ESAM3 decoder | ❌ | — | 保持 CPU |
-| BiRefNet | ❌ GatherND/Sum | — | 保持 CPU |
+| BiRefNet | ❌ omg pre-check 拒 GatherND/Sum | — | 保持 CPU |
 | SAM / Depth / CLIP / LaMa / MoGe | 旧结论 | — | 保持 CPU |
 
 ---
@@ -88,7 +92,7 @@
 1. **固件/版本绑定**:`.om` 与 `kirinx90`、HIAI 800.636.120.010 强绑定;系统升级可能改变算子注册表(既有 RoiAlign/Cast 类型级判定即为例证),需要回归。
 2. **不可跨芯片**:`.om` 只能给 X90 用;9030 需另一套平台配置,9000s/9010/9020 不在官方 CANN 配方内。**不能把 `.om` 放进通用 HAP**。
 3. **缺少 Ascend C 插件**:`libai_npucore_ascendc.so` 只有 x86 宿主版本,设备端无 aarch64 对应物,自定义算子路线暂时走不通。
-4. **int64/bool 缺口**:设备 NPUCL 未注册相关 Cast/kernel;任何依赖 int64 索引的模型都需要重导出/图手术。
+4. **int64 缺口(修正)**:int64 **输入/索引**可用(Gather 单算子 PASS);真正缺的是 **产出 int64 的 Cast**(两台设备 restore NULL)与 5 维/动态张量。bool 输出(Equal)可用。
 5. **转换成功≠可运行**:text encoder 即实例;必须走“omg → 设备 restore → Run”三级验证。
 6. **精度**:`.om` 中间张量按 fp16 有效精度执行(旧实测 RoiAlign 分解 mean 1.7e-3 / max 3.3e-2),蒙版类需 IoU/像素对比。
 7. **内存/ION**:1008²/1024² 激活大;X90 设备可用,但 4 GB 设备/其他芯片需单独评估。

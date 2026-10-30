@@ -147,9 +147,9 @@
 | MediaPipe face_landmarks | **成功**(`--input_shape` 固定 batch=1) | **PASS** | restore 500 ms;run 3.9–4.3 ms | 可用 |
 | MediaPipe selfie_multiclass | **成功**(Resize 模式手术) | **PASS** | restore 146 ms;run 58–77 ms | 可用,需验证精度 |
 | EfficientSAM3 image encoder | **成功**(onnxsim 1100→262 节点) | **PASS** | restore 658 ms;run 193–227 ms | 可用,但输出被裁剪 |
-| EfficientSAM3 text encoder | **成功**(onnxsim + int64→int32) | **FAIL** | restore NULL | NPUCL 设备端不支持 |
+| EfficientSAM3 text encoder | **成功**(onnxsim + int64→int32) | **FAIL** | restore NULL | 设备端 int64 缺口:单算子验证表明 `Cast f32→int64` 即 restore NULL(§6.4);Erf/Equal/LayerNorm 单算子均可 PASS |
 | EfficientSAM3 decoder | **失败** | — | — | 需多次图手术,未完成 |
-| BiRefNet foreground | **失败** | — | — | GatherND/Sum 不支持 |
+| BiRefNet foreground | **失败** | — | — | `GatherND` 与多输入 `Sum` 在 omg pre-check 即被拒(§6.4);设备端其实有 GatherNd/ReduceSum 实现 |
 
 ### 6.2 逐模型细节
 
@@ -172,16 +172,18 @@
 
 **EfficientSAM3 text encoder — 转换成功、设备失败**
 - 图手术:onnxsim(239→170 节点)+ `tokens` int64→int32(否则 `GatherV2D` 拒绝 int64 索引),`omg` 产出 135 MB `.om`。
-- 设备 restore 直接返回 NULL。hilog 证据:`NPUCL` 不支持 `Erf`、`Reshape`(dimInfo)、`Permute`(realdimCnt > 4)、`Equal`(bool)、`CastT` 等,`PreGraphSaveOptimize` 失败 → `no runtime support the Model`。
+- 设备 restore 直接返回 NULL。hilog 报 `NPUCL` 不支持 `Erf`、`Reshape`(dimInfo)、`Permute`(realdimCnt > 4)、`Equal`(bool)、`CastT` 等,`PreGraphSaveOptimize` 失败 → `no runtime support the Model`。
+- **修正(2026-10-30 单算子双机验证,§6.4)**:静态 shape 下 `Erf`(数值精确)、`Equal`(bool 输出)、`LayerNorm`、`MatMul`、4D `Permute` 全部 PASS。设备级硬阻塞是 **`Cast` 产出 int64(restore NULL)**;结合 hilog 的 `Reshape(dimInfo)`/`Permute(realdimCnt>4)`,根因应归结为 int64 链 + 动态/5 维张量——hilog 的算子名是整图首个失败点的级联信息,不代表这些算子不存在。
 - 结论:**转换成功不代表可运行**;该 transformer 模型在 Kirin X90 NPUCL 上不可用,继续停留在 ORT CPU。
 
 **EfficientSAM3 decoder — 转换未完成**
 - 已完成两步手术:Einsum(`bqc,bchw->bqhw`)拆成 Reshape+MatMul+Reshape;bool `Gather` 前后加 int32 Cast。
 - 仍被 int64 路径挡住:`geometry_encoder/ReduceSum` 输入 int64、随后 `Concat` 动态类型不一致;把 `exemplar_labels` 改 int32、Cast 改 int32 后又出现新的 shape 链问题。
-- 即使转换成功,其 278 MatMul / 68 LayerNorm / 37 Softmax 与 text encoder 同类,设备端 NPUCL 大概率同样拒绝;继续投入的 ROI 很低。
+- 即使转换成功,挡住它的仍是 int64/动态 shape 链(§6.4:Cast→int64 设备级 restore NULL、5D/动态张量转换期即拒);MatMul/LayerNorm/Softmax 单算子本身都能跑,但整图 ROI 仍低。
 
 **BiRefNet foreground — 转换失败**
 - `omg` 预检查失败:100 个不支持节点,`GatherND` × 80 + `Sum` × 20,集中在 `squeeze_module/*/dec_att/aspp*`(可变形注意力)。
+- 单算子复现(§6.4):`GatherND`(int64/int32 索引同拒)与多输入 `Sum` 在 pre-check 阶段直接报 "type not supported"——是 **omg 的 ONNX 类型映射缺失**;设备运行时带有 `GatherNd` 实现,`ReduceSum`(归约)转换+运行均 PASS。理论上 Sum→Add 链、GatherND→Gather+重排可绕过,但图手术代价高。
 - 这些是 decoder 的核心算子,拆解/替换工作量大且精度风险高;当前版本不具备迁移条件。
 
 ### 6.3 复现命令
@@ -196,6 +198,45 @@ bash /mnt/c/Users/fxre/AppData/Local/Temp/opencode/run_omg.sh \
 hdc shell "/data/local/tmp/hiai_mr_test7 /data/local/tmp/msmodels/v167/<out>.om --iters 3 --fill 0 --perfmode 4"
 ```
 
+### 6.4 逐算子真机验证(2026-10-30,X90 + XE90 双机)
+
+方法:每个算子单独构造最小 ONNX(静态 shape、f32,opset 11/17),`omg --framework=5 --platform=kirinx90` 转换,推到两台设备用 `hiai_probe2`(HIAI_MR 直连,ION buffer,perfmode 4,fill=0.5)做 restore + Run。设备:X90(3XB0124617000013)与 XE90(7QB0126509000017)。
+
+| 算子(最小图) | omg 转换 | X90 | XE90 | 备注 |
+|---|---|---|---|---|
+| Softmax | ✅ | ✅ 2.5 ms | ✅ 0.7 ms | 对照组 |
+| MatMul | ✅ | ✅ 1.7 ms | ✅ 1.1 ms | XE90 由 Ascend C 后端承接 |
+| LayerNormalization(opset 17) | ✅ | ✅ 0.8 ms | ✅ 1.3 ms | |
+| Erf | ✅ | ✅ 3.8 ms | ✅ 1.0 ms | erf(0.5)=0.5205 **数值精确**,两台一致 |
+| Equal(f32 → bool) | ✅ | ✅ 0.8 ms | ✅ 0.9 ms | |
+| Equal(i32 → bool) | ✅ | ✅ 0.5 ms | ✅ 0.1 ms | |
+| Where(Select) | ✅ | ✅ 0.7 ms | ✅ 1.0 ms | |
+| ReduceSum(归约) | ✅ | ✅ 0.9 ms | ✅ 0.8 ms | |
+| Sum(多输入) | ❌ pre-check "type not supported" | — | — | BiRefNet 阻塞点;归约形态的 ReduceSum 可行 |
+| Gather(int64 索引) | ✅ | ✅ 1.1 ms | ✅ 0.7 ms | int64 **输入**可用 |
+| Gather(int32 索引) | ✅ | ✅ 1.8 ms | ✅ 0.9 ms | |
+| GatherND(int64/int32 索引) | ❌ pre-check "type not supported" | — | — | omg 的 ONNX 类型映射缺失;设备运行时带 GatherNd 实现 |
+| Transpose 4D(Permute) | ✅ | ✅ 1.4 ms | ✅ 0.6 ms | |
+| Transpose 5D | ❌ IR `TensorDesc is invalid` | — | — | >4 维张量转换期即被拒 |
+| MirrorPad(Pad reflect) | ✅ | ✅ 2.3 ms | ✅ 0.8 ms | |
+| Floor | ✅ | ✅ 3.4 ms | ✅ 0.8 ms | |
+| Sin | ✅ | ✅ 3.3 ms | ✅ 0.9 ms | XE90 经 Ascend C(sincos)承接 |
+| InstanceNormalization | ✅ | ✅ 0.6 ms | ✅ 1.1 ms | XE90 经 Ascend C(instance_norm_v3)承接 |
+| Cast f32→i32 | ✅ | ✅ 1.2 ms | ✅ 0.9 ms | |
+| Cast f32→**i64** | ✅ | ❌ restore NULL | ❌ restore NULL | **唯一设备级硬阻塞** |
+| NonMaxSuppression | ❌ verify:int64 输出 | — | — | 转换期失败 |
+
+(时延为单次 Run、合成输入,仅作量级参考。)
+
+**结论修正**:
+
+1. 两台设备对 `kirinx90` `.om` 的算子接受度**完全一致**(19 个用例无一分歧);XE90 的差异在**后端归属**(MatMul/Attention/RmsNorm/RoPE 移入 `libai_npucore_ascendc.so`,elementary 强化卷积/NMS/Select/量化),不在能不能跑。
+2. 此前“NPUCL 不支持 Erf/Equal”的说法**过度概括**:静态 shape 下二者均 PASS 且数值正确。ESAM3 text encoder 的 restore NULL 应归结为 **`Cast` 产出 int64(本节实证 restore NULL)** + 动态/5 维张量(`Reshape dimInfo`、`Permute realdimCnt>4`);hilog 列出的算子名是整图首个失败点的级联信息,不等于“这些算子不存在”。
+3. BiRefNet 的 `GatherND`/多输入 `Sum` 是 **omg 转换器缺口**(pre-check 直接拒收类型);设备端有 `GatherNd`/`ReduceSum` 实现。换算子表达(Sum→Add 链、GatherND→Gather+重排)理论上可绕过,但图手术代价高。
+4. 跨芯片稳定的边界:**int64 产出 Cast(设备级)**;**GatherND/多输入 Sum/NMS/5D(转换级)**。
+
+---
+
 ## 7. 修正后的结论
 
 | 模型 | 结论 | 建议 |
@@ -204,8 +245,8 @@ hdc shell "/data/local/tmp/hiai_mr_test7 /data/local/tmp/msmodels/v167/<out>.om 
 | MediaPipe face_landmarks | **可落地** | 优先接入,1–2 天 |
 | MediaPipe selfie_multiclass | **可落地(需精度验证)** | 修正 Resize 语义后接入 |
 | ESAM3 image encoder | **可运行,但不完整** | 解决 `pos_2` 输出后再评估;单独编码器收益有限 |
-| ESAM3 decoder/text encoder | **不可行(当前 NPUCL)** | 保持 ORT CPU |
-| BiRefNet foreground | **不可行(算子缺失)** | 保持 ORT CPU;除非换模型或大规模图手术 |
+| ESAM3 decoder/text encoder | **不可行(int64/动态 shape 链)** | 保持 ORT CPU;单算子层面大多可过 |
+| BiRefNet foreground | **不可行(omg 映射缺失:GatherND/Sum)** | 保持 ORT CPU;除非换模型或大规模图手术 |
 | SAM/Depth/CLIP/LaMa/MoGe | 保持 CPU | 旧结论不变 |
 
-**总体**:新模型里真正能落地的只有两个 MediaPipe CNN;ESAM3 编码器可转但输出/混合执行问题未解;BiRefNet 与 ESAM3 transformer 部分在 Kirin X90 的 omg/NPUCL 上不可行。此前“全量迁移”的预期应下调为“两个小 CNN 的局部加速”。
+**总体**:新模型里真正能落地的只有两个 MediaPipe CNN;ESAM3 编码器可转但输出/混合执行问题未解;BiRefNet 与 ESAM3 transformer 部分在 Kirin X90 的 omg/NPUCL 上不可行。此前“全量迁移”的预期应下调为“两个小 CNN 的局部加速”。2026-10-30 双机逐算子验证(§6.4)进一步表明:X90 与 XE90 对 `kirinx90` `.om` 的算子接受度完全一致,真正的边界在转换期(GatherND/多输入 Sum/NMS/5D)与设备期(Cast→int64)。
