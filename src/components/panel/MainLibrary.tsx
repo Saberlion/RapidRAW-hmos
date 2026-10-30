@@ -457,7 +457,7 @@ export default function MainLibrary(props: MainLibraryProps) {
                             </>
                           )}
                           <a
-                            href="https://github.com/CyberTimon/RapidRAW"
+                            href="https://github.com/Saberlion/LightRaw"
                             className="hover:underline"
                             target="_blank"
                             rel="noopener noreferrer"

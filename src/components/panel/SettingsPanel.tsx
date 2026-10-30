@@ -2663,7 +2663,7 @@ export default function SettingsPanel({
                         description={t('settings.about.sourceCodeDesc')}
                       >
                         <a
-                          href="https://github.com/Saberlion/RapidRAW-hmos"
+                          href="https://github.com/Saberlion/LightRaw"
                           target="_blank"
                           rel="noopener noreferrer"
                           className="font-semibold text-accent hover:underline"
